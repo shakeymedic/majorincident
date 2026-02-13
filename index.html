@@ -513,12 +513,12 @@
             <div id="details-container">
                 <h3>Interventions</h3>
                 <div class="int-grid">
-                    <button class="int-btn" onclick="recordIntervention(this, 'Tourniquet')">Tourniquet<span class="int-time"></span></button>
-                    <button class="int-btn" onclick="recordIntervention(this, 'Wound Packing')">Wound Packing<span class="int-time"></span></button>
-                    <button class="int-btn" onclick="recordIntervention(this, 'Airway Open')">Airway Open<span class="int-time"></span></button>
-                    <button class="int-btn" onclick="recordIntervention(this, 'Recovery Pos')">Recovery Pos<span class="int-time"></span></button>
-                    <button class="int-btn" onclick="recordIntervention(this, 'Chest Seal')">Chest Seal<span class="int-time"></span></button>
-                    <button class="int-btn" onclick="recordIntervention(this, 'Needle Decomp')">Needle Decomp<span class="int-time"></span></button>
+                    <button class="int-btn" data-type="Tourniquet" onclick="recordIntervention(this, 'Tourniquet')">Tourniquet<span class="int-time"></span></button>
+                    <button class="int-btn" data-type="Wound Packing" onclick="recordIntervention(this, 'Wound Packing')">Wound Packing<span class="int-time"></span></button>
+                    <button class="int-btn" data-type="Airway Open" onclick="recordIntervention(this, 'Airway Open')">Airway Open<span class="int-time"></span></button>
+                    <button class="int-btn" data-type="Recovery Pos" onclick="recordIntervention(this, 'Recovery Pos')">Recovery Pos<span class="int-time"></span></button>
+                    <button class="int-btn" data-type="Chest Seal" onclick="recordIntervention(this, 'Chest Seal')">Chest Seal<span class="int-time"></span></button>
+                    <button class="int-btn" data-type="Needle Decomp" onclick="recordIntervention(this, 'Needle Decomp')">Needle Decomp<span class="int-time"></span></button>
                 </div>
 
                 <h3>Clinical Notes</h3>
@@ -626,9 +626,10 @@
                         <tr>
                             <th>Time</th>
                             <th>ID</th>
+                            <th>Triager</th>
                             <th>Cat</th>
-                            <th>Loc</th>
-                            <th>Interventions / Notes</th>
+                            <th>Clinical Signs (Reason)</th>
+                            <th>Details</th>
                         </tr>
                     </thead>
                     <tbody id="log-body"></tbody>
@@ -672,10 +673,9 @@
             const blob = new Blob([swContent], {type: 'application/javascript'});
             const swUrl = URL.createObjectURL(blob);
             
-            // Only attempt registration, catch errors to prevent console spam in unsupported envs
             navigator.serviceWorker.register(swUrl)
                 .then(() => console.log('Service Worker Registered'))
-                .catch(err => console.warn('Service Worker failed (likely due to preview/file environment):', err));
+                .catch(err => console.warn('Service Worker failed:', err));
         } catch (e) {
             console.warn('Service Worker setup skipped:', e);
         }
@@ -895,21 +895,21 @@
 
     // --- TRIAGE LOGIC ---
     const tstFlow = [
-        { id: 'walking', question: "Is the casualty walking?", instruction: "Instruct casualties to move to a safe area.", yes: { type: 'result', category: 'P3', action: "Survivor Reception Centre" }, no: { type: 'next', step: 'bleeding' } },
-        { id: 'bleeding', question: "Is there severe bleeding?", instruction: "Look for catastrophic haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately" }, no: { type: 'next', step: 'talking' } },
+        { id: 'walking', question: "Is the casualty walking?", instruction: "Instruct casualties to move to a safe area.", yes: { type: 'result', category: 'P3', action: "Survivor Reception Centre", reason: "Walking" }, no: { type: 'next', step: 'bleeding' } },
+        { id: 'bleeding', question: "Is there severe bleeding?", instruction: "Look for catastrophic haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately", reason: "Catastrophic Bleeding" }, no: { type: 'next', step: 'talking' } },
         { id: 'talking', question: "Is the casualty talking?", instruction: "Can they obey simple commands?", yes: { type: 'next', step: 'penetrating' }, no: { type: 'next', step: 'breathing' } },
-        { id: 'penetrating', question: "Is there a penetrating injury?", instruction: "Check Head, Neck, Torso or Groin.", yes: { type: 'result', category: 'P1', action: "Immediate Priority" }, no: { type: 'result', category: 'P2', action: "Urgent Priority" } },
-        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open airway. Check for signs of life.", yes: { type: 'result', category: 'P1', action: "Recovery Position" }, no: { type: 'result', category: 'DEAD', action: "Dead (unless resources allow CPR)" } }
+        { id: 'penetrating', question: "Is there a penetrating injury to the Head, Neck, Torso or Groin?", instruction: "Check Head, Neck, Torso or Groin.", yes: { type: 'result', category: 'P1', action: "Immediate Priority", reason: "Penetrating Trauma" }, no: { type: 'result', category: 'P2', action: "Urgent Priority", reason: "Casualty Not Walking" } },
+        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open airway. Check for signs of life.", yes: { type: 'result', category: 'P1', action: "Recovery Position", reason: "Unconscious - Breathing" }, no: { type: 'result', category: 'DEAD', action: "Dead (unless resources allow CPR)", reason: "Apnoeic" } }
     ];
 
     const mittFlow = [
-        { id: 'cat_bleed', question: "Is there catastrophic bleeding?", instruction: "Assess for life-threatening haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately" }, no: { type: 'next', step: 'walking' } },
-        { id: 'walking', question: "Is the casualty walking?", instruction: "", yes: { type: 'result', category: 'P3', action: "Minor Injuries Unit" }, no: { type: 'next', step: 'breathing' } },
-        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open Airway. (Paeds: 5 rescue breaths if drowning/smoke).", yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', action: "Confirm Dead" } },
-        { id: 'voice', question: "Does casualty respond to voice?", instruction: "AVPU Scale: Alert or Voice?", yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', action: "Unconscious - P1" } },
-        { id: 'age', question: "Is the casualty aged over 2 years?", instruction: "Estimate age if unknown.", yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', action: "Paediatric Priority (Under 2)" } },
-        { id: 'rr', question: "Is Respiratory Rate 12 - 23?", instruction: "Count breaths per minute.", yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', action: "Abnormal Respiration - P1" } },
-        { id: 'hr', question: "Is Heart Rate < 100?", instruction: "Check radial pulse or capillary refill.", yes: { type: 'result', category: 'P2', action: "Stable Physiology - P2" }, no: { type: 'result', category: 'P1', action: "Tachycardic (HR ≥ 100) - P1" } }
+        { id: 'cat_bleed', question: "Is there catastrophic bleeding?", instruction: "Assess for life-threatening haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately", reason: "Catastrophic Bleeding" }, no: { type: 'next', step: 'walking' } },
+        { id: 'walking', question: "Is the casualty walking?", instruction: "", yes: { type: 'result', category: 'P3', action: "Minor Injuries Unit", reason: "Walking" }, no: { type: 'next', step: 'breathing' } },
+        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open Airway. (Paeds: 5 rescue breaths if drowning/smoke).", yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', action: "Confirm Dead", reason: "Apnoeic" } },
+        { id: 'voice', question: "Does casualty respond to voice?", instruction: "AVPU Scale: Alert or Voice?", yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', action: "Unconscious - P1", reason: "Unresponsive to Voice" } },
+        { id: 'age', question: "Is the casualty aged over 2 years?", instruction: "Estimate age if unknown.", yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', action: "Paediatric Priority (Under 2)", reason: "Age < 2" } },
+        { id: 'rr', question: "Is Respiratory Rate 12 - 23?", instruction: "Count breaths per minute.", yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', action: "Abnormal Respiration - P1", reason: "RR outside 12-23" } },
+        { id: 'hr', question: "Is Heart Rate < 100?", instruction: "Check radial pulse or capillary refill.", yes: { type: 'result', category: 'P2', action: "Stable Physiology - P2", reason: "Stable Physiology" }, no: { type: 'result', category: 'P1', action: "Tachycardic (HR ≥ 100) - P1", reason: "Tachycardia > 100" } }
     ];
 
     function showScreen(id) {
@@ -958,17 +958,28 @@
     }
 
     function handleAnswer(answer) {
-        const stepId = document.getElementById('question-screen').dataset.stepId;
-        stepHistory.push(stepId);
-        
-        const flow = currentTool === 'TST' ? tstFlow : mittFlow;
-        const currentStepObj = flow.find(s => s.id === stepId);
-        const outcome = answer ? currentStepObj.yes : currentStepObj.no;
+        try {
+            const stepId = document.getElementById('question-screen').dataset.stepId;
+            stepHistory.push(stepId);
+            
+            const flow = currentTool === 'TST' ? tstFlow : mittFlow;
+            const currentStepObj = flow.find(s => s.id === stepId);
+            
+            if (!currentStepObj) {
+                console.error("Step not found: " + stepId);
+                return;
+            }
 
-        if (outcome.type === 'next') {
-            loadStep(flow.find(s => s.id === outcome.step));
-        } else if (outcome.type === 'result') {
-            logResult(outcome.category, outcome.action);
+            const outcome = answer ? currentStepObj.yes : currentStepObj.no;
+
+            if (outcome.type === 'next') {
+                loadStep(flow.find(s => s.id === outcome.step));
+            } else if (outcome.type === 'result') {
+                logResult(outcome.category, outcome.action, outcome.reason);
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Error processing answer");
         }
     }
     
@@ -979,13 +990,27 @@
         loadStep(flow.find(s => s.id === prevStepId));
     }
 
-    function logResult(category, action) {
+    function logResult(category, action, reason) {
         const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        // Use Date.now() for accurate timer logic later
         const timestamp = Date.now(); 
         const entry = {
-            id: currentPatientId, time: time, timestamp: timestamp, tool: currentTool, category: category, action: action,
-            location: currentPosition, sector: currentSector, demos: "", allergies: "", notes: "", highRisk: false, interventions: {}, evacuated: false, evacVehicle: ""
+            id: currentPatientId, 
+            time: time, 
+            timestamp: timestamp, 
+            tool: currentTool, 
+            category: category, 
+            action: action,
+            reason: reason,
+            triager: callSign,
+            location: currentPosition, 
+            sector: currentSector, 
+            demos: "", 
+            allergies: "", 
+            notes: "", 
+            highRisk: false, 
+            interventions: {}, 
+            evacuated: false, 
+            evacVehicle: ""
         };
 
         incidentLog.push(entry);
@@ -1039,15 +1064,16 @@
             evacBtn.style.backgroundColor = "var(--nhs-dark-blue)";
         }
         
-        // Render buttons state
+        // Reset buttons state
         document.querySelectorAll('.int-btn').forEach(btn => {
              btn.classList.remove('active');
              btn.querySelector('.int-time').innerText = "";
         });
         
+        // Render buttons active state safely
         const intButtons = document.querySelectorAll('.int-btn');
         intButtons.forEach(btn => {
-             const type = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
+             const type = btn.dataset.type; // Safe usage
              if(entry.interventions && entry.interventions[type]) {
                  btn.classList.add('active');
                  // Display time only
@@ -1293,7 +1319,9 @@
             tr.innerHTML = `
                 <td>${row.time}</td>
                 <td><strong>${row.id}</strong></td>
+                <td>${row.triager || "-"}</td>
                 <td style="${catStyle}">${row.category}</td>
+                <td><small>${row.reason || "-"}</small></td>
                 <td style="font-size:0.75rem;">${locText}</td>
                 <td style="font-size:0.8rem;">${details}</td>
             `;
@@ -1322,7 +1350,7 @@
             
             let evacStr = r.evacuated ? ` [EVACUATED ${r.evacVehicle}]` : "";
             
-            text += `${r.time} | ${r.id} | ${r.category} | ${r.action} | ${locStr}${r.demos} ${r.notes}${intStr}${evacStr}\n`;
+            text += `${r.time} | ${r.id} | Triager:${r.triager} | ${r.category} | Reason:${r.reason} | ${r.action} | ${locStr}${r.demos} ${r.notes}${intStr}${evacStr}\n`;
         });
         
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1350,7 +1378,7 @@
             csv += `M,${m.m}\nE,${m.e}\nT,${m.t}\nH,${m.h}\nA,${m.a}\nN,${m.n}\nE,${m.e_svc}\n\n`;
         }
 
-        csv += "Time,ID,Category,Action,Sector,Lat,Lng,Age/Gender,Allergies,Notes,Interventions,HighRisk,Evacuated,Vehicle\n";
+        csv += "Time,ID,Triager,Category,Reason,Action,Sector,Lat,Lng,Age/Gender,Allergies,Notes,Interventions,HighRisk,Evacuated,Vehicle\n";
         incidentLog.forEach(r => {
             const lat = r.location ? r.location.lat : "";
             const lng = r.location ? r.location.lng : "";
@@ -1362,7 +1390,7 @@
                 intStr = Object.entries(r.interventions).map(([k,v]) => `${k}(${v.time})`).join("; ");
             }
             
-            csv += `${r.time},${r.id},${r.category},${r.action},${sec},${lat},${lng},${r.demos},${r.allergies},${noteSafe},${intStr},${r.highRisk},${r.evacuated},${r.evacVehicle}\n`;
+            csv += `${r.time},${r.id},${r.triager},${r.category},${r.reason},${r.action},${sec},${lat},${lng},${r.demos},${r.allergies},${noteSafe},${intStr},${r.highRisk},${r.evacuated},${r.evacVehicle}\n`;
         });
         
         const blob = new Blob([csv], { type: 'text/csv' });
