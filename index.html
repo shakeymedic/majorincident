@@ -176,6 +176,11 @@
     .btn-danger { background-color: var(--nhs-red); }
     .btn-evac { background-color: var(--nhs-dark-blue); border: 2px solid var(--nhs-blue); }
 
+    .id-mode-btn.active {
+        background-color: var(--nhs-dark-blue);
+        border: 2px solid var(--nhs-green);
+    }
+
     .header-controls { display: flex; gap: 8px; }
     .icon-btn {
         background: rgba(255,255,255,0.2);
@@ -316,6 +321,14 @@
     }
     #body-map-modal svg { max-height: 70vh; max-width: 90vw; background: white; border-radius: 10px; }
     
+    /* Manual ID Modal */
+    #manual-id-modal {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.9); z-index: 2000; display: none;
+        flex-direction: column; align-items: center; justify-content: center; color: white;
+    }
+    #manual-id-box { background: var(--card-bg); padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; color: var(--text-color); }
+
     /* QR Modal */
     #qr-modal {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -335,7 +348,7 @@
     .editable-id { border-bottom: 1px dashed var(--nhs-blue); cursor: text; }
 
     @media print {
-        header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, #body-map-modal, #qr-modal, .voice-btn { display: none !important; }
+        header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, #body-map-modal, #qr-modal, #manual-id-modal, .voice-btn { display: none !important; }
         .screen { display: none !important; }
         #log-screen { display: block !important; }
         .log-container { overflow: visible; }
@@ -360,6 +373,21 @@
     <button class="btn btn-secondary" style="width: auto; margin-top: 20px;" onclick="closeBodyMap()">Done</button>
 </div>
 
+<!-- Manual ID Modal -->
+<div id="manual-id-modal">
+    <div id="manual-id-box">
+        <h3>Enter Patient ID</h3>
+        <p>Type ID from tag or wristband:</p>
+        <div class="input-group">
+            <input type="text" id="manual-id-input" placeholder="e.g. T1234">
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button class="btn btn-primary" onclick="submitManualId()">Start Triage</button>
+            <button class="btn btn-secondary" onclick="closeManualId()">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <!-- QR Modal -->
 <div id="qr-modal">
     <h3>Patient Passport</h3>
@@ -380,7 +408,7 @@
     </header>
 
     <div class="status-bar">
-        <span class="status-item" id="header-callsign">Device: -</span>
+        <span class="status-item" id="header-user">User: -</span>
         <span class="status-item" id="header-role" style="font-weight:bold;"></span>
         <span class="status-item" id="header-sector" style="color:var(--nhs-yellow);"></span>
         <span id="gps-indicator" class="gps-status gps-inactive" style="margin-left: auto;">GPS: Searching...</span>
@@ -406,8 +434,20 @@
             </button>
 
             <div class="input-group">
-                <label>Device Call Sign (Recommended)</label>
-                <input type="text" id="intro-callsign" placeholder="e.g. ALPHA-1" autocomplete="off">
+                <label>Triager Name / Call Sign (Required)</label>
+                <input type="text" id="intro-triager" placeholder="e.g. Dr Smith, Medic 1" autocomplete="off">
+            </div>
+
+            <div class="input-group">
+                <label>Patient ID Mode</label>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-secondary id-mode-btn active" id="mode-auto" style="flex:1;" onclick="setIdMode('AUTO')">Auto-Generate</button>
+                    <button class="btn btn-secondary id-mode-btn" id="mode-manual" style="flex:1;" onclick="setIdMode('MANUAL')">Manual Entry</button>
+                </div>
+                <div id="prefix-container" style="margin-top:10px;">
+                    <label style="font-size:0.9rem;">ID Prefix (Optional)</label>
+                    <input type="text" id="intro-device-prefix" placeholder="e.g. DEVICE-A (Default: Tool Name)" autocomplete="off">
+                </div>
             </div>
             
             <div class="input-group">
@@ -673,7 +713,6 @@
             const blob = new Blob([swContent], {type: 'application/javascript'});
             const swUrl = URL.createObjectURL(blob);
             
-            // Safety check: Don't register if we are in a blob/file context that forbids it
             if (window.location.protocol !== 'blob:' && window.location.protocol !== 'file:') {
                 navigator.serviceWorker.register(swUrl)
                     .then(() => console.log('Service Worker Registered'))
@@ -686,7 +725,8 @@
 
     // --- STATE ---
     let userRole = null; 
-    let callSign = "";
+    let triagerName = "";
+    let devicePrefix = "";
     let currentSector = "";
     let currentTool = null;
     let patientCounter = 1;
@@ -694,6 +734,7 @@
     let currentPatientId = ""; 
     let currentLogIndex = -1; 
     let stepHistory = [];
+    let idMode = 'AUTO'; // AUTO or MANUAL
     
     // GPS State
     let currentPosition = null; 
@@ -764,8 +805,10 @@
     function saveLocalData() {
         localStorage.setItem('mit_triage_log', JSON.stringify(incidentLog));
         localStorage.setItem('mit_patient_counter', patientCounter.toString());
-        localStorage.setItem('mit_callsign', callSign);
+        localStorage.setItem('mit_triager', triagerName);
+        localStorage.setItem('mit_device_prefix', devicePrefix);
         localStorage.setItem('mit_sector', currentSector);
+        localStorage.setItem('mit_id_mode', idMode);
         if (userRole) localStorage.setItem('mit_user_role', userRole);
         
         const methaneData = {
@@ -784,9 +827,11 @@
         const savedLog = localStorage.getItem('mit_triage_log');
         const savedCount = localStorage.getItem('mit_patient_counter');
         const savedRole = localStorage.getItem('mit_user_role');
-        const savedCallSign = localStorage.getItem('mit_callsign');
+        const savedTriager = localStorage.getItem('mit_triager');
+        const savedPrefix = localStorage.getItem('mit_device_prefix');
         const savedSector = localStorage.getItem('mit_sector');
         const savedMethane = localStorage.getItem('mit_methane');
+        const savedIdMode = localStorage.getItem('mit_id_mode');
 
         if (savedLog) {
             incidentLog = JSON.parse(savedLog);
@@ -796,15 +841,27 @@
             }
         }
         if (savedCount) patientCounter = parseInt(savedCount);
-        if (savedCallSign) {
-            callSign = savedCallSign;
-            document.getElementById('intro-callsign').value = callSign;
-            document.getElementById('header-callsign').innerText = callSign ? `Device: ${callSign}` : "Device: -";
+        
+        if (savedTriager) {
+            triagerName = savedTriager;
+            document.getElementById('intro-triager').value = triagerName;
+            document.getElementById('header-user').innerText = `User: ${triagerName}`;
         }
+        
+        if (savedPrefix) {
+            devicePrefix = savedPrefix;
+            document.getElementById('intro-device-prefix').value = devicePrefix;
+        }
+
         if (savedSector) {
             currentSector = savedSector;
             document.getElementById('intro-sector').value = currentSector;
             document.getElementById('header-sector').innerText = currentSector;
+        }
+        
+        if (savedIdMode) {
+            idMode = savedIdMode;
+            setIdMode(idMode);
         }
         
         if (savedMethane) {
@@ -836,9 +893,12 @@
     function setUserRole(role) {
         userRole = role;
         
-        const inputCS = document.getElementById('intro-callsign').value.trim().toUpperCase();
-        if(inputCS) callSign = inputCS;
-        document.getElementById('header-callsign').innerText = callSign ? `Device: ${callSign}` : "Device: -";
+        const inputTriager = document.getElementById('intro-triager').value.trim();
+        if(inputTriager) triagerName = inputTriager;
+        document.getElementById('header-user').innerText = `User: ${triagerName || 'Unknown'}`;
+
+        const inputPrefix = document.getElementById('intro-device-prefix').value.trim().toUpperCase();
+        if(inputPrefix) devicePrefix = inputPrefix;
         
         const roleEl = document.getElementById('header-role');
         if(role === 'HCP') {
@@ -877,6 +937,19 @@
         }
     }
 
+    function setIdMode(mode) {
+        idMode = mode;
+        document.querySelectorAll('.id-mode-btn').forEach(btn => btn.classList.remove('active'));
+        if(mode === 'AUTO') {
+            document.getElementById('mode-auto').classList.add('active');
+            document.getElementById('prefix-container').style.display = 'block';
+        } else {
+            document.getElementById('mode-manual').classList.add('active');
+            document.getElementById('prefix-container').style.display = 'none';
+        }
+        saveLocalData();
+    }
+
     function resetApp() {
         if(confirm("Return to setup? Log data is SAFE.")) showScreen('intro-screen');
     }
@@ -888,7 +961,6 @@
             currentPatientId = newId.trim();
             document.getElementById('q-patient-id').innerText = currentPatientId;
             document.getElementById('r-patient-id').innerText = currentPatientId;
-            // Removed reference to missing d-patient-id
             if(currentLogIndex > -1) {
                 incidentLog[currentLogIndex].id = currentPatientId;
                 saveLocalData();
@@ -934,15 +1006,42 @@
     function initiateTriage(tool) {
         currentTool = tool;
         stepHistory = [];
-        const prefix = callSign ? `${callSign}-${tool}` : tool;
-        currentPatientId = `${prefix}-${pad(patientCounter, 3)}`;
-        document.getElementById('q-patient-id').innerText = currentPatientId;
         
+        // Mode Badge
         const badge = document.getElementById('mode-indicator');
         badge.innerText = tool;
         badge.style.display = 'inline-block';
         badge.style.backgroundColor = tool === 'MITT' ? '#E87722' : '#007F3B'; 
 
+        if (idMode === 'MANUAL') {
+            document.getElementById('manual-id-input').value = "";
+            document.getElementById('manual-id-modal').style.display = 'flex';
+            document.getElementById('manual-id-input').focus();
+        } else {
+            // Auto Mode
+            const prefix = devicePrefix ? `${devicePrefix}-${tool}` : tool;
+            currentPatientId = `${prefix}-${pad(patientCounter, 3)}`;
+            startFlow();
+        }
+    }
+
+    function submitManualId() {
+        const val = document.getElementById('manual-id-input').value.trim();
+        if(val) {
+            currentPatientId = val;
+            document.getElementById('manual-id-modal').style.display = 'none';
+            startFlow();
+        } else {
+            showToast("Please enter an ID");
+        }
+    }
+
+    function closeManualId() {
+        document.getElementById('manual-id-modal').style.display = 'none';
+    }
+
+    function startFlow() {
+        document.getElementById('q-patient-id').innerText = currentPatientId;
         if (currentTool === 'TST') loadStep(tstFlow[0]);
         else loadStep(mittFlow[0]);
         showScreen('question-screen');
@@ -1004,7 +1103,7 @@
             category: category, 
             action: action,
             reason: reason,
-            triager: callSign,
+            triager: triagerName,
             location: currentPosition, 
             sector: currentSector, 
             demos: "", 
@@ -1026,7 +1125,6 @@
     
     function renderResultScreen(entry) {
         document.getElementById('r-patient-id').innerText = entry.id;
-        // Removed bad ID reference here
         const tag = document.getElementById('result-tag');
         document.getElementById('tag-text').innerText = entry.category;
         
@@ -1250,8 +1348,10 @@
     function saveMethane() { saveLocalData(); showToast("Report Saved"); showScreen('home-screen'); }
 
     function nextPatient() {
-        patientCounter++;
-        saveLocalData();
+        if(idMode === 'AUTO') {
+            patientCounter++;
+            saveLocalData();
+        }
         initiateTriage(currentTool); 
     }
 
