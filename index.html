@@ -1333,6 +1333,12 @@
         showScreen('log-screen');
     }
 
+    function escapeCSV(str) {
+        if (!str) return "";
+        // Wrap in quotes and escape internal quotes
+        return `"${str.toString().replace(/"/g, '""')}"`;
+    }
+
     function getMethaneString() {
          const m = JSON.parse(localStorage.getItem('mit_methane') || "{}");
          if(!m.m) return "";
@@ -1349,11 +1355,14 @@
             
             let locStr = "";
             if (r.sector) locStr += `[Sec:${r.sector}] `;
-            if (r.location) locStr += `[GPS:${r.location.lat},${r.location.lng}] `;
+            if (r.location) locStr += `[GPS:${r.location.lat},${r.location.lng} ±${r.location.acc}m] `;
             
             let evacStr = r.evacuated ? ` [EVACUATED ${r.evacVehicle}]` : "";
-            
-            text += `${r.time} | ${r.id} | Triager:${r.triager} | ${r.category} | Reason:${r.reason} | ${r.action} | ${locStr}${r.demos} ${r.notes}${intStr}${evacStr}\n`;
+            const toolStr = r.tool ? `[${r.tool}] ` : "";
+            const riskStr = r.highRisk ? "[HIGH RISK] " : "";
+            const dateStr = new Date(r.timestamp).toLocaleDateString();
+
+            text += `${dateStr} ${r.time} | ${r.id} | Triager:${r.triager} | ${toolStr}${r.category} | Reason:${r.reason} | ${r.action} | ${locStr}${r.demos} ${r.allergies} ${r.notes}${intStr}${riskStr}${evacStr}\n`;
         });
         
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1378,22 +1387,31 @@
         
         if(m.m) {
             csv += `METHANE REPORT\n`;
-            csv += `M,${m.m}\nE,${m.e}\nT,${m.t}\nH,${m.h}\nA,${m.a}\nN,${m.n}\nE,${m.e_svc}\n\n`;
+            csv += `M,${escapeCSV(m.m)}\nE,${escapeCSV(m.e)}\nT,${escapeCSV(m.t)}\nH,${escapeCSV(m.h)}\nA,${escapeCSV(m.a)}\nN,${escapeCSV(m.n)}\nE,${escapeCSV(m.e_svc)}\n\n`;
         }
 
-        csv += "Time,ID,Triager,Category,Reason,Action,Sector,Lat,Lng,Age/Gender,Allergies,Notes,Interventions,HighRisk,Evacuated,Vehicle\n";
+        // Expanded Headers
+        csv += "LogID,Date,Time,Tool,Triager,Sector,Lat,Lng,GPS_Accuracy,Category,Reason,Action,Age_Gender,Allergies,Clinical_Notes,Interventions,High_Risk_Flag,Evacuation_Status,Transport_Vehicle\n";
+        
         incidentLog.forEach(r => {
+            const dateStr = new Date(r.timestamp).toLocaleDateString();
             const lat = r.location ? r.location.lat : "";
             const lng = r.location ? r.location.lng : "";
+            const acc = r.location ? r.location.acc : "";
             const sec = r.sector || "";
-            const noteSafe = r.notes.replace(/,/g, " ").replace(/\n/g, " ");
             
+            // Format Interventions nicely with semicolons
             let intStr = "";
             if(r.interventions) {
                 intStr = Object.entries(r.interventions).map(([k,v]) => `${k}(${v.time})`).join("; ");
             }
             
-            csv += `${r.time},${r.id},${r.triager},${r.category},${r.reason},${r.action},${sec},${lat},${lng},${r.demos},${r.allergies},${noteSafe},${intStr},${r.highRisk},${r.evacuated},${r.evacVehicle}\n`;
+            // Format Booleans
+            const highRiskStr = r.highRisk ? "YES" : "NO";
+            const evacStr = r.evacuated ? "EVACUATED" : "ON SCENE";
+
+            // Construct Row using escapeCSV for safety
+            csv += `${escapeCSV(r.id)},${escapeCSV(dateStr)},${escapeCSV(r.time)},${escapeCSV(r.tool)},${escapeCSV(r.triager)},${escapeCSV(sec)},${lat},${lng},${acc},${escapeCSV(r.category)},${escapeCSV(r.reason)},${escapeCSV(r.action)},${escapeCSV(r.demos)},${escapeCSV(r.allergies)},${escapeCSV(r.notes)},${escapeCSV(intStr)},${highRiskStr},${evacStr},${escapeCSV(r.evacVehicle)}\n`;
         });
         
         const blob = new Blob([csv], { type: 'text/csv' });
