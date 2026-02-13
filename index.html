@@ -673,9 +673,12 @@
             const blob = new Blob([swContent], {type: 'application/javascript'});
             const swUrl = URL.createObjectURL(blob);
             
-            navigator.serviceWorker.register(swUrl)
-                .then(() => console.log('Service Worker Registered'))
-                .catch(err => console.warn('Service Worker failed:', err));
+            // Safety check: Don't register if we are in a blob/file context that forbids it
+            if (window.location.protocol !== 'blob:' && window.location.protocol !== 'file:') {
+                navigator.serviceWorker.register(swUrl)
+                    .then(() => console.log('Service Worker Registered'))
+                    .catch(err => console.warn('Service Worker failed (harmless in preview):', err));
+            }
         } catch (e) {
             console.warn('Service Worker setup skipped:', e);
         }
@@ -885,7 +888,7 @@
             currentPatientId = newId.trim();
             document.getElementById('q-patient-id').innerText = currentPatientId;
             document.getElementById('r-patient-id').innerText = currentPatientId;
-            document.getElementById('d-patient-id').innerText = currentPatientId;
+            // Removed reference to missing d-patient-id
             if(currentLogIndex > -1) {
                 incidentLog[currentLogIndex].id = currentPatientId;
                 saveLocalData();
@@ -1023,7 +1026,7 @@
     
     function renderResultScreen(entry) {
         document.getElementById('r-patient-id').innerText = entry.id;
-        document.getElementById('d-patient-id').innerText = entry.id;
+        // Removed bad ID reference here
         const tag = document.getElementById('result-tag');
         document.getElementById('tag-text').innerText = entry.category;
         
