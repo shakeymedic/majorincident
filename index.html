@@ -92,6 +92,67 @@
     .gps-active { color: #ccffcc; border: 1px solid #ccffcc; }
     .gps-inactive { color: #ffcccc; border: 1px solid #ffcccc; }
 
+    /* Persistent Dashboard Styles */
+    .dashboard {
+        display: flex;
+        width: 100%;
+        background: var(--card-bg);
+        border-bottom: 1px solid #ccc;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+    }
+
+    /* Mini Mode (Default) */
+    .dashboard:not(.expanded) {
+        height: 40px;
+    }
+    .dashboard:not(.expanded) .dash-card {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 0;
+        border-radius: 0;
+        font-size: 0.9rem;
+        box-shadow: none;
+    }
+    .dashboard:not(.expanded) .dash-label {
+        display: inline;
+        font-size: 0.9rem;
+    }
+    .dashboard:not(.expanded) .dash-num {
+        display: inline;
+        font-size: 1.1rem;
+    }
+
+    /* Expanded Mode (Log Screen) */
+    .dashboard.expanded {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        padding: 10px;
+        height: auto;
+        border-bottom: 2px solid #ccc;
+    }
+    .dashboard.expanded .dash-card {
+        padding: 10px 5px;
+        text-align: center;
+        border-radius: 6px;
+        color: black;
+        font-weight: bold;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        display: block;
+    }
+    .dashboard.expanded .dash-num { font-size: 1.4rem; display: block; }
+    .dashboard.expanded .dash-label { font-size: 0.75rem; display: block; }
+
+    /* Card Colors */
+    .dash-p1 { background: var(--nhs-red); color: white; }
+    .dash-p2 { background: var(--nhs-yellow); color: black; }
+    .dash-p3 { background: var(--nhs-green); color: white; }
+    .dash-dead { background: #333; color: white; }
+
     main {
         padding: 1rem;
         flex: 1;
@@ -155,28 +216,6 @@
         user-select: none;
     }
     #blackout-curtain.active { display: flex; }
-
-    /* Dashboard */
-    .dashboard {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
-        margin-bottom: 1rem;
-    }
-    .dash-card {
-        padding: 10px 5px;
-        text-align: center;
-        border-radius: 6px;
-        color: black;
-        font-weight: bold;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-    .dash-p1 { background: var(--nhs-red); color: white; }
-    .dash-p2 { background: var(--nhs-yellow); }
-    .dash-p3 { background: var(--nhs-green); color: white; }
-    .dash-dead { background: #333; color: white; }
-    .dash-num { font-size: 1.4rem; display: block; }
-    .dash-label { font-size: 0.75rem; }
 
     /* Mode Badge */
     .mode-badge {
@@ -308,7 +347,7 @@
 
     /* Print Styles */
     @media print {
-        header, .btn, .status-bar, .instruction-card, .input-group, .header-controls, #toast { display: none !important; }
+        header, .btn, .status-bar, .instruction-card, .input-group, .header-controls, #toast, #global-dashboard { display: none !important; }
         .screen { display: none !important; }
         #log-screen { display: block !important; }
         .log-container { overflow: visible; }
@@ -339,6 +378,14 @@
     <div class="status-bar">
         <span id="header-callsign">Device: -</span>
         <span id="gps-indicator" class="gps-status gps-inactive">GPS: Searching...</span>
+    </div>
+
+    <!-- PERSISTENT GLOBAL DASHBOARD -->
+    <div id="global-dashboard" class="dashboard">
+        <div class="dash-card dash-p1"><span class="dash-num" id="count-p1">0</span><span class="dash-label">P1</span></div>
+        <div class="dash-card dash-p2"><span class="dash-num" id="count-p2">0</span><span class="dash-label">P2</span></div>
+        <div class="dash-card dash-p3"><span class="dash-num" id="count-p3">0</span><span class="dash-label">P3</span></div>
+        <div class="dash-card dash-dead"><span class="dash-num" id="count-dead">0</span><span class="dash-label">DEAD</span></div>
     </div>
 
     <main>
@@ -514,16 +561,8 @@
 
         <!-- LOG SCREEN -->
         <div id="log-screen" class="screen">
-            <h2>Live Dashboard</h2>
+            <h2>Patient Log <small style="font-weight:normal; font-size:0.7rem;">(Tap row to edit)</small></h2>
             
-            <div class="dashboard">
-                <div class="dash-card dash-p1"><span class="dash-num" id="count-p1">0</span><span class="dash-label">P1</span></div>
-                <div class="dash-card dash-p2"><span class="dash-num" id="count-p2">0</span><span class="dash-label">P2</span></div>
-                <div class="dash-card dash-p3"><span class="dash-num" id="count-p3">0</span><span class="dash-label">P3</span></div>
-                <div class="dash-card dash-dead"><span class="dash-num" id="count-dead">0</span><span class="dash-label">DEAD</span></div>
-            </div>
-
-            <h3>Patient Log <small style="font-weight:normal; font-size:0.7rem;">(Tap row to edit)</small></h3>
             <div class="log-actions" style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px;">
                 <button class="btn btn-primary" style="flex:1; padding:0.5rem; font-size:0.9rem;" onclick="copyLog()">Copy All (w/ METHANE)</button>
                 <button class="btn btn-primary" style="flex:1; padding:0.5rem; font-size:0.9rem;" onclick="downloadCSV()">CSV (w/ METHANE)</button>
@@ -705,7 +744,7 @@
         { id: 'walking', question: "Is the casualty walking?", instruction: "Instruct casualties to move to a safe area.", yes: { type: 'result', category: 'P3', action: "Survivor Reception Centre" }, no: { type: 'next', step: 'bleeding' } },
         { id: 'bleeding', question: "Is there severe bleeding?", instruction: "Look for catastrophic haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately" }, no: { type: 'next', step: 'talking' } },
         { id: 'talking', question: "Is the casualty talking?", instruction: "Can they obey simple commands?", yes: { type: 'next', step: 'penetrating' }, no: { type: 'next', step: 'breathing' } },
-        { id: 'penetrating', question: "Is there a penetrating injury?", instruction: "Check front and back (Chest/Abdomen).", yes: { type: 'result', category: 'P1', action: "Immediate Priority" }, no: { type: 'result', category: 'P2', action: "Urgent Priority" } },
+        { id: 'penetrating', question: "Is there a penetrating injury?", instruction: "Check Head, Neck, Torso or Groin.", yes: { type: 'result', category: 'P1', action: "Immediate Priority" }, no: { type: 'result', category: 'P2', action: "Urgent Priority" } },
         { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open airway. Check for signs of life.", yes: { type: 'result', category: 'P1', action: "Recovery Position" }, no: { type: 'result', category: 'DEAD', action: "Dead (unless resources allow CPR)" } }
     ];
 
@@ -723,6 +762,14 @@
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         document.querySelector('main').scrollTop = 0;
+        
+        // Toggle Dashboard Expansion
+        const dash = document.getElementById('global-dashboard');
+        if(id === 'log-screen') {
+            dash.classList.add('expanded');
+        } else {
+            dash.classList.remove('expanded');
+        }
     }
 
     function initiateTriage(tool) {
