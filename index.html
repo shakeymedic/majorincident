@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#005EB8">
+<meta name="description" content="Major Incident Triage Tool">
 <title>Major Incident Triage</title>
+<!-- QR Library (Cached by Service Worker for offline use) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
     :root {
         --nhs-blue: #005EB8;
@@ -21,7 +27,6 @@
         --toast-bg: #333;
     }
 
-    /* Night Mode Variables */
     body.night-mode {
         --nhs-blue: #005EB8;
         --nhs-dark-blue: #000000;
@@ -46,7 +51,6 @@
         overscroll-behavior-y: none;
     }
 
-    /* Layout */
     .container {
         max-width: 800px;
         margin: 0 auto;
@@ -78,21 +82,17 @@
         padding: 0.5rem 1rem;
         font-size: 0.85rem;
         display: flex;
-        justify-content: space-between;
         align-items: center;
         flex-shrink: 0;
+        white-space: nowrap;
+        overflow-x: auto;
     }
 
-    .gps-status {
-        font-size: 0.8rem;
-        padding: 2px 6px;
-        border-radius: 4px;
-        background: rgba(255,255,255,0.2);
-    }
+    .status-item { margin-right: 15px; display: inline-flex; align-items: center; gap: 5px; }
+    .gps-status { font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.2); }
     .gps-active { color: #ccffcc; border: 1px solid #ccffcc; }
     .gps-inactive { color: #ffcccc; border: 1px solid #ffcccc; }
 
-    /* Persistent Dashboard Styles */
     .dashboard {
         display: flex;
         width: 100%;
@@ -100,33 +100,24 @@
         border-bottom: 1px solid #ccc;
         transition: all 0.3s ease;
         flex-shrink: 0;
+        flex-wrap: wrap;
     }
 
-    /* Mini Mode (Default) */
-    .dashboard:not(.expanded) {
-        height: 40px;
-    }
+    .dashboard:not(.expanded) { min-height: 40px; }
     .dashboard:not(.expanded) .dash-card {
         flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 6px;
-        padding: 0;
+        gap: 4px;
+        padding: 5px;
         border-radius: 0;
-        font-size: 0.9rem;
+        font-size: 0.8rem;
         box-shadow: none;
     }
-    .dashboard:not(.expanded) .dash-label {
-        display: inline;
-        font-size: 0.9rem;
-    }
-    .dashboard:not(.expanded) .dash-num {
-        display: inline;
-        font-size: 1.1rem;
-    }
+    .dashboard:not(.expanded) .dash-label { display: inline; }
+    .dashboard:not(.expanded) .dash-num { display: inline; font-weight: bold; }
 
-    /* Expanded Mode (Log Screen) */
     .dashboard.expanded {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
@@ -147,11 +138,11 @@
     .dashboard.expanded .dash-num { font-size: 1.4rem; display: block; }
     .dashboard.expanded .dash-label { font-size: 0.75rem; display: block; }
 
-    /* Card Colors */
     .dash-p1 { background: var(--nhs-red); color: white; }
     .dash-p2 { background: var(--nhs-yellow); color: black; }
     .dash-p3 { background: var(--nhs-green); color: white; }
     .dash-dead { background: #333; color: white; }
+    .dash-evac { background: var(--nhs-blue); color: white; grid-column: span 4; }
 
     main {
         padding: 1rem;
@@ -162,7 +153,6 @@
         -webkit-overflow-scrolling: touch;
     }
 
-    /* Buttons */
     .btn {
         display: block;
         width: 100%;
@@ -178,18 +168,15 @@
         color: white;
         touch-action: manipulation;
     }
-
     .btn:active { opacity: 0.8; transform: scale(0.99); }
-
     .btn-primary { background-color: var(--nhs-blue); }
     .btn-yes { background-color: var(--nhs-green); font-size: 1.5rem; height: 80px; }
     .btn-no { background-color: var(--nhs-red); font-size: 1.5rem; height: 80px; }
     .btn-secondary { background-color: var(--nhs-grey); }
     .btn-danger { background-color: var(--nhs-red); }
+    .btn-evac { background-color: var(--nhs-dark-blue); border: 2px solid var(--nhs-blue); }
 
-    /* Header Controls */
     .header-controls { display: flex; gap: 8px; }
-
     .icon-btn {
         background: rgba(255,255,255,0.2);
         border: 1px solid rgba(255,255,255,0.4);
@@ -201,7 +188,6 @@
         font-weight: bold;
     }
 
-    /* Blackout Curtain */
     #blackout-curtain {
         position: fixed;
         top: 0; left: 0; width: 100%; height: 100%;
@@ -216,7 +202,6 @@
     }
     #blackout-curtain.active { display: flex; }
 
-    /* Mode Badge */
     .mode-badge {
         display: inline-block;
         font-size: 0.75rem;
@@ -227,11 +212,9 @@
         vertical-align: middle;
     }
 
-    /* Inputs */
-    .input-group { margin-bottom: 1rem; }
+    .input-group { margin-bottom: 1rem; position: relative; }
     .input-group label { display: block; font-weight: bold; margin-bottom: 0.4rem; color: var(--nhs-blue); }
     body.night-mode .input-group label { color: var(--nhs-yellow); }
-    
     .input-group input, .input-group textarea, .input-group select {
         width: 100%;
         padding: 0.8rem;
@@ -243,24 +226,20 @@
         color: var(--text-color);
         -webkit-appearance: none;
     }
-    
-    /* Screens */
+
+    .voice-btn {
+        position: absolute;
+        right: 10px;
+        bottom: 10px;
+        background: none;
+        border: none;
+        font-size: 1.2rem;
+        cursor: pointer;
+        opacity: 0.7;
+    }
+
     .screen { display: none; height: 100%; flex-direction: column; }
     .screen.active { display: flex; }
-
-    /* Cards */
-    .instruction-card {
-        background: var(--card-bg);
-        border: 1px solid #ccc;
-        border-left: 6px solid var(--nhs-blue);
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        font-size: 1.4rem;
-        font-weight: bold;
-        line-height: 1.3;
-        color: var(--text-color);
-        border-radius: 4px;
-    }
 
     .clinical-note {
         font-size: 1rem;
@@ -271,13 +250,8 @@
         margin-bottom: 1rem;
         border: 1px solid #e0c880;
     }
-    body.night-mode .clinical-note {
-        background: #332b00;
-        color: #fff;
-        border-color: #665500;
-    }
+    body.night-mode .clinical-note { background: #332b00; color: #fff; border-color: #665500; }
 
-    /* Results */
     .triage-tag {
         font-size: 4rem;
         font-weight: bold;
@@ -293,17 +267,11 @@
     body.night-mode .triage-tag { border-color: #fff; }
 
     .hr-badge {
-        position: absolute;
-        top: -12px;
-        right: -10px;
-        background: var(--nhs-red);
-        color: white;
-        font-size: 0.9rem;
-        padding: 6px 12px;
-        border-radius: 20px;
-        border: 2px solid white;
-        font-weight: bold;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        position: absolute; top: -12px; right: -10px;
+        background: var(--nhs-red); color: white;
+        font-size: 0.9rem; padding: 6px 12px;
+        border-radius: 20px; border: 2px solid white;
+        font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
 
     .p1 { background-color: var(--nhs-red) !important; color: white !important; }
@@ -311,89 +279,69 @@
     .p3 { background-color: var(--nhs-green) !important; color: white !important; }
     .dead { background-color: #fff !important; color: black !important; border-color: black !important; }
 
-    /* Intervention Buttons */
-    .int-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-bottom: 1rem;
-    }
+    .int-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1rem; }
     .int-btn {
-        background: var(--card-bg);
-        border: 2px solid var(--nhs-blue);
-        color: var(--nhs-blue);
-        padding: 10px;
-        border-radius: 6px;
-        font-weight: bold;
-        cursor: pointer;
-        text-align: center;
-        font-size: 0.9rem;
+        background: var(--card-bg); border: 2px solid var(--nhs-blue); color: var(--nhs-blue);
+        padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; text-align: center; font-size: 0.9rem;
     }
-    .int-btn.active {
-        background: var(--nhs-green);
-        border-color: var(--nhs-green);
-        color: white;
-    }
-    .int-time {
-        display: block;
-        font-size: 0.75rem;
-        font-weight: normal;
-        margin-top: 4px;
-    }
+    .int-btn.active { background: var(--nhs-green); border-color: var(--nhs-green); color: white; }
+    .int-time { display: block; font-size: 0.75rem; font-weight: normal; margin-top: 4px; }
 
-    /* Log Table */
     .log-container { overflow-x: auto; margin-bottom: 1rem; -webkit-overflow-scrolling: touch; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { border: 1px solid #666; padding: 8px; text-align: left; vertical-align: top; }
     th { background-color: #ddd; color: black; font-weight: bold; }
     body.night-mode th { background-color: #333; color: white; }
     
-    /* Edit Indicator */
     tr.clickable-row { cursor: pointer; }
     tr.clickable-row:hover { background-color: rgba(0,0,0,0.05); }
-    body.night-mode tr.clickable-row:hover { background-color: rgba(255,255,255,0.1); }
-
-    /* Collapsible Details */
-    #details-container {
-        border-top: 1px solid #ccc;
-        margin-top: 1rem;
-        padding-top: 1rem;
-        display: none;
+    
+    /* Tourniquet Critical Alert (>2 hours) */
+    tr.critical-alert td { 
+        background-color: #ffcccc !important; 
+        color: #cc0000 !important; 
+        font-weight: bold; 
+        animation: pulse 2s infinite; 
     }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
+
+    #details-container { border-top: 1px solid #ccc; margin-top: 1rem; padding-top: 1rem; display: none; }
     #details-container.show { display: block; }
     
-    /* Toast Notification */
+    /* Body Map Modal */
+    #body-map-modal {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.9); z-index: 2000; display: none;
+        flex-direction: column; align-items: center; justify-content: center;
+    }
+    #body-map-modal svg { max-height: 70vh; max-width: 90vw; background: white; border-radius: 10px; }
+    
+    /* QR Modal */
+    #qr-modal {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.9); z-index: 2000; display: none;
+        flex-direction: column; align-items: center; justify-content: center; color: white;
+    }
+    #qrcode { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+
     #toast {
-        visibility: hidden;
-        min-width: 250px;
-        background-color: var(--toast-bg);
-        color: #fff;
-        text-align: center;
-        border-radius: 50px;
-        padding: 16px;
-        position: fixed;
-        z-index: 1000;
-        left: 50%;
-        top: 30px;
-        transform: translateX(-50%);
-        font-size: 1rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        opacity: 0;
-        transition: opacity 0.3s, top 0.3s;
+        visibility: hidden; min-width: 250px; background-color: var(--toast-bg); color: #fff;
+        text-align: center; border-radius: 50px; padding: 16px; position: fixed; z-index: 3000;
+        left: 50%; top: 30px; transform: translateX(-50%); font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        opacity: 0; transition: opacity 0.3s, top 0.3s;
     }
     #toast.show { visibility: visible; opacity: 1; top: 50px; }
 
-    /* Print Styles */
+    .editable-id { border-bottom: 1px dashed var(--nhs-blue); cursor: text; }
+
     @media print {
-        header, .btn, .status-bar, .instruction-card, .input-group, .header-controls, #toast, #global-dashboard, .int-grid { display: none !important; }
+        header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, #body-map-modal, #qr-modal, .voice-btn { display: none !important; }
         .screen { display: none !important; }
         #log-screen { display: block !important; }
         .log-container { overflow: visible; }
         body, .container { background: white; color: black; box-shadow: none; width: 100%; max-width: 100%; min-height: auto; }
         table { font-size: 10pt; width: 100%; border: 1px solid black; }
         th, td { border: 1px solid black; }
-        h2 { display: block; }
-        a { text-decoration: none; color: black; }
     }
 </style>
 </head>
@@ -401,6 +349,24 @@
 
 <div id="toast">Notification</div>
 <div id="blackout-curtain" onclick="toggleBlackout()"></div>
+
+<!-- Body Map Modal -->
+<div id="body-map-modal">
+    <h3 style="color:white;">Tap Injury Location</h3>
+    <svg id="bodymap" viewBox="0 0 200 400" width="300" height="500" onclick="handleBodyMapClick(event)">
+        <path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#ddd" stroke="#333" stroke-width="2"/> <!-- Head -->
+        <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#ddd" stroke="#333" stroke-width="2"/> <!-- Body/Limbs -->
+    </svg>
+    <button class="btn btn-secondary" style="width: auto; margin-top: 20px;" onclick="closeBodyMap()">Done</button>
+</div>
+
+<!-- QR Modal -->
+<div id="qr-modal">
+    <h3>Patient Passport</h3>
+    <div id="qrcode"></div>
+    <p>Scan to transfer data</p>
+    <button class="btn btn-secondary" style="width: auto;" onclick="closeQR()">Close</button>
+</div>
 
 <div class="container">
     <header>
@@ -414,17 +380,19 @@
     </header>
 
     <div class="status-bar">
-        <span id="header-callsign">Device: -</span>
-        <span id="header-sector" style="margin-left:auto; margin-right:10px; font-weight:bold; color:var(--nhs-yellow);"></span>
-        <span id="gps-indicator" class="gps-status gps-inactive">GPS: Searching...</span>
+        <span class="status-item" id="header-callsign">Device: -</span>
+        <span class="status-item" id="header-role" style="font-weight:bold;"></span>
+        <span class="status-item" id="header-sector" style="color:var(--nhs-yellow);"></span>
+        <span id="gps-indicator" class="gps-status gps-inactive" style="margin-left: auto;">GPS: Searching...</span>
     </div>
 
     <!-- PERSISTENT GLOBAL DASHBOARD -->
     <div id="global-dashboard" class="dashboard">
-        <div class="dash-card dash-p1"><span class="dash-num" id="count-p1">0</span><span class="dash-label">P1</span></div>
-        <div class="dash-card dash-p2"><span class="dash-num" id="count-p2">0</span><span class="dash-label">P2</span></div>
-        <div class="dash-card dash-p3"><span class="dash-num" id="count-p3">0</span><span class="dash-label">P3</span></div>
-        <div class="dash-card dash-dead"><span class="dash-num" id="count-dead">0</span><span class="dash-label">DEAD</span></div>
+        <div class="dash-card dash-p1"><span class="dash-label">P1</span><span class="dash-num" id="count-p1">0</span></div>
+        <div class="dash-card dash-p2"><span class="dash-label">P2</span><span class="dash-num" id="count-p2">0</span></div>
+        <div class="dash-card dash-p3"><span class="dash-label">P3</span><span class="dash-num" id="count-p3">0</span></div>
+        <div class="dash-card dash-dead"><span class="dash-label">DEAD</span><span class="dash-num" id="count-dead">0</span></div>
+        <div class="dash-card dash-evac" style="display:none; font-size:0.8rem;" id="evac-summary">Evacuated: 0 | On Scene: 0</div>
     </div>
 
     <main>
@@ -432,15 +400,30 @@
         <!-- INTRO SCREEN -->
         <div id="intro-screen" class="screen active">
             <h2>Configuration</h2>
+            
+            <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin-bottom:1.5rem; border:2px solid var(--nhs-blue);" onclick="showLog()">
+                &#128196; View Existing Log (<span id="resume-count">0</span>)
+            </button>
+
             <div class="input-group">
                 <label>Device Call Sign (Recommended)</label>
                 <input type="text" id="intro-callsign" placeholder="e.g. ALPHA-1" autocomplete="off">
             </div>
             
             <div class="input-group">
-                <label>Zone / Sector (Optional)</label>
-                <input type="text" id="intro-sector" placeholder="e.g. Platform 4, North Gate" autocomplete="off">
-                <small style="color:var(--text-color); opacity:0.8;">Useful if GPS is unavailable.</small>
+                <label>Sector / Zone</label>
+                <div style="display:flex; gap:5px;">
+                    <select id="intro-sector-select" onchange="updateSectorInput()">
+                        <option value="">Select or Type...</option>
+                        <option value="Inner Cordon">Inner Cordon</option>
+                        <option value="Casualty Clearing">Casualty Clearing</option>
+                        <option value="Loading Point">Loading Point</option>
+                        <option value="Triage Sieve">Triage Sieve</option>
+                        <option value="Decon">Decon</option>
+                    </select>
+                    <button class="btn btn-secondary" style="width:40px; padding:0;" onclick="addCustomSector()">+</button>
+                </div>
+                <input type="text" id="intro-sector" placeholder="Or type manually..." style="margin-top:5px;" autocomplete="off">
             </div>
 
             <p><strong>Select Role:</strong></p>
@@ -486,7 +469,7 @@
         <!-- TRIAGE QUESTION SCREEN -->
         <div id="question-screen" class="screen">
             <h2 id="question-header">Assessment</h2>
-            <p>Patient: <strong id="q-patient-id" style="font-size:1.2rem; color:var(--nhs-blue);">...</strong></p>
+            <p>Patient: <strong id="q-patient-id" class="editable-id" onclick="editPatientId()">...</strong></p>
             
             <div id="clinical-instruction-box" class="clinical-note" style="display:none;"></div>
 
@@ -506,7 +489,10 @@
         <!-- RESULT SCREEN -->
         <div id="result-screen" class="screen">
             <h2>Triage Result</h2>
-            <p style="text-align:center;">ID: <strong id="r-patient-id" style="font-size:1.2rem;"></strong></p>
+            <div style="display:flex; justify-content:center; gap:10px; align-items:center;">
+                <p>ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong></p>
+                <button class="btn btn-secondary" style="width:auto; padding:5px 10px; font-size:0.8rem;" onclick="generateQR()">Show QR</button>
+            </div>
             
             <div id="result-tag" class="triage-tag">
                 <span id="tag-text">P1</span>
@@ -521,12 +507,11 @@
                 GPS: <span id="location-status-text">...</span>
             </div>
 
-            <!-- TOGGLE FOR DETAILS/INTERVENTIONS -->
             <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions & Notes</button>
 
             <!-- INLINE DETAILS CONTAINER -->
             <div id="details-container">
-                <h3>Interventions (Timestamped)</h3>
+                <h3>Interventions</h3>
                 <div class="int-grid">
                     <button class="int-btn" onclick="recordIntervention(this, 'Tourniquet')">Tourniquet<span class="int-time"></span></button>
                     <button class="int-btn" onclick="recordIntervention(this, 'Wound Packing')">Wound Packing<span class="int-time"></span></button>
@@ -537,6 +522,7 @@
                 </div>
 
                 <h3>Clinical Notes</h3>
+                <button class="btn btn-secondary" style="margin-bottom:10px;" onclick="openBodyMap()">&#128100; Mark Injury on Body Map</button>
                 
                 <div class="input-group">
                     <label>Category Override</label>
@@ -561,6 +547,7 @@
                 <div class="input-group">
                     <label>Notes</label>
                     <textarea id="p-notes" rows="3" placeholder="Injuries, mechanism etc." onblur="autoSave()"></textarea>
+                    <button class="voice-btn" onclick="startVoice('p-notes')">&#127908;</button>
                 </div>
 
                 <div id="risk-container" style="display:none; margin-bottom: 1rem;">
@@ -568,6 +555,15 @@
                         <input type="checkbox" id="risk-check" style="width:24px; height:24px;" onchange="autoSave()">
                         HIGH RISK OF DETERIORATION
                      </label>
+                </div>
+
+                <div style="border-top:1px solid #ccc; padding-top:10px; margin-top:10px;">
+                    <h3>Transport / Evacuation</h3>
+                    <div class="input-group">
+                        <label>Vehicle Call Sign</label>
+                        <input type="text" id="p-evac-vehicle" placeholder="e.g. AMB-404" onblur="autoSave()">
+                    </div>
+                    <button id="btn-evac" class="btn btn-evac" onclick="toggleEvac()">Mark as EVACUATED</button>
                 </div>
             </div>
 
@@ -648,6 +644,43 @@
 </div>
 
 <script>
+    /* PWA Service Worker Registration */
+    if ('serviceWorker' in navigator) {
+        try {
+            const swContent = `
+                const CACHE_NAME = 'mit-triage-v1';
+                const urlsToCache = [
+                    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
+                ];
+                
+                self.addEventListener('install', event => {
+                    event.waitUntil(
+                        caches.open(CACHE_NAME).then(cache => {
+                            return cache.addAll(urlsToCache);
+                        })
+                    );
+                });
+
+                self.addEventListener('fetch', event => {
+                    event.respondWith(
+                        caches.match(event.request).then(response => {
+                            return response || fetch(event.request);
+                        })
+                    );
+                });
+            `;
+            const blob = new Blob([swContent], {type: 'application/javascript'});
+            const swUrl = URL.createObjectURL(blob);
+            
+            // Only attempt registration, catch errors to prevent console spam in unsupported envs
+            navigator.serviceWorker.register(swUrl)
+                .then(() => console.log('Service Worker Registered'))
+                .catch(err => console.warn('Service Worker failed (likely due to preview/file environment):', err));
+        } catch (e) {
+            console.warn('Service Worker setup skipped:', e);
+        }
+    }
+
     // --- STATE ---
     let userRole = null; 
     let callSign = "";
@@ -657,7 +690,7 @@
     let incidentLog = [];
     let currentPatientId = ""; 
     let currentLogIndex = -1; 
-    let stepHistory = []; // Stack for Back functionality
+    let stepHistory = [];
     
     // GPS State
     let currentPosition = null; 
@@ -752,7 +785,13 @@
         const savedSector = localStorage.getItem('mit_sector');
         const savedMethane = localStorage.getItem('mit_methane');
 
-        if (savedLog) incidentLog = JSON.parse(savedLog);
+        if (savedLog) {
+            incidentLog = JSON.parse(savedLog);
+            if(incidentLog.length > 0) {
+                document.getElementById('btn-resume-log').style.display = 'block';
+                document.getElementById('resume-count').innerText = incidentLog.length;
+            }
+        }
         if (savedCount) patientCounter = parseInt(savedCount);
         if (savedCallSign) {
             callSign = savedCallSign;
@@ -780,10 +819,13 @@
     }
 
     function clearAllData() {
-        const confirmCode = prompt("SECURITY CHECK:\nTo wipe all data, type 'DELETE' below:");
+        if(!confirm("WARNING: This will permanently delete ALL patient logs and settings.\n\nAre you sure you want to reset the entire incident?")) return;
+        const confirmCode = prompt("FINAL SECURITY CHECK:\nTo wipe all data, type 'DELETE' below:");
         if(confirmCode === "DELETE") {
             localStorage.clear();
             location.reload(); 
+        } else if (confirmCode !== null) {
+            showToast("Incorrect code. Data SAFE.");
         }
     }
     
@@ -795,6 +837,15 @@
         if(inputCS) callSign = inputCS;
         document.getElementById('header-callsign').innerText = callSign ? `Device: ${callSign}` : "Device: -";
         
+        const roleEl = document.getElementById('header-role');
+        if(role === 'HCP') {
+            roleEl.innerText = "Medic";
+            roleEl.style.color = "var(--nhs-green)";
+        } else {
+            roleEl.innerText = "Non-Medic";
+            roleEl.style.color = "var(--text-color)";
+        }
+
         const inputSec = document.getElementById('intro-sector').value.trim();
         if(inputSec) currentSector = inputSec;
         document.getElementById('header-sector').innerText = currentSector;
@@ -806,8 +857,40 @@
         showScreen('home-screen');
     }
 
+    function updateSectorInput() {
+        const val = document.getElementById('intro-sector-select').value;
+        if(val) document.getElementById('intro-sector').value = val;
+    }
+
+    function addCustomSector() {
+        const newSec = prompt("Enter new sector name:");
+        if(newSec) {
+            const opt = document.createElement('option');
+            opt.value = newSec;
+            opt.innerText = newSec;
+            document.getElementById('intro-sector-select').appendChild(opt);
+            document.getElementById('intro-sector-select').value = newSec;
+            document.getElementById('intro-sector').value = newSec;
+        }
+    }
+
     function resetApp() {
         if(confirm("Return to setup? Log data is SAFE.")) showScreen('intro-screen');
+    }
+
+    // --- PATIENT ID EDITING ---
+    function editPatientId(inResult = false) {
+        const newId = prompt("Edit Patient ID:", currentPatientId);
+        if(newId && newId.trim() !== "") {
+            currentPatientId = newId.trim();
+            document.getElementById('q-patient-id').innerText = currentPatientId;
+            document.getElementById('r-patient-id').innerText = currentPatientId;
+            document.getElementById('d-patient-id').innerText = currentPatientId;
+            if(currentLogIndex > -1) {
+                incidentLog[currentLogIndex].id = currentPatientId;
+                saveLocalData();
+            }
+        }
     }
 
     // --- TRIAGE LOGIC ---
@@ -834,23 +917,24 @@
         document.getElementById(id).classList.add('active');
         document.querySelector('main').scrollTop = 0;
         
-        // Toggle Dashboard Expansion
         const dash = document.getElementById('global-dashboard');
         if(id === 'log-screen') {
             dash.classList.add('expanded');
+            // Show Evac summary in expanded mode
+            document.getElementById('evac-summary').style.display = 'block';
         } else {
             dash.classList.remove('expanded');
+            document.getElementById('evac-summary').style.display = 'none';
         }
     }
 
     function initiateTriage(tool) {
         currentTool = tool;
-        stepHistory = []; // Reset stack
+        stepHistory = [];
         const prefix = callSign ? `${callSign}-${tool}` : tool;
         currentPatientId = `${prefix}-${pad(patientCounter, 3)}`;
         document.getElementById('q-patient-id').innerText = currentPatientId;
         
-        // Mode Badge
         const badge = document.getElementById('mode-indicator');
         badge.innerText = tool;
         badge.style.display = 'inline-block';
@@ -870,13 +954,12 @@
             instructBox.innerText = stepObj.instruction;
         } else { instructBox.style.display = 'none'; }
         
-        // Handle Back Button Visibility
         document.getElementById('btn-back').style.display = (stepHistory.length > 0) ? 'block' : 'none';
     }
 
     function handleAnswer(answer) {
         const stepId = document.getElementById('question-screen').dataset.stepId;
-        stepHistory.push(stepId); // Push current step to stack
+        stepHistory.push(stepId);
         
         const flow = currentTool === 'TST' ? tstFlow : mittFlow;
         const currentStepObj = flow.find(s => s.id === stepId);
@@ -898,9 +981,11 @@
 
     function logResult(category, action) {
         const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        // Use Date.now() for accurate timer logic later
+        const timestamp = Date.now(); 
         const entry = {
-            id: currentPatientId, time: time, tool: currentTool, category: category, action: action,
-            location: currentPosition, sector: currentSector, demos: "", allergies: "", notes: "", highRisk: false, interventions: {}
+            id: currentPatientId, time: time, timestamp: timestamp, tool: currentTool, category: category, action: action,
+            location: currentPosition, sector: currentSector, demos: "", allergies: "", notes: "", highRisk: false, interventions: {}, evacuated: false, evacVehicle: ""
         };
 
         incidentLog.push(entry);
@@ -913,6 +998,7 @@
     
     function renderResultScreen(entry) {
         document.getElementById('r-patient-id').innerText = entry.id;
+        document.getElementById('d-patient-id').innerText = entry.id;
         const tag = document.getElementById('result-tag');
         document.getElementById('tag-text').innerText = entry.category;
         
@@ -936,12 +1022,22 @@
         }
         locText.innerHTML = displayLoc;
         
-        // Reset Inputs
         document.getElementById('p-cat-override').value = entry.category;
         document.getElementById('p-demos').value = entry.demos;
         document.getElementById('p-allergies').value = entry.allergies;
         document.getElementById('p-notes').value = entry.notes;
         document.getElementById('risk-check').checked = entry.highRisk;
+        document.getElementById('p-evac-vehicle').value = entry.evacVehicle || "";
+        
+        // Evac Button State
+        const evacBtn = document.getElementById('btn-evac');
+        if(entry.evacuated) {
+            evacBtn.innerText = "Mark as ON SCENE (Undo Evac)";
+            evacBtn.style.backgroundColor = "#555";
+        } else {
+            evacBtn.innerText = "Mark as EVACUATED";
+            evacBtn.style.backgroundColor = "var(--nhs-dark-blue)";
+        }
         
         // Render buttons state
         document.querySelectorAll('.int-btn').forEach(btn => {
@@ -954,7 +1050,8 @@
              const type = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
              if(entry.interventions && entry.interventions[type]) {
                  btn.classList.add('active');
-                 btn.querySelector('.int-time').innerText = entry.interventions[type];
+                 // Display time only
+                 btn.querySelector('.int-time').innerText = entry.interventions[type].time;
              }
         });
 
@@ -964,7 +1061,7 @@
         showScreen('result-screen');
     }
 
-    // --- DETAILS & INTERVENTIONS ---
+    // --- DETAILS, INTERVENTIONS, BODY MAP ---
     function toggleDetails() {
         const container = document.getElementById('details-container');
         const btn = document.getElementById('btn-toggle-details');
@@ -982,7 +1079,8 @@
         if(currentLogIndex === -1) return;
         
         const entry = incidentLog[currentLogIndex];
-        const timeNow = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const timeStr = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const ts = Date.now();
         
         if(!entry.interventions) entry.interventions = {};
         
@@ -991,13 +1089,90 @@
             btn.classList.remove('active');
             btn.querySelector('.int-time').innerText = "";
         } else {
-            entry.interventions[type] = timeNow;
+            entry.interventions[type] = { time: timeStr, ts: ts };
             btn.classList.add('active');
-            btn.querySelector('.int-time').innerText = timeNow;
+            btn.querySelector('.int-time').innerText = timeStr;
         }
         saveLocalData();
     }
     
+    function toggleEvac() {
+        if(currentLogIndex === -1) return;
+        const entry = incidentLog[currentLogIndex];
+        entry.evacuated = !entry.evacuated;
+        entry.evacVehicle = document.getElementById('p-evac-vehicle').value;
+        saveLocalData();
+        renderResultScreen(entry); // update btn text
+    }
+
+    function openBodyMap() {
+        document.getElementById('body-map-modal').style.display = 'flex';
+    }
+    function closeBodyMap() {
+        document.getElementById('body-map-modal').style.display = 'none';
+    }
+    function handleBodyMapClick(evt) {
+        if(currentLogIndex === -1) return;
+        const svg = document.getElementById('bodymap');
+        const pt = svg.createSVGPoint();
+        pt.x = evt.clientX; pt.y = evt.clientY;
+        const cursorPt = pt.matrixTransform(svg.getScreenCTM().inverse());
+        
+        // Add X to SVG (visual only for session)
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", cursorPt.x - 5);
+        text.setAttribute("y", cursorPt.y + 5);
+        text.setAttribute("fill", "red");
+        text.setAttribute("font-size", "24");
+        text.setAttribute("font-weight", "bold");
+        text.textContent = "X";
+        svg.appendChild(text);
+        
+        // Infer location (very basic)
+        let loc = "Body";
+        if(cursorPt.y < 80) loc = "Head/Neck";
+        else if(cursorPt.y > 200) loc = "Legs";
+        else loc = "Torso/Arms";
+        
+        // Append to notes
+        const noteField = document.getElementById('p-notes');
+        const timestamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        noteField.value += ` [Injury marked on ${loc} @ ${timestamp}]`;
+        autoSave();
+    }
+
+    function startVoice(fieldId) {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert("Voice not supported on this browser."); return;
+        }
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.lang = "en-GB";
+        recognition.onresult = function(event) {
+            document.getElementById(fieldId).value += " " + event.results[0][0].transcript;
+            autoSave();
+        };
+        recognition.onerror = function(event) {
+            console.error(event.error);
+            showToast("Voice Error: " + event.error);
+        };
+        recognition.start();
+    }
+    
+    // QR Code
+    function generateQR() {
+        if(currentLogIndex === -1) return;
+        const entry = incidentLog[currentLogIndex];
+        const data = `${entry.id}|${entry.category}|${entry.time}|${entry.demos}|${entry.allergies}|${entry.notes}`;
+        
+        document.getElementById('qrcode').innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), {
+            text: data, width: 128, height: 128
+        });
+        document.getElementById('qr-modal').style.display = 'flex';
+    }
+    function closeQR() { document.getElementById('qr-modal').style.display = 'none'; }
+
     function autoSave() {
         if(currentLogIndex > -1) {
             const entry = incidentLog[currentLogIndex];
@@ -1006,6 +1181,7 @@
             entry.allergies = document.getElementById('p-allergies').value;
             entry.notes = document.getElementById('p-notes').value;
             entry.highRisk = document.getElementById('risk-check').checked;
+            entry.evacVehicle = document.getElementById('p-evac-vehicle').value;
             
             const tag = document.getElementById('result-tag');
             document.getElementById('tag-text').innerText = entry.category;
@@ -1040,7 +1216,6 @@
         });
         const summary = `Total: ${incidentLog.length} (P1:${p1}, P2:${p2}, P3:${p3}, Dead:${dead})`;
         document.getElementById('m-num').value = summary;
-        saveMethane();
     }
     
     function saveMethane() { saveLocalData(); showToast("Report Saved"); showScreen('home-screen'); }
@@ -1054,17 +1229,20 @@
     function resetToHome() { showScreen('home-screen'); }
 
     function updateDashboard() {
-        let p1=0, p2=0, p3=0, dead=0;
+        let p1=0, p2=0, p3=0, dead=0, evac=0;
         incidentLog.forEach(e => {
             if(e.category === 'P1') p1++;
             else if(e.category === 'P2') p2++;
             else if(e.category === 'P3') p3++;
             else dead++;
+            if(e.evacuated) evac++;
         });
         document.getElementById('count-p1').innerText = p1;
         document.getElementById('count-p2').innerText = p2;
         document.getElementById('count-p3').innerText = p3;
         document.getElementById('count-dead').innerText = dead;
+        
+        document.getElementById('evac-summary').innerText = `Evacuated: ${evac} | On Scene: ${incidentLog.length - evac}`;
     }
 
     function showLog() {
@@ -1072,10 +1250,20 @@
         tbody.innerHTML = '';
         
         const reversedLog = [...incidentLog].map((e, i) => ({...e, originalIndex: i})).reverse();
+        const now = Date.now();
         
         reversedLog.forEach(row => {
             const tr = document.createElement('tr');
             tr.className = "clickable-row";
+            
+            // Tourniquet Timer Check (> 2 hours = 7200000ms)
+            if(row.interventions && row.interventions['Tourniquet']) {
+               const tqTime = row.interventions['Tourniquet'].ts;
+               if (tqTime && (now - tqTime > 7200000)) {
+                   tr.classList.add('critical-alert');
+               }
+            }
+            
             tr.onclick = function() { editEntry(row.originalIndex); }; 
             
             let catStyle = '';
@@ -1093,9 +1281,10 @@
             if(row.demos) details += `[${row.demos}] `;
             if(row.allergies) details += `Allergies: ${row.allergies}. `;
             if(row.notes) details += `${row.notes} `;
+            if(row.evacuated) details += `<strong>[EVACUATED ${row.evacVehicle}]</strong> `;
             
             if(row.interventions) {
-                const ints = Object.entries(row.interventions).map(([k, v]) => `${k}@${v}`);
+                const ints = Object.entries(row.interventions).map(([k, v]) => `${k}@${v.time}`);
                 if(ints.length > 0) details += `<strong>[${ints.join(', ')}]</strong> `;
             }
             
@@ -1124,9 +1313,16 @@
         incidentLog.forEach(r => {
             let intStr = "";
             if(r.interventions) {
-                intStr = " INT: " + Object.entries(r.interventions).map(([k,v]) => `${k}(${v})`).join(", ");
+                intStr = " INT: " + Object.entries(r.interventions).map(([k,v]) => `${k}(${v.time})`).join(", ");
             }
-            text += `${r.time} | ${r.id} | ${r.category} | ${r.action} | ${r.demos} ${r.notes}${intStr}\n`;
+            
+            let locStr = "";
+            if (r.sector) locStr += `[Sec:${r.sector}] `;
+            if (r.location) locStr += `[GPS:${r.location.lat},${r.location.lng}] `;
+            
+            let evacStr = r.evacuated ? ` [EVACUATED ${r.evacVehicle}]` : "";
+            
+            text += `${r.time} | ${r.id} | ${r.category} | ${r.action} | ${locStr}${r.demos} ${r.notes}${intStr}${evacStr}\n`;
         });
         
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1154,7 +1350,7 @@
             csv += `M,${m.m}\nE,${m.e}\nT,${m.t}\nH,${m.h}\nA,${m.a}\nN,${m.n}\nE,${m.e_svc}\n\n`;
         }
 
-        csv += "Time,ID,Category,Action,Sector,Lat,Lng,Age/Gender,Allergies,Notes,Interventions,HighRisk\n";
+        csv += "Time,ID,Category,Action,Sector,Lat,Lng,Age/Gender,Allergies,Notes,Interventions,HighRisk,Evacuated,Vehicle\n";
         incidentLog.forEach(r => {
             const lat = r.location ? r.location.lat : "";
             const lng = r.location ? r.location.lng : "";
@@ -1163,10 +1359,10 @@
             
             let intStr = "";
             if(r.interventions) {
-                intStr = Object.entries(r.interventions).map(([k,v]) => `${k}(${v})`).join("; ");
+                intStr = Object.entries(r.interventions).map(([k,v]) => `${k}(${v.time})`).join("; ");
             }
             
-            csv += `${r.time},${r.id},${r.category},${r.action},${sec},${lat},${lng},${r.demos},${r.allergies},${noteSafe},${intStr},${r.highRisk}\n`;
+            csv += `${r.time},${r.id},${r.category},${r.action},${sec},${lat},${lng},${r.demos},${r.allergies},${noteSafe},${intStr},${r.highRisk},${r.evacuated},${r.evacVehicle}\n`;
         });
         
         const blob = new Blob([csv], { type: 'text/csv' });
