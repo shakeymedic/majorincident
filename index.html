@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Major Incident Triage</title>
+<style>
+    :root {
+        --nhs-blue: #005EB8;
+        --nhs-dark-blue: #003087;
+        --nhs-green: #007F3B;
+        --nhs-red: #DA291C;
+        --nhs-yellow: #FAE100;
+        --nhs-grey: #4C6272;
+        --nhs-pale-grey: #E8EDEE;
+        --white: #FFFFFF;
+        --black: #212b32;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+        font-family: "Frutiger", "Arial", sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: var(--nhs-pale-grey);
+        color: var(--black);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /* Layout */
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background-color: var(--white);
+        box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    }
+
+    header {
+        background-color: var(--nhs-blue);
+        color: var(--white);
+        padding: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    h1 { margin: 0; font-size: 1.25rem; font-weight: bold; }
+    
+    .status-bar {
+        background-color: var(--nhs-dark-blue);
+        color: var(--white);
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .gps-status {
+        font-size: 0.8rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: rgba(255,255,255,0.2);
+    }
+    .gps-active { color: #ccffcc; border: 1px solid #ccffcc; }
+    .gps-inactive { color: #ffcccc; border: 1px solid #ffcccc; }
+
+    main {
+        padding: 1rem;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Buttons */
+    .btn {
+        display: block;
+        width: 100%;
+        padding: 1rem;
+        margin-bottom: 0.8rem;
+        font-size: 1.1rem;
+        font-weight: bold;
+        text-align: center;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background 0.2s;
+        text-decoration: none;
+        color: var(--white);
+    }
+
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary { background-color: var(--nhs-blue); }
+    .btn-primary:hover { background-color: var(--nhs-dark-blue); }
+
+    .btn-yes { background-color: var(--nhs-green); font-size: 1.5rem; height: 80px; }
+    .btn-no { background-color: var(--nhs-red); font-size: 1.5rem; height: 80px; }
+    
+    .btn-secondary { background-color: var(--nhs-grey); }
+
+    /* Inputs */
+    .input-group { margin-bottom: 1rem; }
+    .input-group label { display: block; font-weight: bold; margin-bottom: 0.3rem; color: var(--nhs-blue); }
+    .input-group input, .input-group textarea {
+        width: 100%;
+        padding: 0.8rem;
+        border: 2px solid #ccc;
+        border-radius: 4px;
+        font-size: 1rem;
+        font-family: inherit;
+    }
+    .input-group input:focus, .input-group textarea:focus {
+        border-color: var(--nhs-blue);
+        outline: none;
+    }
+    .mandatory-label::after { content: " *"; color: var(--nhs-red); }
+
+    /* Risk Toggle */
+    .risk-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #fff0f0;
+        border: 2px solid #ffcccb;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        cursor: pointer;
+    }
+    .risk-toggle.active {
+        background: var(--nhs-red);
+        color: white;
+        border-color: #a00;
+    }
+    .risk-toggle input { display: none; }
+    .risk-label { font-weight: bold; font-size: 1.1rem; }
+
+    /* Screens */
+    .screen { display: none; height: 100%; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* Cards */
+    .instruction-card {
+        background: #fff;
+        border-left: 6px solid var(--nhs-blue);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        font-size: 1.4rem;
+        font-weight: bold;
+        line-height: 1.3;
+    }
+
+    .clinical-note {
+        font-size: 1rem;
+        color: #555;
+        background: #fff9e6;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+        border: 1px solid #e0c880;
+    }
+    
+    .intro-text {
+        font-size: 1.1rem;
+        line-height: 1.5;
+        margin-bottom: 2rem;
+        color: #333;
+    }
+
+    /* Results */
+    .triage-tag {
+        font-size: 4rem;
+        font-weight: bold;
+        text-align: center;
+        padding: 2rem;
+        margin: 1rem 0;
+        border-radius: 8px;
+        border: 4px solid #000;
+        position: relative;
+    }
+
+    .hr-badge {
+        position: absolute;
+        top: -10px;
+        right: -10px;
+        background: var(--nhs-red);
+        color: white;
+        font-size: 1rem;
+        padding: 5px 10px;
+        border-radius: 20px;
+        border: 2px solid white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .p1 { background-color: var(--nhs-red); color: var(--white); }
+    .p2 { background-color: var(--nhs-yellow); color: black; }
+    .p3 { background-color: var(--nhs-green); color: var(--white); }
+    .dead { background-color: #fff; color: black; border-color: black; }
+
+    /* Log Table */
+    .log-container {
+        overflow-x: auto;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+        font-size: 0.8rem;
+    }
+    th, td {
+        border: 1px solid #ddd;
+        padding: 6px;
+        text-align: left;
+        vertical-align: top;
+    }
+    th { background-color: var(--nhs-pale-grey); }
+
+    /* Print Styles */
+    @media print {
+        header, .btn, .status-bar, .instruction-card, .input-group, .risk-toggle { display: none !important; }
+        .screen { display: none !important; }
+        #log-screen { display: block !important; }
+        .log-container { overflow: visible; }
+        body, .container { background: white; box-shadow: none; width: 100%; max-width: 100%; }
+        table { font-size: 10pt; }
+        h2 { display: block; }
+        a { text-decoration: none; color: black; }
+        a::after { content: " (" attr(href) ")"; font-size: 0.8em; }
+    }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Major Incident Triage</h1>
+        <div style="font-size:0.8rem;">GPS ENABLED</div>
+    </header>
+
+    <div class="status-bar">
+        <span id="patient-count-display">Patient: -</span>
+        <span id="gps-indicator" class="gps-status gps-inactive">GPS: Searching...</span>
+    </div>
+
+    <main>
+        
+        <!-- INTRO SCREEN -->
+        <div id="intro-screen" class="screen active">
+            <h2>Welcome</h2>
+            <div class="intro-text">
+                <p>This application is designed for use during <strong>Major Incidents</strong> to rapidly triage casualties.</p>
+                <p>It creates a secure, printable log with GPS location stamps.</p>
+                <p>Please select your role to configure the app:</p>
+            </div>
+
+            <button class="btn btn-primary" style="padding: 1.5rem;" onclick="setUserRole('HCP')">
+                Healthcare Professional<br>
+                <span style="font-size:0.9rem; font-weight:normal;">Doctor, Nurse, Paramedic</span>
+            </button>
+
+            <button class="btn btn-secondary" style="padding: 1.5rem;" onclick="setUserRole('NON_HCP')">
+                Non-Clinical / First Aid<br>
+                <span style="font-size:0.9rem; font-weight:normal;">Police, Fire, First Responder</span>
+            </button>
+        </div>
+
+        <!-- HOME SCREEN -->
+        <div id="home-screen" class="screen">
+            <div style="text-align:center; margin-bottom: 2rem;">
+                <p>Select triage protocol:</p>
+            </div>
+            
+            <button class="btn btn-primary" onclick="initiateTriage('TST')">
+                Ten Second Triage (TST)<br>
+                <span style="font-size:0.9rem; font-weight:normal;">Rapid Primary Triage</span>
+            </button>
+            
+            <button id="btn-mitt" class="btn btn-primary" onclick="initiateTriage('MITT')">
+                Major Incident Triage Tool (MITT)<br>
+                <span style="font-size:0.9rem; font-weight:normal;">Secondary Clinical Triage</span>
+            </button>
+
+            <div style="margin-top: auto;">
+                <button class="btn btn-secondary" onclick="showLog()">View / Export Log</button>
+                <button class="btn btn-secondary" style="background-color: #333;" onclick="resetApp()">Change Role</button>
+            </div>
+        </div>
+
+        <!-- PATIENT DATA SCREEN -->
+        <div id="patient-data-screen" class="screen">
+            <h2>Patient Details</h2>
+            
+            <div class="input-group">
+                <label for="p-id" class="mandatory-label">Patient ID / Tag Number</label>
+                <input type="text" id="p-id" placeholder="e.g. P101">
+            </div>
+
+            <div class="input-group">
+                <label for="p-demos">Demographics (Age/Gender)</label>
+                <input type="text" id="p-demos" placeholder="e.g. 35M">
+            </div>
+
+            <div class="input-group">
+                <label for="p-allergies">Allergies</label>
+                <input type="text" id="p-allergies" placeholder="e.g. Penicillin">
+            </div>
+            
+            <div class="input-group">
+                <label for="p-notes-init">Clinical Notes</label>
+                <textarea id="p-notes-init" rows="3" placeholder="Injuries, mechanism, etc."></textarea>
+            </div>
+
+            <div style="margin-top:auto;">
+                <button class="btn btn-primary" onclick="confirmPatientData()">Start Assessment</button>
+                <button class="btn btn-secondary" onclick="resetToHome()">Cancel</button>
+            </div>
+        </div>
+
+        <!-- TRIAGE QUESTION SCREEN -->
+        <div id="question-screen" class="screen">
+            <h2 id="question-header">Assessment</h2>
+            
+            <div id="clinical-instruction-box" class="clinical-note" style="display:none;"></div>
+
+            <div class="instruction-card" id="question-text">
+                Question goes here?
+            </div>
+
+            <!-- YES/NO BUTTONS -->
+            <div>
+                <button class="btn btn-yes" onclick="handleAnswer(true)">YES</button>
+                <button class="btn btn-no" onclick="handleAnswer(false)">NO</button>
+            </div>
+
+            <!-- PERSISTENT CLINICAL DATA -->
+            <div style="margin-top: 1.5rem; border-top: 1px solid #ccc; padding-top: 1rem;">
+                
+                <div class="risk-toggle" id="risk-btn" onclick="toggleRisk()">
+                    <span class="risk-label">High Risk Deterioration?</span>
+                    <span id="risk-status-text">NO</span>
+                    <input type="checkbox" id="risk-check">
+                </div>
+
+                <div class="input-group">
+                    <label for="p-notes-persistent">Notes (Editable)</label>
+                    <textarea id="p-notes-persistent" rows="2"></textarea>
+                </div>
+            </div>
+
+            <div style="margin-top:auto;">
+                <button class="btn btn-secondary" style="padding: 0.8rem;" onclick="resetToHome()">Cancel Case</button>
+            </div>
+        </div>
+
+        <!-- RESULT SCREEN -->
+        <div id="result-screen" class="screen">
+            <h2>Triage Complete</h2>
+            <div id="result-tag" class="triage-tag">
+                <span id="tag-text">P1</span>
+                <div id="hr-badge" class="hr-badge" style="display:none;">HIGH RISK</div>
+            </div>
+            
+            <div id="action-box" class="clinical-note" style="font-size: 1.2rem; font-weight: bold; text-align: center; border-color: var(--nhs-red); color: var(--nhs-red);">
+                <!-- Actions -->
+            </div>
+            
+            <div style="text-align:center; color:#666; font-size:0.8rem; margin-bottom:1rem;">
+                Location Logged: <span id="location-status-text">Pending...</span>
+            </div>
+
+            <div style="margin-top:auto;">
+                <button class="btn btn-primary" onclick="nextPatient()">NEXT PATIENT &rarr;</button>
+                <button class="btn btn-secondary" onclick="showLog()">View Log</button>
+            </div>
+        </div>
+
+        <!-- LOG SCREEN -->
+        <div id="log-screen" class="screen">
+            <h2>Incident Log</h2>
+            <div class="log-actions">
+                <button class="btn btn-primary" style="padding:0.8rem;" onclick="copyToClipboard()">Copy to Clipboard</button>
+                <button class="btn btn-secondary" style="padding:0.8rem;" onclick="emailLog()">Email Log</button>
+                <button class="btn btn-secondary" style="padding:0.8rem;" onclick="window.print()">Print Log</button>
+            </div>
+            
+            <div class="log-container">
+                <table id="log-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>ID</th>
+                            <th>Details</th>
+                            <th>Cat</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body">
+                        <!-- Rows injected here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <button class="btn btn-primary" style="margin-top: 1rem;" onclick="resetToHome()">Back to Start</button>
+        </div>
+    </main>
+</div>
+
+<script>
+    // --- STATE ---
+    let userRole = null; // 'HCP' or 'NON_HCP'
+    let currentTool = null;
+    let patientCounter = 1;
+    let incidentLog = [];
+    let currentPatientData = {}; 
+    
+    // GPS State
+    let currentPosition = null; 
+    let watchId = null;
+
+    // --- INITIALIZATION ---
+    window.onload = function() {
+        initGPS();
+    };
+
+    function initGPS() {
+        if ("geolocation" in navigator) {
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    currentPosition = {
+                        lat: position.coords.latitude.toFixed(6),
+                        lng: position.coords.longitude.toFixed(6)
+                    };
+                    updateGPSIndicator(true);
+                },
+                (error) => {
+                    console.warn("GPS Error: " + error.message);
+                    updateGPSIndicator(false);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 10000,
+                    timeout: 10000
+                }
+            );
+        } else {
+            document.getElementById('gps-indicator').innerText = "GPS Not Supported";
+        }
+    }
+
+    function updateGPSIndicator(isActive) {
+        const el = document.getElementById('gps-indicator');
+        if (isActive) {
+            el.innerText = "GPS: Active";
+            el.className = "gps-status gps-active";
+        } else {
+            el.innerText = "GPS: No Signal";
+            el.className = "gps-status gps-inactive";
+        }
+    }
+    
+    // --- ROLE MANAGEMENT ---
+    function setUserRole(role) {
+        userRole = role;
+        
+        // Configure Home Screen
+        const mittBtn = document.getElementById('btn-mitt');
+        if (role === 'NON_HCP') {
+            mittBtn.style.display = 'none';
+        } else {
+            mittBtn.style.display = 'block';
+        }
+
+        showScreen('home-screen');
+    }
+
+    function resetApp() {
+        if(confirm("This will return to the role selection screen. Log data will remain safe. Continue?")) {
+            showScreen('intro-screen');
+        }
+    }
+
+    // --- UI TOGGLES ---
+    function toggleRisk() {
+        const btn = document.getElementById('risk-btn');
+        const check = document.getElementById('risk-check');
+        const text = document.getElementById('risk-status-text');
+        
+        check.checked = !check.checked;
+        
+        if (check.checked) {
+            btn.classList.add('active');
+            text.innerText = "YES";
+        } else {
+            btn.classList.remove('active');
+            text.innerText = "NO";
+        }
+    }
+
+    // --- DATA STRUCTURES (NHS ENGLAND LOGIC) ---
+    const tstFlow = [
+        { id: 'walking', question: "Is the casualty walking?", instruction: "Instruct casualties to move to a safe area.", yes: { type: 'result', category: 'P3', action: "Direct to survivor reception centre." }, no: { type: 'next', step: 'bleeding' } },
+        { id: 'bleeding', question: "Is there severe bleeding?", instruction: "Look for catastrophic haemorrhage.", yes: { type: 'result', category: 'P1', action: "Apply Pressure / Tourniquet / Packing immediately." }, no: { type: 'next', step: 'talking' } },
+        { id: 'talking', question: "Is the casualty talking?", instruction: "Can they obey simple commands?", yes: { type: 'next', step: 'penetrating' }, no: { type: 'next', step: 'breathing' } },
+        { id: 'penetrating', question: "Is there a penetrating injury?", instruction: "Check front and back (Chest/Abdomen).", yes: { type: 'result', category: 'P1', action: "Treat as immediate priority." }, no: { type: 'result', category: 'P2', action: "Monitor condition." } },
+        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open airway. Check for signs of life.", yes: { type: 'result', category: 'P1', action: "Place in recovery position." }, no: { type: 'result', category: 'Not Breathing', action: "Dead (unless resources allow CPR)." } }
+    ];
+
+    const mittFlow = [
+        { id: 'cat_bleed', question: "Is there catastrophic bleeding?", instruction: "Assess for life-threatening haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control bleeding immediately (Tourniquet/Pack)." }, no: { type: 'next', step: 'walking' } },
+        { id: 'walking', question: "Is the casualty walking?", instruction: "", yes: { type: 'result', category: 'P3', action: "Direct to minor injuries area." }, no: { type: 'next', step: 'breathing' } },
+        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open Airway. (Paediatrics: Consider 5 rescue breaths if drowning/smoke).", yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', action: "Confirm dead." } },
+        { id: 'voice', question: "Does casualty respond to voice?", instruction: "AVPU Scale: Alert or Voice?", yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', action: "Unconscious - Priority 1" } },
+        { id: 'age', question: "Is the casualty aged over 2 years?", instruction: "Estimate age if unknown.", yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', action: "Paediatric Priority (Under 2)" } },
+        { id: 'rr', question: "Is Respiratory Rate 12 - 23?", instruction: "Count breaths per minute.", yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', action: "Abnormal Respiration - Priority 1" } },
+        { id: 'hr', question: "Is Heart Rate < 100?", instruction: "Check radial pulse or capillary refill.", yes: { type: 'result', category: 'P2', action: "Stable Physiology - Priority 2" }, no: { type: 'result', category: 'P1', action: "Tachycardic (HR ≥ 100) - Priority 1" } }
+    ];
+
+    // --- NAVIGATION FUNCTIONS ---
+
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    function initiateTriage(tool) {
+        currentTool = tool;
+        // Pre-fill ID with suggestion
+        document.getElementById('p-id').value = `${tool}-${pad(patientCounter, 3)}`;
+        // Clear other fields
+        document.getElementById('p-demos').value = "";
+        document.getElementById('p-allergies').value = "";
+        document.getElementById('p-notes-init').value = "";
+        
+        // Reset Risk Toggle
+        document.getElementById('risk-check').checked = false;
+        document.getElementById('risk-btn').classList.remove('active');
+        document.getElementById('risk-status-text').innerText = "NO";
+        
+        showScreen('patient-data-screen');
+    }
+
+    function confirmPatientData() {
+        const id = document.getElementById('p-id').value.trim();
+        if(!id) {
+            alert("Patient ID is mandatory.");
+            return;
+        }
+
+        const initialNotes = document.getElementById('p-notes-init').value.trim();
+
+        currentPatientData = {
+            id: id,
+            demos: document.getElementById('p-demos').value.trim(),
+            allergies: document.getElementById('p-allergies').value.trim(),
+        };
+
+        // Populate Persistent Section
+        document.getElementById('p-notes-persistent').value = initialNotes;
+
+        // Start Questions
+        if (currentTool === 'TST') {
+            loadStep(tstFlow[0]);
+        } else {
+            loadStep(mittFlow[0]);
+        }
+        updateStatus();
+        
+        // Configure Risk Button Visibility
+        const riskBtn = document.getElementById('risk-btn');
+        if (userRole === 'NON_HCP') {
+            riskBtn.style.display = 'none';
+        } else {
+            riskBtn.style.display = 'flex';
+        }
+
+        showScreen('question-screen');
+    }
+
+    function loadStep(stepObj) {
+        document.getElementById('question-screen').dataset.stepId = stepObj.id;
+        document.getElementById('question-text').innerText = stepObj.question;
+        
+        const instructBox = document.getElementById('clinical-instruction-box');
+        if (stepObj.instruction) {
+            instructBox.style.display = 'block';
+            instructBox.innerText = stepObj.instruction;
+        } else {
+            instructBox.style.display = 'none';
+        }
+    }
+
+    function handleAnswer(answer) {
+        const stepId = document.getElementById('question-screen').dataset.stepId;
+        const flow = currentTool === 'TST' ? tstFlow : mittFlow;
+        const currentStepObj = flow.find(s => s.id === stepId);
+
+        const outcome = answer ? currentStepObj.yes : currentStepObj.no;
+
+        if (outcome.type === 'next') {
+            const nextStepObj = flow.find(s => s.id === outcome.step);
+            loadStep(nextStepObj);
+        } else if (outcome.type === 'result') {
+            logResult(outcome.category, outcome.action);
+        }
+    }
+
+    function logResult(category, action) {
+        const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        let locationData = currentPosition ? { ...currentPosition } : null;
+
+        // Capture PERSISTENT data
+        const finalNotes = document.getElementById('p-notes-persistent').value.trim();
+        const isHighRisk = document.getElementById('risk-check').checked;
+
+        incidentLog.push({
+            time: time,
+            ...currentPatientData,
+            notes: finalNotes,
+            highRisk: isHighRisk,
+            tool: currentTool,
+            category: category,
+            action: action,
+            location: locationData
+        });
+
+        // Show result screen
+        const tag = document.getElementById('result-tag');
+        const tagText = document.getElementById('tag-text');
+        const hrBadge = document.getElementById('hr-badge');
+        
+        tagText.innerText = category;
+        tag.className = 'triage-tag'; 
+        
+        if (category === 'P1') tag.classList.add('p1');
+        else if (category === 'P2') tag.classList.add('p2');
+        else if (category === 'P3') tag.classList.add('p3');
+        else tag.classList.add('dead');
+
+        // Toggle HR Badge (Only if active and checked)
+        if (isHighRisk && userRole === 'HCP') {
+            hrBadge.style.display = 'block';
+        } else {
+            hrBadge.style.display = 'none';
+        }
+
+        document.getElementById('action-box').innerText = action;
+        
+        // Show loc status
+        const locText = document.getElementById('location-status-text');
+        if(locationData) {
+            locText.innerHTML = `Lat: ${locationData.lat}, Lng: ${locationData.lng}`;
+            locText.style.color = "green";
+        } else {
+            locText.innerHTML = "No GPS Data";
+            locText.style.color = "red";
+        }
+
+        showScreen('result-screen');
+    }
+
+    function nextPatient() {
+        patientCounter++;
+        initiateTriage(currentTool); 
+    }
+
+    function resetToHome() {
+        showScreen('home-screen');
+    }
+
+    function showLog() {
+        renderLogTable();
+        showScreen('log-screen');
+    }
+
+    function updateStatus() {
+        document.getElementById('patient-count-display').innerText = `ID: ${currentPatientData.id || '...'}`;
+    }
+
+    function pad(num, size) {
+        num = num.toString();
+        while (num.length < size) num = "0" + num;
+        return num;
+    }
+
+    // --- LOG EXPORT ---
+
+    function renderLogTable() {
+        const tbody = document.getElementById('log-body');
+        tbody.innerHTML = '';
+        incidentLog.forEach(row => {
+            const tr = document.createElement('tr');
+            
+            let colorStyle = '';
+            if(row.category === 'P1') colorStyle = 'background-color:#ffe6e6; font-weight:bold;';
+            if(row.category === 'P3') colorStyle = 'background-color:#e6ffe6;';
+            if(row.category === 'DEAD') colorStyle = 'background-color:#f0f0f0;';
+
+            // High Risk styling
+            let riskMarkup = "";
+            if (row.highRisk) {
+                riskMarkup = `<span style="color:red; font-weight:bold; display:block;">[HIGH RISK DETERIORATION]</span>`;
+            }
+
+            let details = `Age/Sex: ${row.demos || '-'}<br>Allergies: ${row.allergies || '-'}`;
+            if(row.notes) details += `<br><em>Notes: ${row.notes}</em>`;
+            if(row.location) {
+                const mapsLink = `https://www.google.com/maps?q=${row.location.lat},${row.location.lng}`;
+                details += `<br><a href="${mapsLink}" target="_blank">Map</a>`;
+            }
+            details += riskMarkup;
+
+            tr.innerHTML = `
+                <td>${row.time}</td>
+                <td><strong>${row.id}</strong></td>
+                <td><small>${details}</small></td>
+                <td style="${colorStyle}">${row.category}</td>
+                <td>${row.action}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function formatLogText() {
+        let text = "MAJOR INCIDENT TRIAGE LOG\n";
+        text += "Generated: " + new Date().toLocaleString() + "\n";
+        text += "----------------------------------------\n";
+        incidentLog.forEach(row => {
+            let riskText = row.highRisk ? " !!! HIGH RISK DETERIORATION !!! " : "";
+            let locText = row.location ? `Loc: ${row.location.lat}, ${row.location.lng}` : "Loc: Unknown";
+            let demoText = row.demos ? `(${row.demos})` : "";
+            let allergyText = row.allergies ? `[Allergies: ${row.allergies}]` : "";
+            let noteText = row.notes ? `{${row.notes}}` : "";
+            text += `[${row.time}] ${row.id} ${demoText} | ${row.category} ${riskText}| ${locText} ${allergyText} ${noteText} | ${row.action}\n`;
+        });
+        return text;
+    }
+
+    function copyToClipboard() {
+        const text = formatLogText();
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Log copied to clipboard.');
+        }).catch(err => {
+            alert('Clipboard access failed.');
+        });
+    }
+
+    function emailLog() {
+        let body = "MAJOR INCIDENT LOG\n\n";
+        incidentLog.forEach(row => {
+            let riskAlert = row.highRisk ? "!!! HIGH RISK OF DETERIORATION !!!\n" : "";
+            let locLink = row.location ? `https://www.google.com/maps?q=${row.location.lat},${row.location.lng}` : "N/A";
+            body += `Patient: ${row.id}\n${riskAlert}Time: ${row.time}\nAge/Sex: ${row.demos || 'N/A'}\nAllergies: ${row.allergies || 'N/A'}\nNotes: ${row.notes || 'N/A'}\nCategory: ${row.category}\nAction: ${row.action}\nLocation: ${locLink}\n\n-----------------\n`;
+        });
+        
+        const subject = encodeURIComponent(`Incident Log - ${new Date().toLocaleDateString()}`);
+        window.location.href = `mailto:?subject=${subject}&body=${encodeURIComponent(body)}`;
+    }
+
+</script>
+</body>
+</html>
