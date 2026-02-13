@@ -209,7 +209,6 @@
         z-index: 9999;
         display: none;
         color: #333;
-        display: none;
         align-items: center;
         justify-content: center;
         font-size: 2rem;
@@ -312,6 +311,36 @@
     .p3 { background-color: var(--nhs-green) !important; color: white !important; }
     .dead { background-color: #fff !important; color: black !important; border-color: black !important; }
 
+    /* Intervention Buttons */
+    .int-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 1rem;
+    }
+    .int-btn {
+        background: var(--card-bg);
+        border: 2px solid var(--nhs-blue);
+        color: var(--nhs-blue);
+        padding: 10px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        text-align: center;
+        font-size: 0.9rem;
+    }
+    .int-btn.active {
+        background: var(--nhs-green);
+        border-color: var(--nhs-green);
+        color: white;
+    }
+    .int-time {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: normal;
+        margin-top: 4px;
+    }
+
     /* Log Table */
     .log-container { overflow-x: auto; margin-bottom: 1rem; -webkit-overflow-scrolling: touch; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -324,6 +353,15 @@
     tr.clickable-row:hover { background-color: rgba(0,0,0,0.05); }
     body.night-mode tr.clickable-row:hover { background-color: rgba(255,255,255,0.1); }
 
+    /* Collapsible Details */
+    #details-container {
+        border-top: 1px solid #ccc;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        display: none;
+    }
+    #details-container.show { display: block; }
+    
     /* Toast Notification */
     #toast {
         visibility: hidden;
@@ -347,7 +385,7 @@
 
     /* Print Styles */
     @media print {
-        header, .btn, .status-bar, .instruction-card, .input-group, .header-controls, #toast, #global-dashboard { display: none !important; }
+        header, .btn, .status-bar, .instruction-card, .input-group, .header-controls, #toast, #global-dashboard, .int-grid { display: none !important; }
         .screen { display: none !important; }
         #log-screen { display: block !important; }
         .log-container { overflow: visible; }
@@ -377,6 +415,7 @@
 
     <div class="status-bar">
         <span id="header-callsign">Device: -</span>
+        <span id="header-sector" style="margin-left:auto; margin-right:10px; font-weight:bold; color:var(--nhs-yellow);"></span>
         <span id="gps-indicator" class="gps-status gps-inactive">GPS: Searching...</span>
     </div>
 
@@ -396,6 +435,12 @@
             <div class="input-group">
                 <label>Device Call Sign (Recommended)</label>
                 <input type="text" id="intro-callsign" placeholder="e.g. ALPHA-1" autocomplete="off">
+            </div>
+            
+            <div class="input-group">
+                <label>Zone / Sector (Optional)</label>
+                <input type="text" id="intro-sector" placeholder="e.g. Platform 4, North Gate" autocomplete="off">
+                <small style="color:var(--text-color); opacity:0.8;">Useful if GPS is unavailable.</small>
             </div>
 
             <p><strong>Select Role:</strong></p>
@@ -453,6 +498,7 @@
             <div style="margin-top: auto;">
                 <button class="btn btn-yes" onclick="handleAnswer(true)">YES</button>
                 <button class="btn btn-no" onclick="handleAnswer(false)">NO</button>
+                <button id="btn-back" class="btn btn-secondary" style="margin-top:10px; padding:0.8rem; background-color:#666;" onclick="stepBack()">&#8617; Back</button>
                 <button class="btn btn-secondary" style="margin-top:1rem; padding: 0.8rem;" onclick="resetToHome()">Cancel Case</button>
             </div>
         </div>
@@ -475,53 +521,60 @@
                 GPS: <span id="location-status-text">...</span>
             </div>
 
-            <button class="btn btn-secondary" onclick="addDetails()">+ Add Clinical Details / Notes</button>
+            <!-- TOGGLE FOR DETAILS/INTERVENTIONS -->
+            <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions & Notes</button>
 
-            <div style="margin-top:auto;">
+            <!-- INLINE DETAILS CONTAINER -->
+            <div id="details-container">
+                <h3>Interventions (Timestamped)</h3>
+                <div class="int-grid">
+                    <button class="int-btn" onclick="recordIntervention(this, 'Tourniquet')">Tourniquet<span class="int-time"></span></button>
+                    <button class="int-btn" onclick="recordIntervention(this, 'Wound Packing')">Wound Packing<span class="int-time"></span></button>
+                    <button class="int-btn" onclick="recordIntervention(this, 'Airway Open')">Airway Open<span class="int-time"></span></button>
+                    <button class="int-btn" onclick="recordIntervention(this, 'Recovery Pos')">Recovery Pos<span class="int-time"></span></button>
+                    <button class="int-btn" onclick="recordIntervention(this, 'Chest Seal')">Chest Seal<span class="int-time"></span></button>
+                    <button class="int-btn" onclick="recordIntervention(this, 'Needle Decomp')">Needle Decomp<span class="int-time"></span></button>
+                </div>
+
+                <h3>Clinical Notes</h3>
+                
+                <div class="input-group">
+                    <label>Category Override</label>
+                    <select id="p-cat-override" onchange="autoSave()">
+                        <option value="P1">P1 - Immediate</option>
+                        <option value="P2">P2 - Urgent</option>
+                        <option value="P3">P3 - Delayed</option>
+                        <option value="DEAD">DEAD - Expectant</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>Demographics</label>
+                    <input type="text" id="p-demos" placeholder="Age / Gender (e.g. 35M)" onblur="autoSave()">
+                </div>
+
+                <div class="input-group">
+                    <label>Allergies</label>
+                    <input type="text" id="p-allergies" placeholder="e.g. Penicillin" onblur="autoSave()">
+                </div>
+
+                <div class="input-group">
+                    <label>Notes</label>
+                    <textarea id="p-notes" rows="3" placeholder="Injuries, mechanism etc." onblur="autoSave()"></textarea>
+                </div>
+
+                <div id="risk-container" style="display:none; margin-bottom: 1rem;">
+                     <label style="display:flex; align-items:center; gap:10px; font-weight:bold; color:var(--nhs-red); padding:10px; border:1px solid var(--nhs-red); border-radius:4px;">
+                        <input type="checkbox" id="risk-check" style="width:24px; height:24px;" onchange="autoSave()">
+                        HIGH RISK OF DETERIORATION
+                     </label>
+                </div>
+            </div>
+
+            <div style="margin-top:auto; padding-top:1rem;">
                 <button class="btn btn-primary" onclick="nextPatient()">NEXT PATIENT &rarr;</button>
                 <button class="btn btn-secondary" onclick="showLog()">View Log</button>
             </div>
-        </div>
-
-        <!-- CLINICAL DETAILS SCREEN (EDITABLE) -->
-        <div id="details-screen" class="screen">
-            <h2 id="details-header">Clinical Details</h2>
-            <p>For: <strong id="d-patient-id"></strong></p>
-
-            <div class="input-group">
-                <label>Category Override</label>
-                <select id="p-cat-override">
-                    <option value="P1">P1 - Immediate</option>
-                    <option value="P2">P2 - Urgent</option>
-                    <option value="P3">P3 - Delayed</option>
-                    <option value="DEAD">DEAD - Expectant</option>
-                </select>
-            </div>
-
-            <div class="input-group">
-                <label>Demographics</label>
-                <input type="text" id="p-demos" placeholder="Age / Gender (e.g. 35M)">
-            </div>
-
-            <div class="input-group">
-                <label>Allergies</label>
-                <input type="text" id="p-allergies" placeholder="e.g. Penicillin">
-            </div>
-
-            <div class="input-group">
-                <label>Clinical Notes</label>
-                <textarea id="p-notes" rows="4" placeholder="Injuries, Time of Tourniquet, etc."></textarea>
-            </div>
-
-            <div id="risk-container" style="display:none; margin-bottom: 1rem;">
-                 <label style="display:flex; align-items:center; gap:10px; font-weight:bold; color:var(--nhs-red); padding:10px; border:1px solid var(--nhs-red); border-radius:4px;">
-                    <input type="checkbox" id="risk-check" style="width:24px; height:24px;">
-                    HIGH RISK OF DETERIORATION
-                 </label>
-            </div>
-
-            <button class="btn btn-primary" onclick="saveDetails()">Save Changes</button>
-            <button class="btn btn-secondary" onclick="cancelEdit()">Cancel</button>
         </div>
 
         <!-- METHANE SCREEN -->
@@ -549,7 +602,10 @@
             </div>
             <div class="input-group">
                 <label>N - Number of Casualties</label>
-                <input type="text" id="m-num" type="number" pattern="[0-9]*">
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="m-num" type="number" pattern="[0-9]*" style="flex:1;">
+                    <button class="btn btn-secondary" style="width:auto; padding:0 10px; margin:0;" onclick="autoFillCasualties()">Auto-Fill</button>
+                </div>
             </div>
             <div class="input-group">
                 <label>E - Emergency Services Required</label>
@@ -576,7 +632,7 @@
                             <th>ID</th>
                             <th>Cat</th>
                             <th>Loc</th>
-                            <th>Notes</th>
+                            <th>Interventions / Notes</th>
                         </tr>
                     </thead>
                     <tbody id="log-body"></tbody>
@@ -595,11 +651,13 @@
     // --- STATE ---
     let userRole = null; 
     let callSign = "";
+    let currentSector = "";
     let currentTool = null;
     let patientCounter = 1;
     let incidentLog = [];
     let currentPatientId = ""; 
     let currentLogIndex = -1; 
+    let stepHistory = []; // Stack for Back functionality
     
     // GPS State
     let currentPosition = null; 
@@ -671,6 +729,7 @@
         localStorage.setItem('mit_triage_log', JSON.stringify(incidentLog));
         localStorage.setItem('mit_patient_counter', patientCounter.toString());
         localStorage.setItem('mit_callsign', callSign);
+        localStorage.setItem('mit_sector', currentSector);
         if (userRole) localStorage.setItem('mit_user_role', userRole);
         
         const methaneData = {
@@ -690,6 +749,7 @@
         const savedCount = localStorage.getItem('mit_patient_counter');
         const savedRole = localStorage.getItem('mit_user_role');
         const savedCallSign = localStorage.getItem('mit_callsign');
+        const savedSector = localStorage.getItem('mit_sector');
         const savedMethane = localStorage.getItem('mit_methane');
 
         if (savedLog) incidentLog = JSON.parse(savedLog);
@@ -698,6 +758,11 @@
             callSign = savedCallSign;
             document.getElementById('intro-callsign').value = callSign;
             document.getElementById('header-callsign').innerText = callSign ? `Device: ${callSign}` : "Device: -";
+        }
+        if (savedSector) {
+            currentSector = savedSector;
+            document.getElementById('intro-sector').value = currentSector;
+            document.getElementById('header-sector').innerText = currentSector;
         }
         
         if (savedMethane) {
@@ -725,9 +790,15 @@
     // --- ROLE & SETUP ---
     function setUserRole(role) {
         userRole = role;
+        
         const inputCS = document.getElementById('intro-callsign').value.trim().toUpperCase();
         if(inputCS) callSign = inputCS;
         document.getElementById('header-callsign').innerText = callSign ? `Device: ${callSign}` : "Device: -";
+        
+        const inputSec = document.getElementById('intro-sector').value.trim();
+        if(inputSec) currentSector = inputSec;
+        document.getElementById('header-sector').innerText = currentSector;
+        
         saveLocalData();
         
         document.getElementById('btn-mitt').style.display = (role === 'NON_HCP') ? 'none' : 'block';
@@ -774,6 +845,7 @@
 
     function initiateTriage(tool) {
         currentTool = tool;
+        stepHistory = []; // Reset stack
         const prefix = callSign ? `${callSign}-${tool}` : tool;
         currentPatientId = `${prefix}-${pad(patientCounter, 3)}`;
         document.getElementById('q-patient-id').innerText = currentPatientId;
@@ -797,10 +869,15 @@
             instructBox.style.display = 'block';
             instructBox.innerText = stepObj.instruction;
         } else { instructBox.style.display = 'none'; }
+        
+        // Handle Back Button Visibility
+        document.getElementById('btn-back').style.display = (stepHistory.length > 0) ? 'block' : 'none';
     }
 
     function handleAnswer(answer) {
         const stepId = document.getElementById('question-screen').dataset.stepId;
+        stepHistory.push(stepId); // Push current step to stack
+        
         const flow = currentTool === 'TST' ? tstFlow : mittFlow;
         const currentStepObj = flow.find(s => s.id === stepId);
         const outcome = answer ? currentStepObj.yes : currentStepObj.no;
@@ -811,107 +888,161 @@
             logResult(outcome.category, outcome.action);
         }
     }
+    
+    function stepBack() {
+        if (stepHistory.length === 0) return;
+        const prevStepId = stepHistory.pop();
+        const flow = currentTool === 'TST' ? tstFlow : mittFlow;
+        loadStep(flow.find(s => s.id === prevStepId));
+    }
 
     function logResult(category, action) {
         const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         const entry = {
             id: currentPatientId, time: time, tool: currentTool, category: category, action: action,
-            location: currentPosition, demos: "", allergies: "", notes: "", highRisk: false
+            location: currentPosition, sector: currentSector, demos: "", allergies: "", notes: "", highRisk: false, interventions: {}
         };
 
         incidentLog.push(entry);
         currentLogIndex = incidentLog.length - 1; 
         saveLocalData();
         updateDashboard();
-
-        document.getElementById('r-patient-id').innerText = currentPatientId;
+        
+        renderResultScreen(entry);
+    }
+    
+    function renderResultScreen(entry) {
+        document.getElementById('r-patient-id').innerText = entry.id;
         const tag = document.getElementById('result-tag');
-        document.getElementById('tag-text').innerText = category;
+        document.getElementById('tag-text').innerText = entry.category;
         
         tag.className = 'triage-tag'; 
-        if (category === 'P1') tag.classList.add('p1');
-        else if (category === 'P2') tag.classList.add('p2');
-        else if (category === 'P3') tag.classList.add('p3');
+        if (entry.category === 'P1') tag.classList.add('p1');
+        else if (entry.category === 'P2') tag.classList.add('p2');
+        else if (entry.category === 'P3') tag.classList.add('p3');
         else tag.classList.add('dead');
 
-        document.getElementById('hr-badge').style.display = 'none';
-        document.getElementById('action-box').innerText = action;
+        document.getElementById('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
+        document.getElementById('action-box').innerText = entry.action;
         
         const locText = document.getElementById('location-status-text');
-        locText.innerHTML = currentPosition ? `${currentPosition.lat}, ${currentPosition.lng}` : "No GPS";
-        locText.style.color = currentPosition ? "var(--nhs-green)" : "var(--nhs-red)";
-
-        showScreen('result-screen');
-    }
-
-    // --- DETAILS & EDITING ---
-    function addDetails() {
-        document.getElementById('d-patient-id').innerText = currentPatientId;
-        // Reset or Fill
-        const entry = incidentLog[currentLogIndex];
+        let displayLoc = currentSector ? `Sec: ${currentSector}` : "";
+        if(currentPosition) {
+            displayLoc += (displayLoc ? " | " : "") + `${currentPosition.lat}, ${currentPosition.lng}`;
+            locText.style.color = "var(--nhs-green)";
+        } else {
+            if(!displayLoc) { displayLoc = "No GPS / Sector"; locText.style.color = "var(--nhs-red)"; }
+            else { locText.style.color = "var(--nhs-blue)"; }
+        }
+        locText.innerHTML = displayLoc;
+        
+        // Reset Inputs
         document.getElementById('p-cat-override').value = entry.category;
         document.getElementById('p-demos').value = entry.demos;
         document.getElementById('p-allergies').value = entry.allergies;
         document.getElementById('p-notes').value = entry.notes;
         document.getElementById('risk-check').checked = entry.highRisk;
         
-        showScreen('details-screen');
+        // Render buttons state
+        document.querySelectorAll('.int-btn').forEach(btn => {
+             btn.classList.remove('active');
+             btn.querySelector('.int-time').innerText = "";
+        });
+        
+        const intButtons = document.querySelectorAll('.int-btn');
+        intButtons.forEach(btn => {
+             const type = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
+             if(entry.interventions && entry.interventions[type]) {
+                 btn.classList.add('active');
+                 btn.querySelector('.int-time').innerText = entry.interventions[type];
+             }
+        });
+
+        document.getElementById('details-container').classList.remove('show');
+        document.getElementById('btn-toggle-details').innerText = "+ Interventions & Notes";
+
+        showScreen('result-screen');
     }
 
-    function saveDetails() {
+    // --- DETAILS & INTERVENTIONS ---
+    function toggleDetails() {
+        const container = document.getElementById('details-container');
+        const btn = document.getElementById('btn-toggle-details');
+        if(container.classList.contains('show')) {
+            container.classList.remove('show');
+            btn.innerText = "+ Interventions & Notes";
+        } else {
+            container.classList.add('show');
+            btn.innerText = "Hide Details";
+            container.scrollIntoView({ behavior: 'smooth' });
+        }
+    }
+    
+    function recordIntervention(btn, type) {
+        if(currentLogIndex === -1) return;
+        
+        const entry = incidentLog[currentLogIndex];
+        const timeNow = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        
+        if(!entry.interventions) entry.interventions = {};
+        
+        if(entry.interventions[type]) {
+            delete entry.interventions[type];
+            btn.classList.remove('active');
+            btn.querySelector('.int-time').innerText = "";
+        } else {
+            entry.interventions[type] = timeNow;
+            btn.classList.add('active');
+            btn.querySelector('.int-time').innerText = timeNow;
+        }
+        saveLocalData();
+    }
+    
+    function autoSave() {
         if(currentLogIndex > -1) {
             const entry = incidentLog[currentLogIndex];
-            entry.category = document.getElementById('p-cat-override').value; // Allow Override
+            entry.category = document.getElementById('p-cat-override').value; 
             entry.demos = document.getElementById('p-demos').value;
             entry.allergies = document.getElementById('p-allergies').value;
             entry.notes = document.getElementById('p-notes').value;
             entry.highRisk = document.getElementById('risk-check').checked;
             
+            const tag = document.getElementById('result-tag');
+            document.getElementById('tag-text').innerText = entry.category;
+            tag.className = 'triage-tag'; 
+            if (entry.category === 'P1') tag.classList.add('p1');
+            else if (entry.category === 'P2') tag.classList.add('p2');
+            else if (entry.category === 'P3') tag.classList.add('p3');
+            else tag.classList.add('dead');
+            
+            document.getElementById('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
+            
             saveLocalData();
             updateDashboard();
-            showToast("Saved");
-        }
-        // If we came from the Log view, go back to Log. If from Result, go back to Result.
-        // Simple logic: if editing old entry, go to Log.
-        if (currentPatientId !== incidentLog[currentLogIndex].id) {
-             showScreen('log-screen');
-        } else {
-             // We are on the active patient
-             const tag = document.getElementById('result-tag');
-             document.getElementById('tag-text').innerText = incidentLog[currentLogIndex].category;
-             // Update colors based on override
-             tag.className = 'triage-tag'; 
-             if (entry.category === 'P1') tag.classList.add('p1');
-             else if (entry.category === 'P2') tag.classList.add('p2');
-             else if (entry.category === 'P3') tag.classList.add('p3');
-             else tag.classList.add('dead');
-             
-             document.getElementById('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
-             showScreen('result-screen');
         }
     }
     
-    function cancelEdit() {
-        if (currentPatientId !== incidentLog[currentLogIndex].id) showScreen('log-screen');
-        else showScreen('result-screen');
-    }
-
-    // --- LOGIC FOR EDITING PAST ENTRIES ---
     function editEntry(index) {
         currentLogIndex = index;
-        const entry = incidentLog[index];
-        
-        document.getElementById('d-patient-id').innerText = entry.id;
-        document.getElementById('p-cat-override').value = entry.category;
-        document.getElementById('p-demos').value = entry.demos;
-        document.getElementById('p-allergies').value = entry.allergies;
-        document.getElementById('p-notes').value = entry.notes;
-        document.getElementById('risk-check').checked = entry.highRisk;
-        
-        showScreen('details-screen');
+        renderResultScreen(incidentLog[index]);
+        toggleDetails();
     }
 
     function showMethane() { showScreen('methane-screen'); }
+    
+    function autoFillCasualties() {
+        let p1=0, p2=0, p3=0, dead=0;
+        incidentLog.forEach(e => {
+            if(e.category === 'P1') p1++;
+            else if(e.category === 'P2') p2++;
+            else if(e.category === 'P3') p3++;
+            else dead++;
+        });
+        const summary = `Total: ${incidentLog.length} (P1:${p1}, P2:${p2}, P3:${p3}, Dead:${dead})`;
+        document.getElementById('m-num').value = summary;
+        saveMethane();
+    }
+    
     function saveMethane() { saveLocalData(); showToast("Report Saved"); showScreen('home-screen'); }
 
     function nextPatient() {
@@ -940,13 +1071,12 @@
         const tbody = document.getElementById('log-body');
         tbody.innerHTML = '';
         
-        // Show newest first
         const reversedLog = [...incidentLog].map((e, i) => ({...e, originalIndex: i})).reverse();
         
         reversedLog.forEach(row => {
             const tr = document.createElement('tr');
             tr.className = "clickable-row";
-            tr.onclick = function() { editEntry(row.originalIndex); }; // Hook up edit
+            tr.onclick = function() { editEntry(row.originalIndex); }; 
             
             let catStyle = '';
             if(row.category === 'P1') catStyle = 'background-color:var(--nhs-red); color:white; font-weight:bold;';
@@ -954,11 +1084,21 @@
             if(row.category === 'P3') catStyle = 'background-color:var(--nhs-green); color:white;';
             if(row.category === 'DEAD') catStyle = 'background-color:#333; color:white;';
 
-            let locText = row.location ? `${row.location.lat}, ${row.location.lng}` : "-";
+            let locText = "";
+            if(row.sector) locText += `[${row.sector}] `;
+            if(row.location) locText += `${row.location.lat}, ${row.location.lng}`;
+            if(!locText) locText = "-";
+
             let details = "";
             if(row.demos) details += `[${row.demos}] `;
             if(row.allergies) details += `Allergies: ${row.allergies}. `;
-            if(row.notes) details += `${row.notes}`;
+            if(row.notes) details += `${row.notes} `;
+            
+            if(row.interventions) {
+                const ints = Object.entries(row.interventions).map(([k, v]) => `${k}@${v}`);
+                if(ints.length > 0) details += `<strong>[${ints.join(', ')}]</strong> `;
+            }
+            
             if(row.highRisk) details = `<span style="color:red; font-weight:bold;">[HIGH RISK]</span> ` + details;
 
             tr.innerHTML = `
@@ -982,7 +1122,11 @@
     function copyLog() {
         let text = getMethaneString() + "PATIENT LOG\n";
         incidentLog.forEach(r => {
-            text += `${r.time} | ${r.id} | ${r.category} | ${r.action} | ${r.demos} ${r.notes}\n`;
+            let intStr = "";
+            if(r.interventions) {
+                intStr = " INT: " + Object.entries(r.interventions).map(([k,v]) => `${k}(${v})`).join(", ");
+            }
+            text += `${r.time} | ${r.id} | ${r.category} | ${r.action} | ${r.demos} ${r.notes}${intStr}\n`;
         });
         
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1005,18 +1149,24 @@
         const m = JSON.parse(localStorage.getItem('mit_methane') || "{}");
         let csv = "";
         
-        // Add METHANE as headers/comments
         if(m.m) {
             csv += `METHANE REPORT\n`;
             csv += `M,${m.m}\nE,${m.e}\nT,${m.t}\nH,${m.h}\nA,${m.a}\nN,${m.n}\nE,${m.e_svc}\n\n`;
         }
 
-        csv += "Time,ID,Category,Action,Lat,Lng,Age/Gender,Allergies,Notes,HighRisk\n";
+        csv += "Time,ID,Category,Action,Sector,Lat,Lng,Age/Gender,Allergies,Notes,Interventions,HighRisk\n";
         incidentLog.forEach(r => {
             const lat = r.location ? r.location.lat : "";
             const lng = r.location ? r.location.lng : "";
+            const sec = r.sector || "";
             const noteSafe = r.notes.replace(/,/g, " ").replace(/\n/g, " ");
-            csv += `${r.time},${r.id},${r.category},${r.action},${lat},${lng},${r.demos},${r.allergies},${noteSafe},${r.highRisk}\n`;
+            
+            let intStr = "";
+            if(r.interventions) {
+                intStr = Object.entries(r.interventions).map(([k,v]) => `${k}(${v})`).join("; ");
+            }
+            
+            csv += `${r.time},${r.id},${r.category},${r.action},${sec},${lat},${lng},${r.demos},${r.allergies},${noteSafe},${intStr},${r.highRisk}\n`;
         });
         
         const blob = new Blob([csv], { type: 'text/csv' });
