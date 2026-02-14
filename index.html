@@ -788,8 +788,11 @@
             const blob = new Blob([swContent], {type: 'application/javascript'});
             const swUrl = URL.createObjectURL(blob);
             
+            // Only register if not file/blob to prevent errors in preview
             if (window.location.protocol !== 'blob:' && window.location.protocol !== 'file:') {
-                navigator.serviceWorker.register(swUrl).catch(err => console.warn('SW failed:', err));
+                navigator.serviceWorker.register(swUrl)
+                    .then(() => console.log('Service Worker Registered'))
+                    .catch(err => console.warn('Service Worker failed (harmless in preview):', err));
             }
         } catch (e) {
             console.warn('Service Worker setup skipped:', e);
@@ -810,6 +813,7 @@
     let currentLogIndex = -1; 
     let stepHistory = [];
     let idMode = 'AUTO'; 
+    let pendingReTriageId = null;
     
     // GPS State
     let currentPosition = null; 
@@ -1065,20 +1069,9 @@
             const oldId = currentPatientId;
             currentPatientId = newId.trim();
             document.getElementById('q-patient-id').innerText = currentPatientId;
-            // r-patient-id check
             const rEl = document.getElementById('r-patient-id');
             if(rEl) rEl.innerText = currentPatientId;
             
-            // Check for numeric collision in Auto Mode
-            if(idMode === 'AUTO') {
-                // If ID is something like "ALPHA-MITT-005"
-                const parts = currentPatientId.split('-');
-                const potentialNum = parseInt(parts[parts.length-1]);
-                if (!isNaN(potentialNum) && potentialNum >= patientCounter) {
-                    patientCounter = potentialNum + 1;
-                }
-            }
-
             if(currentLogIndex > -1) {
                 incidentLog[currentLogIndex].id = currentPatientId;
                 logAudit("ID_CHANGE", currentPatientId, `Changed from ${oldId} to ${currentPatientId}`, getClinicalTimestamp());
@@ -1114,7 +1107,6 @@
         const dash = document.getElementById('global-dashboard');
         if(id === 'log-screen') {
             dash.classList.add('expanded');
-            // Show Evac summary in expanded mode
             document.getElementById('evac-summary').style.display = 'block';
         } else {
             dash.classList.remove('expanded');
@@ -1122,7 +1114,7 @@
         }
     }
 
-    function initiateTriage(tool, existingId = null) {
+    function initiateTriage(tool) {
         currentTool = tool;
         stepHistory = [];
         
@@ -1130,9 +1122,11 @@
         badge.innerText = tool;
         badge.style.display = 'inline-block';
         badge.style.backgroundColor = tool === 'MITT' ? '#E87722' : '#007F3B'; 
-
-        if (existingId) {
-            currentPatientId = existingId;
+        
+        // Check for re-triage pending ID
+        if (pendingReTriageId) {
+            currentPatientId = pendingReTriageId;
+            pendingReTriageId = null;
             startFlow();
             return;
         }
@@ -1154,8 +1148,8 @@
         if(val) {
             currentPatientId = val;
             document.getElementById('manual-id-modal').style.display = 'none';
-            // Try to sync counter
-            const parts = val.split(/[-_ ]/); // Split by common separators
+            // Sync counter attempt
+            const parts = val.split(/[-_ ]/);
             const lastPart = parts[parts.length-1];
             const potentialNum = parseInt(lastPart);
             if (!isNaN(potentialNum) && potentialNum >= patientCounter) {
@@ -1224,69 +1218,55 @@
     }
 
     function logResult(category, action, reason) {
-        const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        const timestamp = getClinicalTimestamp();
-        const entry = {
-            id: currentPatientId, 
-            time: time, 
-            timestamp: timestamp, 
-            tool: currentTool, 
-            category: category, 
-            action: action,
-            reason: reason,
-            triager: triagerName,
-            location: currentPosition, 
-            sector: currentSector, 
-            demos: "", 
-            allergies: "", 
-            notes: "", 
-            highRisk: false, 
-            interventions: {}, 
-            evacuated: false, 
-            evacDest: "",
-            evacVehicle: ""
-        };
+        try {
+            const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            const timestamp = getClinicalTimestamp();
+            
+            // Create new entry
+            const entry = {
+                id: currentPatientId, 
+                time: time, 
+                timestamp: timestamp, 
+                tool: currentTool, 
+                category: category, 
+                action: action,
+                reason: reason,
+                triager: triagerName,
+                location: currentPosition, 
+                sector: currentSector, 
+                demos: "", 
+                allergies: "", 
+                notes: "", 
+                highRisk: false, 
+                interventions: {}, 
+                evacuated: false, 
+                evacDest: "",
+                evacVehicle: ""
+            };
 
-        incidentLog.push(entry);
-        currentLogIndex = incidentLog.length - 1; 
-        
-        logAudit("TRIAGE_COMPLETE", entry.id, `Category: ${category}, Reason: ${reason}`, timestamp);
-        
-        saveLocalData();
-        updateDashboard();
-        
-        renderResultScreen(entry);
+            incidentLog.push(entry);
+            currentLogIndex = incidentLog.length - 1; 
+            
+            logAudit("TRIAGE_COMPLETE", entry.id, `Category: ${category}, Reason: ${reason}`, timestamp);
+            
+            saveLocalData();
+            updateDashboard();
+            renderResultScreen(entry);
+        } catch(e) {
+            console.error(e);
+            showToast("Error saving result");
+        }
     }
     
     function reTriage() {
         if (currentLogIndex === -1) return;
         const entry = incidentLog[currentLogIndex];
+        pendingReTriageId = entry.id;
         
-        // Log the decision
         logAudit("RETRIAGE_STARTED", entry.id, `Re-triage from ${entry.tool}`, getClinicalTimestamp());
-        
-        // Go to home to select tool but use special flow
         showScreen('home-screen');
         showToast(`Re-Triaging ${entry.id}. Select Tool.`);
-        
-        // Temporarily override the button behavior just for this flow?
-        // Better: We just changed initiateTriage to accept an ID. 
-        // We need to tell the UI that the next click on TST/MITT should use THIS id.
-        // We can set a global "pendingReTriageId"
-        
-        window.pendingReTriageId = entry.id;
     }
-    // Update initiateTriage to check this global
-    const _originalInit = initiateTriage;
-    initiateTriage = function(tool) {
-        if (window.pendingReTriageId) {
-             const id = window.pendingReTriageId;
-             window.pendingReTriageId = null; // Clear it
-             _originalInit(tool, id);
-        } else {
-             _originalInit(tool);
-        }
-    };
     
     function renderResultScreen(entry) {
         document.getElementById('r-patient-id').innerText = entry.id;
@@ -1313,6 +1293,7 @@
         }
         locText.innerHTML = displayLoc;
         
+        // Set inputs
         document.getElementById('p-cat-override').value = entry.category;
         document.getElementById('p-demos').value = entry.demos;
         document.getElementById('p-allergies').value = entry.allergies;
@@ -1322,7 +1303,6 @@
         document.getElementById('p-evac-vehicle').value = entry.evacVehicle || "";
         document.getElementById('p-evac-dest').value = entry.evacDest || "";
         
-        // Evac Button State
         const evacBtn = document.getElementById('btn-evac');
         if(entry.evacuated) {
             evacBtn.innerText = "Mark as ON SCENE (Undo Evac)";
@@ -1332,19 +1312,18 @@
             evacBtn.style.backgroundColor = "var(--nhs-dark-blue)";
         }
         
-        // Reset buttons state
+        // Reset buttons
         document.querySelectorAll('.int-btn').forEach(btn => {
              btn.classList.remove('active');
              btn.querySelector('.int-time').innerText = "";
         });
         
-        // Render buttons active state safely
+        // Set active buttons safely
         const intButtons = document.querySelectorAll('.int-btn');
         intButtons.forEach(btn => {
-             const type = btn.dataset.type; // Safe usage
+             const type = btn.getAttribute('data-type');
              if(entry.interventions && entry.interventions[type]) {
                  btn.classList.add('active');
-                 // Display time only
                  btn.querySelector('.int-time').innerText = entry.interventions[type].time;
              }
         });
@@ -1402,8 +1381,8 @@
         
         logAudit(entry.evacuated ? "EVACUATION" : "EVACUATION_UNDO", entry.id, `Vehicle: ${entry.evacVehicle}, Dest: ${entry.evacDest}`, ts);
         saveLocalData();
-        updateDashboard(); // Re-calc stats
-        renderResultScreen(entry); // update btn text
+        updateDashboard();
+        renderResultScreen(entry); 
     }
 
     function openBodyMap() {
@@ -1419,7 +1398,6 @@
         pt.x = evt.clientX; pt.y = evt.clientY;
         const cursorPt = pt.matrixTransform(svg.getScreenCTM().inverse());
         
-        // Add X to SVG (visual only for session)
         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
         text.setAttribute("x", cursorPt.x - 5);
         text.setAttribute("y", cursorPt.y + 5);
@@ -1429,13 +1407,11 @@
         text.textContent = "X";
         svg.appendChild(text);
         
-        // Infer location (very basic)
         let loc = "Body";
         if(cursorPt.y < 80) loc = "Head/Neck";
         else if(cursorPt.y > 200) loc = "Legs";
         else loc = "Torso/Arms";
         
-        // Append to notes
         const noteField = document.getElementById('p-notes');
         const timestamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         const noteText = ` [Injury marked on ${loc} @ ${timestamp}]`;
@@ -1464,17 +1440,39 @@
     }
     
     // QR Code
-    function generateQR() {
+    function generatePatientQR() {
         if(currentLogIndex === -1) return;
         const entry = incidentLog[currentLogIndex];
-        const data = `${entry.id}|${entry.category}|${entry.time}|${entry.demos}|${entry.allergies}|${entry.notes}|${triagerName}`;
+        const transferObj = { type: "MIT_FULL_PATIENT", data: entry };
+        const jsonStr = JSON.stringify(transferObj);
         
+        document.getElementById('qr-title').innerText = "Patient Passport";
+        document.getElementById('qr-desc').innerText = "Scan to receive FULL patient data";
+        document.getElementById('qrcode').innerHTML = "";
+        
+        try {
+            new QRCode(document.getElementById("qrcode"), {
+                text: jsonStr, width: 256, height: 256,
+                correctLevel : QRCode.CorrectLevel.L
+            });
+            document.getElementById('qr-modal').style.display = 'flex';
+        } catch(e) {
+            showToast("Data too large for QR");
+        }
+    }
+
+    function generateMyIdentityQR() {
+        const data = `MIT_USER|${triagerName}|${userRole}`;
+        
+        document.getElementById('qr-title').innerText = "My Device Identity";
+        document.getElementById('qr-desc').innerText = "Colleagues scan this to log handover TO you.";
         document.getElementById('qrcode').innerHTML = "";
         new QRCode(document.getElementById("qrcode"), {
-            text: data, width: 128, height: 128
+            text: data, width: 200, height: 200
         });
         document.getElementById('qr-modal').style.display = 'flex';
     }
+
     function closeQR() { document.getElementById('qr-modal').style.display = 'none'; }
 
     // SCANNER
@@ -1505,29 +1503,35 @@
 
     function onScanSuccess(decodedText, decodedResult) {
         stopScanner();
-        
-        // Router based on scanMode and payload type
         if (decodedText.startsWith("MIT_USER")) {
             handleIdentityScan(decodedText);
-        } else if (decodedText.startsWith("MIT_PT") || decodedText.includes('|')) {
-            handlePatientScan(decodedText);
         } else {
+            try {
+                const jsonObj = JSON.parse(decodedText);
+                if (jsonObj.type === "MIT_FULL_PATIENT") {
+                    handleFullPatientImport(jsonObj.data);
+                    return;
+                }
+            } catch(e) {
+                if (decodedText.startsWith("MIT_PT") || decodedText.includes('|')) {
+                     handleLegacyPatientScan(decodedText);
+                     return;
+                }
+            }
             showToast("Unknown QR Format");
         }
     }
 
     function handleIdentityScan(text) {
-        // MIT_USER|CallSign|Role
         const parts = text.split('|');
         const colleagueName = parts[1] || "Unknown";
         
         if (scanMode === 'HANDOVER') {
-            // Log Handover
              if(currentLogIndex > -1) {
                  const entry = incidentLog[currentLogIndex];
                  entry.notes += ` [Handed over to ${colleagueName}]`;
-                 entry.evacuated = true; // Assume handover implies exit from my care? Or just log it.
-                 // Let's just log note for now
+                 entry.evacuated = true; 
+                 entry.evacVehicle = `Handover: ${colleagueName}`;
                  logAudit("HANDOVER_OUT", entry.id, `To ${colleagueName}`, Date.now());
                  saveLocalData();
                  showToast(`Logged handover to ${colleagueName}`);
@@ -1537,9 +1541,41 @@
         }
     }
 
-    function handlePatientScan(text) {
-        // Format: MIT_PT|ID|Cat|Time|Demos|Allergies|Notes|OriginTriager|IntJson
+    function handleFullPatientImport(data) {
+        const newId = data.id;
+        const originTriager = data.triager;
+        const existingIndex = incidentLog.findIndex(e => e.id === newId);
         
+        if(existingIndex > -1) {
+            if(confirm(`Patient ${newId} already exists. Update record with handover data?`)) {
+                const entry = incidentLog[existingIndex];
+                entry.category = data.category;
+                entry.notes += ` [Imported Update from ${originTriager}: ${data.notes}]`;
+                entry.interventions = { ...entry.interventions, ...data.interventions };
+                entry.allergies = data.allergies || entry.allergies;
+                entry.demos = data.demos || entry.demos;
+                entry.highRisk = data.highRisk;
+                
+                logAudit("DATA_IMPORT_UPDATE", newId, `Full JSON from ${originTriager}`, Date.now());
+                saveLocalData();
+                showToast("Record Updated");
+            }
+        } else {
+            const entry = { ...data };
+            entry.tool = "IMPORT";
+            entry.action = "DATA IMPORTED";
+            entry.triager = triagerName;
+            entry.notes = `${data.notes} [Origin: ${originTriager}]`;
+            
+            incidentLog.push(entry);
+            logAudit("DATA_IMPORT_NEW", newId, `Full JSON from ${originTriager}`, Date.now());
+            saveLocalData();
+            updateDashboard();
+            showToast(`Imported ${newId}`);
+        }
+    }
+
+    function handleLegacyPatientScan(text) {
         let parts = text.split('|');
         if(text.startsWith("MIT_PT|")) {
              parts = text.substring(7).split('|');
@@ -1549,61 +1585,37 @@
         
         const newId = parts[0];
         const category = parts[1];
-        const demos = parts[3] || "";
-        const allergies = parts[4] || "";
         const notes = parts[5] || "";
         const originTriager = parts[6] || "Unknown";
-        
-        let importedInts = {};
-        if (parts[7]) {
-             try { importedInts = JSON.parse(parts[7]); } catch(e){}
-        }
 
-        // Check if exists
-        const existingIndex = incidentLog.findIndex(e => e.id === newId);
-        
-        if(existingIndex > -1) {
-            if(confirm(`Patient ${newId} already exists. Update record with handover data?`)) {
-                // Update logic
-                const entry = incidentLog[existingIndex];
-                entry.notes += ` [Data Import from ${originTriager}: ${notes}]`;
-                entry.interventions = { ...entry.interventions, ...importedInts };
-                
-                logAudit("DATA_IMPORT_UPDATE", newId, `From ${originTriager}`, Date.now());
-                saveLocalData();
-                showToast("Record Updated");
-            }
-        } else {
-            // New Entry
-            const entry = {
+        const entry = {
                 id: newId,
                 time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
                 timestamp: Date.now(),
                 tool: "IMPORT",
                 category: category,
-                action: "DATA IMPORTED",
+                action: "LEGACY IMPORT",
                 reason: "Scan Import",
                 triager: triagerName, 
                 location: currentPosition,
                 sector: currentSector,
-                demos: demos,
-                allergies: allergies,
+                demos: parts[3] || "",
+                allergies: parts[4] || "",
                 notes: `${notes} [Origin: ${originTriager}]`,
                 highRisk: false,
-                interventions: importedInts,
-                evacuated: false
-            };
-            incidentLog.push(entry);
-            logAudit("DATA_IMPORT_NEW", newId, `From ${originTriager}`, Date.now());
-            saveLocalData();
-            updateDashboard();
-            showToast(`Imported ${newId}`);
-        }
+                interventions: {},
+                evacuated: false,
+                evacDest: "",
+                evacVehicle: ""
+        };
+        incidentLog.push(entry);
+        logAudit("DATA_IMPORT_LEGACY", newId, `From ${originTriager}`, Date.now());
+        saveLocalData();
+        updateDashboard();
+        showToast(`Imported ${newId}`);
     }
 
-    function onScanFailure(error) {
-        // console.warn(`Code scan error = ${error}`);
-    }
+    function onScanFailure(error) { }
 
     function autoSave(reason = 'Manual Edit') {
         if(currentLogIndex > -1) {
@@ -1661,7 +1673,6 @@
     
     function autoFillCasualties() {
         let p1=0, p2=0, p3=0, dead=0;
-        // Count unique casualites
         const unique = {};
         incidentLog.forEach(e => {
             if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
@@ -1735,11 +1746,9 @@
         const tbody = document.getElementById('log-body');
         tbody.innerHTML = '';
         
-        // Show Unique entries only? Or all? User requested audit trail but log view usually needs current state.
-        // Let's show current state of unique IDs to match dashboard
+        // Show current state of unique IDs to match dashboard
         const unique = {};
         incidentLog.forEach((e, i) => {
-             // Store index to allow editing correct record
              if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
                 unique[e.id] = {...e, originalIndex: i};
             }
@@ -1808,7 +1817,6 @@
         let csv = "";
         
         if (type === 'SNAPSHOT') {
-            // CURRENT STATE (Unique IDs)
             const m = JSON.parse(localStorage.getItem('mit_methane') || "{}");
             if(m.m) {
                 csv += `METHANE REPORT (Latest)\n`;
@@ -1841,7 +1849,6 @@
                 csv += `${escapeCSV(r.id)},${escapeCSV(dateStr)},${escapeCSV(r.time)},${escapeCSV(r.tool)},${escapeCSV(r.triager)},${escapeCSV(sec)},${lat},${lng},${acc},${escapeCSV(r.category)},${escapeCSV(r.reason)},${escapeCSV(r.action)},${escapeCSV(r.demos)},${escapeCSV(r.allergies)},${escapeCSV(r.notes)},${escapeCSV(intStr)},${highRiskStr},${evacStr},${escapeCSV(r.evacDest)},${escapeCSV(r.evacVehicle)}\n`;
             });
         } else {
-            // AUDIT TRAIL
             csv += "System_Time,Clinical_Time,User,Action_Type,Patient_ID,Details,Sector,Lat,Lng\n";
             auditLog.forEach(a => {
                 const sysDate = new Date(a.sysTime).toLocaleString();
@@ -1864,7 +1871,6 @@
 
     function copyLog() {
         let text = "PATIENT LOG\n";
-        // Copy only unique latest for clipboard too
          const unique = {};
         incidentLog.forEach(e => {
             if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
