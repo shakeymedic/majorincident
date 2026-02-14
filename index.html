@@ -10,6 +10,7 @@
 <title>Major Incident Triage</title>
 <!-- QR Library (Cached by Service Worker for offline use) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
     :root {
         --nhs-blue: #005EB8;
@@ -337,6 +338,15 @@
     }
     #qrcode { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
 
+    /* Scanner Modal */
+    #scanner-modal {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.95); z-index: 4000; display: none;
+        flex-direction: column; align-items: center; justify-content: center; color: white;
+    }
+    #scanner-reader { width: 100%; max-width: 500px; }
+    #scan-instruction { margin-bottom: 20px; font-size: 1.2rem; text-align: center; }
+
     #toast {
         visibility: hidden; min-width: 250px; background-color: var(--toast-bg); color: #fff;
         text-align: center; border-radius: 50px; padding: 16px; position: fixed; z-index: 3000;
@@ -347,8 +357,16 @@
 
     .editable-id { border-bottom: 1px dashed var(--nhs-blue); cursor: text; }
 
+    /* Time Offset Dropdown */
+    #time-offset-container {
+        display: flex; justify-content: flex-end; align-items: center; gap: 5px; margin-bottom: 10px;
+    }
+    #time-offset {
+        padding: 5px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.9rem; background: var(--card-bg); color: var(--text-color);
+    }
+
     @media print {
-        header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, #body-map-modal, #qr-modal, #manual-id-modal, .voice-btn { display: none !important; }
+        header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, #body-map-modal, #qr-modal, #manual-id-modal, #scanner-modal, .voice-btn { display: none !important; }
         .screen { display: none !important; }
         #log-screen { display: block !important; }
         .log-container { overflow: visible; }
@@ -386,6 +404,14 @@
             <button class="btn btn-secondary" onclick="closeManualId()">Cancel</button>
         </div>
     </div>
+</div>
+
+<!-- Scanner Modal -->
+<div id="scanner-modal">
+    <h3 id="scan-title">Scan</h3>
+    <p id="scan-instruction">Position code in box</p>
+    <div id="scanner-reader"></div>
+    <button class="btn btn-secondary" style="width: auto; margin-top:20px;" onclick="stopScanner()">Cancel</button>
 </div>
 
 <!-- QR Modal -->
@@ -495,6 +521,16 @@
                 <span style="font-size:0.9rem; font-weight:normal;">Secondary Clinical Triage</span>
             </button>
 
+            <button class="btn btn-secondary" style="background-color: var(--nhs-dark-blue);" onclick="scanPatientQR()">
+                Scan Patient QR<br>
+                <span style="font-size:0.9rem; font-weight:normal;">Receive Handover / Import Data</span>
+            </button>
+
+            <button class="btn btn-secondary" onclick="generateMyIdentityQR()">
+                Show My Device QR<br>
+                <span style="font-size:0.9rem; font-weight:normal;">For Colleagues to Scan</span>
+            </button>
+
             <button class="btn btn-secondary" onclick="showMethane()">
                 METHANE Report<br>
                 <span style="font-size:0.9rem; font-weight:normal;">Major Incident Declaration</span>
@@ -531,7 +567,7 @@
             <h2>Triage Result</h2>
             <div style="display:flex; justify-content:center; gap:10px; align-items:center;">
                 <p>ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong></p>
-                <button class="btn btn-secondary" style="width:auto; padding:5px 10px; font-size:0.8rem;" onclick="generateQR()">Show QR</button>
+                <button class="btn btn-secondary" style="width:auto; padding:5px 10px; font-size:0.8rem;" onclick="generatePatientQR()">Show QR</button>
             </div>
             
             <div id="result-tag" class="triage-tag">
@@ -548,9 +584,25 @@
             </div>
 
             <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions & Notes</button>
+            
+            <button id="btn-retriage" class="btn btn-secondary" style="margin-top:10px; border:2px solid var(--nhs-blue);" onclick="reTriage()">&#8635; New Assessment / Re-Triage</button>
 
             <!-- INLINE DETAILS CONTAINER -->
             <div id="details-container">
+                
+                <!-- Time Offset Control -->
+                <div id="time-offset-container">
+                    <label style="font-size:0.85rem; font-weight:bold;">Time of Event:</label>
+                    <select id="time-offset">
+                        <option value="0">Now (Real-time)</option>
+                        <option value="5">5 mins ago</option>
+                        <option value="10">10 mins ago</option>
+                        <option value="15">15 mins ago</option>
+                        <option value="30">30 mins ago</option>
+                        <option value="60">1 hour ago</option>
+                    </select>
+                </div>
+
                 <h3>Interventions</h3>
                 <div class="int-grid">
                     <button class="int-btn" data-type="Tourniquet" onclick="recordIntervention(this, 'Tourniquet')">Tourniquet<span class="int-time"></span></button>
@@ -565,8 +617,13 @@
                 <button class="btn btn-secondary" style="margin-bottom:10px;" onclick="openBodyMap()">&#128100; Mark Injury on Body Map</button>
                 
                 <div class="input-group">
+                    <label>Sector / Location</label>
+                    <input type="text" id="p-sector" placeholder="e.g. CCS, Inner Cordon" onblur="autoSave('Sector Update')">
+                </div>
+
+                <div class="input-group">
                     <label>Category Override</label>
-                    <select id="p-cat-override" onchange="autoSave()">
+                    <select id="p-cat-override" onchange="autoSave('Category Override')">
                         <option value="P1">P1 - Immediate</option>
                         <option value="P2">P2 - Urgent</option>
                         <option value="P3">P3 - Delayed</option>
@@ -576,23 +633,23 @@
 
                 <div class="input-group">
                     <label>Demographics</label>
-                    <input type="text" id="p-demos" placeholder="Age / Gender (e.g. 35M)" onblur="autoSave()">
+                    <input type="text" id="p-demos" placeholder="Age / Gender (e.g. 35M)" onblur="autoSave('Demographics Update')">
                 </div>
 
                 <div class="input-group">
                     <label>Allergies</label>
-                    <input type="text" id="p-allergies" placeholder="e.g. Penicillin" onblur="autoSave()">
+                    <input type="text" id="p-allergies" placeholder="e.g. Penicillin" onblur="autoSave('Allergies Update')">
                 </div>
 
                 <div class="input-group">
                     <label>Notes</label>
-                    <textarea id="p-notes" rows="3" placeholder="Injuries, mechanism etc." onblur="autoSave()"></textarea>
+                    <textarea id="p-notes" rows="3" placeholder="Injuries, mechanism etc." onblur="autoSave('Notes Update')"></textarea>
                     <button class="voice-btn" onclick="startVoice('p-notes')">&#127908;</button>
                 </div>
 
                 <div id="risk-container" style="display:none; margin-bottom: 1rem;">
                      <label style="display:flex; align-items:center; gap:10px; font-weight:bold; color:var(--nhs-red); padding:10px; border:1px solid var(--nhs-red); border-radius:4px;">
-                        <input type="checkbox" id="risk-check" style="width:24px; height:24px;" onchange="autoSave()">
+                        <input type="checkbox" id="risk-check" style="width:24px; height:24px;" onchange="autoSave('High Risk Flag')">
                         HIGH RISK OF DETERIORATION
                      </label>
                 </div>
@@ -600,9 +657,18 @@
                 <div style="border-top:1px solid #ccc; padding-top:10px; margin-top:10px;">
                     <h3>Transport / Evacuation</h3>
                     <div class="input-group">
-                        <label>Vehicle Call Sign</label>
-                        <input type="text" id="p-evac-vehicle" placeholder="e.g. AMB-404" onblur="autoSave()">
+                        <label>Destination</label>
+                        <input type="text" id="p-evac-dest" placeholder="e.g. Royal Infirmary, CCS">
                     </div>
+                    <div class="input-group">
+                        <label>Handover To / Vehicle</label>
+                        <input type="text" id="p-evac-vehicle" placeholder="e.g. AMB-404, HART Team 1">
+                    </div>
+                    
+                    <button class="btn btn-secondary btn-handover" style="margin-bottom:10px;" onclick="scanHandover()">
+                        Transfer Care (Scan Colleague)
+                    </button>
+                    
                     <button id="btn-evac" class="btn btn-evac" onclick="toggleEvac()">Mark as EVACUATED</button>
                 </div>
             </div>
@@ -648,7 +714,15 @@
                 <textarea id="m-svc" rows="3"></textarea>
             </div>
             <button class="btn btn-primary" onclick="saveMethane()">Save Report</button>
+            <button class="btn btn-secondary" style="margin-top:5px; background:#666;" onclick="showMethaneHistory()">View History</button>
             <button class="btn btn-secondary" onclick="resetToHome()">Cancel</button>
+        </div>
+
+        <!-- METHANE HISTORY SCREEN -->
+        <div id="methane-history-screen" class="screen">
+            <h2>METHANE History</h2>
+            <div id="methane-history-list" style="flex:1; overflow-y:auto;"></div>
+            <button class="btn btn-primary" onclick="showMethane()">Back to Editor</button>
         </div>
 
         <!-- LOG SCREEN -->
@@ -656,8 +730,8 @@
             <h2>Patient Log <small style="font-weight:normal; font-size:0.7rem;">(Tap row to edit)</small></h2>
             
             <div class="log-actions" style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px;">
-                <button class="btn btn-primary" style="flex:1; padding:0.5rem; font-size:0.9rem;" onclick="copyLog()">Copy All (w/ METHANE)</button>
-                <button class="btn btn-primary" style="flex:1; padding:0.5rem; font-size:0.9rem;" onclick="downloadCSV()">CSV (w/ METHANE)</button>
+                <button class="btn btn-primary" style="flex:1; padding:0.5rem; font-size:0.9rem;" onclick="downloadCSV('SNAPSHOT')">Casualty Register (CSV)</button>
+                <button class="btn btn-primary" style="flex:1; padding:0.5rem; font-size:0.9rem;" onclick="downloadCSV('AUDIT')">Forensic Audit Trail (CSV)</button>
             </div>
             
             <div class="log-container">
@@ -691,7 +765,8 @@
             const swContent = `
                 const CACHE_NAME = 'mit-triage-v1';
                 const urlsToCache = [
-                    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
+                    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+                    'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
                 ];
                 
                 self.addEventListener('install', event => {
@@ -714,9 +789,7 @@
             const swUrl = URL.createObjectURL(blob);
             
             if (window.location.protocol !== 'blob:' && window.location.protocol !== 'file:') {
-                navigator.serviceWorker.register(swUrl)
-                    .then(() => console.log('Service Worker Registered'))
-                    .catch(err => console.warn('Service Worker failed (harmless in preview):', err));
+                navigator.serviceWorker.register(swUrl).catch(err => console.warn('SW failed:', err));
             }
         } catch (e) {
             console.warn('Service Worker setup skipped:', e);
@@ -731,15 +804,19 @@
     let currentTool = null;
     let patientCounter = 1;
     let incidentLog = [];
+    let auditLog = [];
+    let methaneHistory = [];
     let currentPatientId = ""; 
     let currentLogIndex = -1; 
     let stepHistory = [];
-    let idMode = 'AUTO'; // AUTO or MANUAL
+    let idMode = 'AUTO'; 
     
     // GPS State
     let currentPosition = null; 
     let gpsAccuracy = null;
     let watchId = null;
+    let html5QrcodeScanner = null;
+    let scanMode = null; // 'PATIENT' or 'HANDOVER'
 
     // --- INITIALIZATION ---
     window.onload = function() {
@@ -804,6 +881,8 @@
     // --- PERSISTENCE ---
     function saveLocalData() {
         localStorage.setItem('mit_triage_log', JSON.stringify(incidentLog));
+        localStorage.setItem('mit_audit_log', JSON.stringify(auditLog));
+        localStorage.setItem('mit_methane_history', JSON.stringify(methaneHistory));
         localStorage.setItem('mit_patient_counter', patientCounter.toString());
         localStorage.setItem('mit_triager', triagerName);
         localStorage.setItem('mit_device_prefix', devicePrefix);
@@ -825,6 +904,8 @@
 
     function loadLocalData() {
         const savedLog = localStorage.getItem('mit_triage_log');
+        const savedAudit = localStorage.getItem('mit_audit_log');
+        const savedMethaneHist = localStorage.getItem('mit_methane_history');
         const savedCount = localStorage.getItem('mit_patient_counter');
         const savedRole = localStorage.getItem('mit_user_role');
         const savedTriager = localStorage.getItem('mit_triager');
@@ -840,6 +921,8 @@
                 document.getElementById('resume-count').innerText = incidentLog.length;
             }
         }
+        if (savedAudit) auditLog = JSON.parse(savedAudit);
+        if (savedMethaneHist) methaneHistory = JSON.parse(savedMethaneHist);
         if (savedCount) patientCounter = parseInt(savedCount);
         
         if (savedTriager) {
@@ -889,6 +972,27 @@
         }
     }
     
+    // --- AUDIT LOGGING ---
+    function logAudit(actionType, patientId, details, clinicalTime) {
+        const sysTime = Date.now();
+        const entry = {
+            sysTime: sysTime,
+            clinTime: clinicalTime || sysTime,
+            user: triagerName,
+            action: actionType,
+            patientId: patientId,
+            details: details,
+            sector: currentSector,
+            gps: currentPosition
+        };
+        auditLog.push(entry);
+    }
+
+    function getClinicalTimestamp() {
+        const offsetMins = parseInt(document.getElementById('time-offset').value) || 0;
+        return Date.now() - (offsetMins * 60000);
+    }
+
     // --- ROLE & SETUP ---
     function setUserRole(role) {
         userRole = role;
@@ -958,11 +1062,26 @@
     function editPatientId(inResult = false) {
         const newId = prompt("Edit Patient ID:", currentPatientId);
         if(newId && newId.trim() !== "") {
+            const oldId = currentPatientId;
             currentPatientId = newId.trim();
             document.getElementById('q-patient-id').innerText = currentPatientId;
-            document.getElementById('r-patient-id').innerText = currentPatientId;
+            // r-patient-id check
+            const rEl = document.getElementById('r-patient-id');
+            if(rEl) rEl.innerText = currentPatientId;
+            
+            // Check for numeric collision in Auto Mode
+            if(idMode === 'AUTO') {
+                // If ID is something like "ALPHA-MITT-005"
+                const parts = currentPatientId.split('-');
+                const potentialNum = parseInt(parts[parts.length-1]);
+                if (!isNaN(potentialNum) && potentialNum >= patientCounter) {
+                    patientCounter = potentialNum + 1;
+                }
+            }
+
             if(currentLogIndex > -1) {
                 incidentLog[currentLogIndex].id = currentPatientId;
+                logAudit("ID_CHANGE", currentPatientId, `Changed from ${oldId} to ${currentPatientId}`, getClinicalTimestamp());
                 saveLocalData();
             }
         }
@@ -1003,15 +1122,20 @@
         }
     }
 
-    function initiateTriage(tool) {
+    function initiateTriage(tool, existingId = null) {
         currentTool = tool;
         stepHistory = [];
         
-        // Mode Badge
         const badge = document.getElementById('mode-indicator');
         badge.innerText = tool;
         badge.style.display = 'inline-block';
         badge.style.backgroundColor = tool === 'MITT' ? '#E87722' : '#007F3B'; 
+
+        if (existingId) {
+            currentPatientId = existingId;
+            startFlow();
+            return;
+        }
 
         if (idMode === 'MANUAL') {
             document.getElementById('manual-id-input').value = "";
@@ -1030,6 +1154,13 @@
         if(val) {
             currentPatientId = val;
             document.getElementById('manual-id-modal').style.display = 'none';
+            // Try to sync counter
+            const parts = val.split(/[-_ ]/); // Split by common separators
+            const lastPart = parts[parts.length-1];
+            const potentialNum = parseInt(lastPart);
+            if (!isNaN(potentialNum) && potentialNum >= patientCounter) {
+                patientCounter = potentialNum + 1;
+            }
             startFlow();
         } else {
             showToast("Please enter an ID");
@@ -1094,7 +1225,7 @@
 
     function logResult(category, action, reason) {
         const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        const timestamp = Date.now(); 
+        const timestamp = getClinicalTimestamp();
         const entry = {
             id: currentPatientId, 
             time: time, 
@@ -1112,16 +1243,50 @@
             highRisk: false, 
             interventions: {}, 
             evacuated: false, 
+            evacDest: "",
             evacVehicle: ""
         };
 
         incidentLog.push(entry);
         currentLogIndex = incidentLog.length - 1; 
+        
+        logAudit("TRIAGE_COMPLETE", entry.id, `Category: ${category}, Reason: ${reason}`, timestamp);
+        
         saveLocalData();
         updateDashboard();
         
         renderResultScreen(entry);
     }
+    
+    function reTriage() {
+        if (currentLogIndex === -1) return;
+        const entry = incidentLog[currentLogIndex];
+        
+        // Log the decision
+        logAudit("RETRIAGE_STARTED", entry.id, `Re-triage from ${entry.tool}`, getClinicalTimestamp());
+        
+        // Go to home to select tool but use special flow
+        showScreen('home-screen');
+        showToast(`Re-Triaging ${entry.id}. Select Tool.`);
+        
+        // Temporarily override the button behavior just for this flow?
+        // Better: We just changed initiateTriage to accept an ID. 
+        // We need to tell the UI that the next click on TST/MITT should use THIS id.
+        // We can set a global "pendingReTriageId"
+        
+        window.pendingReTriageId = entry.id;
+    }
+    // Update initiateTriage to check this global
+    const _originalInit = initiateTriage;
+    initiateTriage = function(tool) {
+        if (window.pendingReTriageId) {
+             const id = window.pendingReTriageId;
+             window.pendingReTriageId = null; // Clear it
+             _originalInit(tool, id);
+        } else {
+             _originalInit(tool);
+        }
+    };
     
     function renderResultScreen(entry) {
         document.getElementById('r-patient-id').innerText = entry.id;
@@ -1152,8 +1317,10 @@
         document.getElementById('p-demos').value = entry.demos;
         document.getElementById('p-allergies').value = entry.allergies;
         document.getElementById('p-notes').value = entry.notes;
+        document.getElementById('p-sector').value = entry.sector;
         document.getElementById('risk-check').checked = entry.highRisk;
         document.getElementById('p-evac-vehicle').value = entry.evacVehicle || "";
+        document.getElementById('p-evac-dest').value = entry.evacDest || "";
         
         // Evac Button State
         const evacBtn = document.getElementById('btn-evac');
@@ -1207,7 +1374,7 @@
         
         const entry = incidentLog[currentLogIndex];
         const timeStr = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        const ts = Date.now();
+        const ts = getClinicalTimestamp();
         
         if(!entry.interventions) entry.interventions = {};
         
@@ -1215,10 +1382,12 @@
             delete entry.interventions[type];
             btn.classList.remove('active');
             btn.querySelector('.int-time').innerText = "";
+            logAudit("INTERVENTION_REMOVED", entry.id, type, ts);
         } else {
             entry.interventions[type] = { time: timeStr, ts: ts };
             btn.classList.add('active');
             btn.querySelector('.int-time').innerText = timeStr;
+            logAudit("INTERVENTION_ADDED", entry.id, type, ts);
         }
         saveLocalData();
     }
@@ -1226,9 +1395,14 @@
     function toggleEvac() {
         if(currentLogIndex === -1) return;
         const entry = incidentLog[currentLogIndex];
+        const ts = getClinicalTimestamp();
         entry.evacuated = !entry.evacuated;
         entry.evacVehicle = document.getElementById('p-evac-vehicle').value;
+        entry.evacDest = document.getElementById('p-evac-dest').value;
+        
+        logAudit(entry.evacuated ? "EVACUATION" : "EVACUATION_UNDO", entry.id, `Vehicle: ${entry.evacVehicle}, Dest: ${entry.evacDest}`, ts);
         saveLocalData();
+        updateDashboard(); // Re-calc stats
         renderResultScreen(entry); // update btn text
     }
 
@@ -1264,7 +1438,10 @@
         // Append to notes
         const noteField = document.getElementById('p-notes');
         const timestamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        noteField.value += ` [Injury marked on ${loc} @ ${timestamp}]`;
+        const noteText = ` [Injury marked on ${loc} @ ${timestamp}]`;
+        noteField.value += noteText;
+        
+        logAudit("BODYMAP_MARK", incidentLog[currentLogIndex].id, loc, getClinicalTimestamp());
         autoSave();
     }
 
@@ -1277,7 +1454,7 @@
         recognition.lang = "en-GB";
         recognition.onresult = function(event) {
             document.getElementById(fieldId).value += " " + event.results[0][0].transcript;
-            autoSave();
+            autoSave('Voice Note Added');
         };
         recognition.onerror = function(event) {
             console.error(event.error);
@@ -1290,7 +1467,7 @@
     function generateQR() {
         if(currentLogIndex === -1) return;
         const entry = incidentLog[currentLogIndex];
-        const data = `${entry.id}|${entry.category}|${entry.time}|${entry.demos}|${entry.allergies}|${entry.notes}`;
+        const data = `${entry.id}|${entry.category}|${entry.time}|${entry.demos}|${entry.allergies}|${entry.notes}|${triagerName}`;
         
         document.getElementById('qrcode').innerHTML = "";
         new QRCode(document.getElementById("qrcode"), {
@@ -1300,15 +1477,147 @@
     }
     function closeQR() { document.getElementById('qr-modal').style.display = 'none'; }
 
-    function autoSave() {
+    // SCANNER
+    function startScanner() {
+        document.getElementById('scanner-modal').style.display = 'flex';
+        html5QrcodeScanner = new Html5Qrcode("scanner-reader");
+        html5QrcodeScanner.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: 250 },
+            onScanSuccess,
+            onScanFailure
+        ).catch(err => {
+            console.error(err);
+            showToast("Camera error");
+            closeScanner();
+        });
+    }
+
+    function stopScanner() {
+        if(html5QrcodeScanner) {
+            html5QrcodeScanner.stop().then(() => {
+                document.getElementById('scanner-modal').style.display = 'none';
+            }).catch(err => console.error(err));
+        } else {
+            document.getElementById('scanner-modal').style.display = 'none';
+        }
+    }
+
+    function onScanSuccess(decodedText, decodedResult) {
+        stopScanner();
+        
+        // Router based on scanMode and payload type
+        if (decodedText.startsWith("MIT_USER")) {
+            handleIdentityScan(decodedText);
+        } else if (decodedText.startsWith("MIT_PT") || decodedText.includes('|')) {
+            handlePatientScan(decodedText);
+        } else {
+            showToast("Unknown QR Format");
+        }
+    }
+
+    function handleIdentityScan(text) {
+        // MIT_USER|CallSign|Role
+        const parts = text.split('|');
+        const colleagueName = parts[1] || "Unknown";
+        
+        if (scanMode === 'HANDOVER') {
+            // Log Handover
+             if(currentLogIndex > -1) {
+                 const entry = incidentLog[currentLogIndex];
+                 entry.notes += ` [Handed over to ${colleagueName}]`;
+                 entry.evacuated = true; // Assume handover implies exit from my care? Or just log it.
+                 // Let's just log note for now
+                 logAudit("HANDOVER_OUT", entry.id, `To ${colleagueName}`, Date.now());
+                 saveLocalData();
+                 showToast(`Logged handover to ${colleagueName}`);
+             }
+        } else {
+             showToast(`Scanned Identity: ${colleagueName}`);
+        }
+    }
+
+    function handlePatientScan(text) {
+        // Format: MIT_PT|ID|Cat|Time|Demos|Allergies|Notes|OriginTriager|IntJson
+        
+        let parts = text.split('|');
+        if(text.startsWith("MIT_PT|")) {
+             parts = text.substring(7).split('|');
+        }
+        
+        if(parts.length < 3) { showToast("Invalid Patient QR"); return; }
+        
+        const newId = parts[0];
+        const category = parts[1];
+        const demos = parts[3] || "";
+        const allergies = parts[4] || "";
+        const notes = parts[5] || "";
+        const originTriager = parts[6] || "Unknown";
+        
+        let importedInts = {};
+        if (parts[7]) {
+             try { importedInts = JSON.parse(parts[7]); } catch(e){}
+        }
+
+        // Check if exists
+        const existingIndex = incidentLog.findIndex(e => e.id === newId);
+        
+        if(existingIndex > -1) {
+            if(confirm(`Patient ${newId} already exists. Update record with handover data?`)) {
+                // Update logic
+                const entry = incidentLog[existingIndex];
+                entry.notes += ` [Data Import from ${originTriager}: ${notes}]`;
+                entry.interventions = { ...entry.interventions, ...importedInts };
+                
+                logAudit("DATA_IMPORT_UPDATE", newId, `From ${originTriager}`, Date.now());
+                saveLocalData();
+                showToast("Record Updated");
+            }
+        } else {
+            // New Entry
+            const entry = {
+                id: newId,
+                time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+                timestamp: Date.now(),
+                tool: "IMPORT",
+                category: category,
+                action: "DATA IMPORTED",
+                reason: "Scan Import",
+                triager: triagerName, 
+                location: currentPosition,
+                sector: currentSector,
+                demos: demos,
+                allergies: allergies,
+                notes: `${notes} [Origin: ${originTriager}]`,
+                highRisk: false,
+                interventions: importedInts,
+                evacuated: false
+            };
+            incidentLog.push(entry);
+            logAudit("DATA_IMPORT_NEW", newId, `From ${originTriager}`, Date.now());
+            saveLocalData();
+            updateDashboard();
+            showToast(`Imported ${newId}`);
+        }
+    }
+
+    function onScanFailure(error) {
+        // console.warn(`Code scan error = ${error}`);
+    }
+
+    function autoSave(reason = 'Manual Edit') {
         if(currentLogIndex > -1) {
             const entry = incidentLog[currentLogIndex];
+            const oldCat = entry.category;
+            
             entry.category = document.getElementById('p-cat-override').value; 
             entry.demos = document.getElementById('p-demos').value;
             entry.allergies = document.getElementById('p-allergies').value;
             entry.notes = document.getElementById('p-notes').value;
             entry.highRisk = document.getElementById('risk-check').checked;
             entry.evacVehicle = document.getElementById('p-evac-vehicle').value;
+            entry.evacDest = document.getElementById('p-evac-dest').value;
+            entry.sector = document.getElementById('p-sector').value;
             
             const tag = document.getElementById('result-tag');
             document.getElementById('tag-text').innerText = entry.category;
@@ -1319,6 +1628,10 @@
             else tag.classList.add('dead');
             
             document.getElementById('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
+            
+            if(oldCat !== entry.category) {
+                logAudit("CATEGORY_CHANGE", entry.id, `Changed ${oldCat} -> ${entry.category}`, getClinicalTimestamp());
+            }
             
             saveLocalData();
             updateDashboard();
@@ -1332,22 +1645,59 @@
     }
 
     function showMethane() { showScreen('methane-screen'); }
+    function showMethaneHistory() {
+        const list = document.getElementById('methane-history-list');
+        list.innerHTML = "";
+        methaneHistory.forEach((m, i) => {
+            const div = document.createElement('div');
+            div.style.borderBottom = "1px solid #ccc";
+            div.style.padding = "10px";
+            div.innerHTML = `<strong>Version ${i+1}</strong> (${new Date(m.timestamp).toLocaleTimeString()})<br>
+            Cas: ${m.n} | Haz: ${m.h}`;
+            list.appendChild(div);
+        });
+        showScreen('methane-history-screen');
+    }
     
     function autoFillCasualties() {
         let p1=0, p2=0, p3=0, dead=0;
+        // Count unique casualites
+        const unique = {};
         incidentLog.forEach(e => {
-            if(e.category === 'P1') p1++;
+            if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
+                unique[e.id] = e;
+            }
+        });
+        Object.values(unique).forEach(e => {
+             if(e.category === 'P1') p1++;
             else if(e.category === 'P2') p2++;
             else if(e.category === 'P3') p3++;
             else dead++;
         });
-        const summary = `Total: ${incidentLog.length} (P1:${p1}, P2:${p2}, P3:${p3}, Dead:${dead})`;
+        const summary = `Total: ${Object.keys(unique).length} (P1:${p1}, P2:${p2}, P3:${p3}, Dead:${dead})`;
         document.getElementById('m-num').value = summary;
     }
     
-    function saveMethane() { saveLocalData(); showToast("Report Saved"); showScreen('home-screen'); }
+    function saveMethane() { 
+        const mData = {
+            m: document.getElementById('m-decl').value,
+            e: document.getElementById('m-loc').value,
+            t: document.getElementById('m-type').value,
+            h: document.getElementById('m-haz').value,
+            a: document.getElementById('m-acc').value,
+            n: document.getElementById('m-num').value,
+            e_svc: document.getElementById('m-svc').value,
+            timestamp: Date.now()
+        };
+        methaneHistory.push(mData);
+        saveLocalData(); 
+        showToast("Report Saved"); 
+        showScreen('home-screen'); 
+    }
 
     function nextPatient() {
+        // Reset manual ID
+        window.pendingReTriageId = null;
         if(idMode === 'AUTO') {
             patientCounter++;
             saveLocalData();
@@ -1359,7 +1709,14 @@
 
     function updateDashboard() {
         let p1=0, p2=0, p3=0, dead=0, evac=0;
+        const unique = {};
         incidentLog.forEach(e => {
+            if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
+                unique[e.id] = e;
+            }
+        });
+        
+        Object.values(unique).forEach(e => {
             if(e.category === 'P1') p1++;
             else if(e.category === 'P2') p2++;
             else if(e.category === 'P3') p3++;
@@ -1371,21 +1728,30 @@
         document.getElementById('count-p3').innerText = p3;
         document.getElementById('count-dead').innerText = dead;
         
-        document.getElementById('evac-summary').innerText = `Evacuated: ${evac} | On Scene: ${incidentLog.length - evac}`;
+        document.getElementById('evac-summary').innerText = `Evacuated: ${evac} | On Scene: ${Object.keys(unique).length - evac}`;
     }
 
     function showLog() {
         const tbody = document.getElementById('log-body');
         tbody.innerHTML = '';
         
-        const reversedLog = [...incidentLog].map((e, i) => ({...e, originalIndex: i})).reverse();
+        // Show Unique entries only? Or all? User requested audit trail but log view usually needs current state.
+        // Let's show current state of unique IDs to match dashboard
+        const unique = {};
+        incidentLog.forEach((e, i) => {
+             // Store index to allow editing correct record
+             if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
+                unique[e.id] = {...e, originalIndex: i};
+            }
+        });
+        
+        const sorted = Object.values(unique).sort((a,b) => b.timestamp - a.timestamp);
         const now = Date.now();
         
-        reversedLog.forEach(row => {
+        sorted.forEach(row => {
             const tr = document.createElement('tr');
             tr.className = "clickable-row";
             
-            // Tourniquet Timer Check (> 2 hours = 7200000ms)
             if(row.interventions && row.interventions['Tourniquet']) {
                const tqTime = row.interventions['Tourniquet'].ts;
                if (tqTime && (now - tqTime > 7200000)) {
@@ -1435,92 +1801,83 @@
 
     function escapeCSV(str) {
         if (!str) return "";
-        // Wrap in quotes and escape internal quotes
         return `"${str.toString().replace(/"/g, '""')}"`;
     }
 
-    function getMethaneString() {
-         const m = JSON.parse(localStorage.getItem('mit_methane') || "{}");
-         if(!m.m) return "";
-         return `METHANE REPORT\n----------------\nM: ${m.m}\nE: ${m.e}\nT: ${m.t}\nH: ${m.h}\nA: ${m.a}\nN: ${m.n}\nE: ${m.e_svc}\n----------------\n\n`;
-    }
-
-    function copyLog() {
-        let text = getMethaneString() + "PATIENT LOG\n";
-        incidentLog.forEach(r => {
-            let intStr = "";
-            if(r.interventions) {
-                intStr = " INT: " + Object.entries(r.interventions).map(([k,v]) => `${k}(${v.time})`).join(", ");
-            }
-            
-            let locStr = "";
-            if (r.sector) locStr += `[Sec:${r.sector}] `;
-            if (r.location) locStr += `[GPS:${r.location.lat},${r.location.lng} ±${r.location.acc}m] `;
-            
-            let evacStr = r.evacuated ? ` [EVACUATED ${r.evacVehicle}]` : "";
-            const toolStr = r.tool ? `[${r.tool}] ` : "";
-            const riskStr = r.highRisk ? "[HIGH RISK] " : "";
-            const dateStr = new Date(r.timestamp).toLocaleDateString();
-
-            text += `${dateStr} ${r.time} | ${r.id} | Triager:${r.triager} | ${toolStr}${r.category} | Reason:${r.reason} | ${r.action} | ${locStr}${r.demos} ${r.allergies} ${r.notes}${intStr}${riskStr}${evacStr}\n`;
-        });
-        
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(() => showToast("Copied to Clipboard"))
-            .catch(() => fallbackCopy(text));
-        } else { fallbackCopy(text); }
-    }
-
-    function fallbackCopy(text) {
-        const textArea = document.createElement("textarea");
-        textArea.value = text;
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        try { document.execCommand('copy'); showToast("Copied"); } catch (err) {}
-        document.body.removeChild(textArea);
-    }
-
-    function downloadCSV() {
-        const m = JSON.parse(localStorage.getItem('mit_methane') || "{}");
+    function downloadCSV(type) {
         let csv = "";
         
-        if(m.m) {
-            csv += `METHANE REPORT\n`;
-            csv += `M,${escapeCSV(m.m)}\nE,${escapeCSV(m.e)}\nT,${escapeCSV(m.t)}\nH,${escapeCSV(m.h)}\nA,${escapeCSV(m.a)}\nN,${escapeCSV(m.n)}\nE,${escapeCSV(m.e_svc)}\n\n`;
-        }
-
-        // Expanded Headers
-        csv += "LogID,Date,Time,Tool,Triager,Sector,Lat,Lng,GPS_Accuracy,Category,Reason,Action,Age_Gender,Allergies,Clinical_Notes,Interventions,High_Risk_Flag,Evacuation_Status,Transport_Vehicle\n";
-        
-        incidentLog.forEach(r => {
-            const dateStr = new Date(r.timestamp).toLocaleDateString();
-            const lat = r.location ? r.location.lat : "";
-            const lng = r.location ? r.location.lng : "";
-            const acc = r.location ? r.location.acc : "";
-            const sec = r.sector || "";
-            
-            // Format Interventions nicely with semicolons
-            let intStr = "";
-            if(r.interventions) {
-                intStr = Object.entries(r.interventions).map(([k,v]) => `${k}(${v.time})`).join("; ");
+        if (type === 'SNAPSHOT') {
+            // CURRENT STATE (Unique IDs)
+            const m = JSON.parse(localStorage.getItem('mit_methane') || "{}");
+            if(m.m) {
+                csv += `METHANE REPORT (Latest)\n`;
+                csv += `M,${escapeCSV(m.m)}\nE,${escapeCSV(m.e)}\nT,${escapeCSV(m.t)}\nH,${escapeCSV(m.h)}\nA,${escapeCSV(m.a)}\nN,${escapeCSV(m.n)}\nE,${escapeCSV(m.e_svc)}\n\n`;
             }
+            csv += "LogID,Date,Time,Tool,Triager,Sector,Lat,Lng,GPS_Accuracy,Category,Reason,Action,Age_Gender,Allergies,Clinical_Notes,Interventions,High_Risk_Flag,Evacuation_Status,Dest,Vehicle\n";
             
-            // Format Booleans
-            const highRiskStr = r.highRisk ? "YES" : "NO";
-            const evacStr = r.evacuated ? "EVACUATED" : "ON SCENE";
+            const unique = {};
+            incidentLog.forEach(e => {
+                if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
+                    unique[e.id] = e;
+                }
+            });
+            
+            Object.values(unique).forEach(r => {
+                const dateStr = new Date(r.timestamp).toLocaleDateString();
+                const lat = r.location ? r.location.lat : "";
+                const lng = r.location ? r.location.lng : "";
+                const acc = r.location ? r.location.acc : "";
+                const sec = r.sector || "";
+                
+                let intStr = "";
+                if(r.interventions) {
+                    intStr = Object.entries(r.interventions).map(([k,v]) => `${k}(${v.time})`).join("; ");
+                }
+                
+                const highRiskStr = r.highRisk ? "YES" : "NO";
+                const evacStr = r.evacuated ? "EVACUATED" : "ON SCENE";
 
-            // Construct Row using escapeCSV for safety
-            csv += `${escapeCSV(r.id)},${escapeCSV(dateStr)},${escapeCSV(r.time)},${escapeCSV(r.tool)},${escapeCSV(r.triager)},${escapeCSV(sec)},${lat},${lng},${acc},${escapeCSV(r.category)},${escapeCSV(r.reason)},${escapeCSV(r.action)},${escapeCSV(r.demos)},${escapeCSV(r.allergies)},${escapeCSV(r.notes)},${escapeCSV(intStr)},${highRiskStr},${evacStr},${escapeCSV(r.evacVehicle)}\n`;
-        });
+                csv += `${escapeCSV(r.id)},${escapeCSV(dateStr)},${escapeCSV(r.time)},${escapeCSV(r.tool)},${escapeCSV(r.triager)},${escapeCSV(sec)},${lat},${lng},${acc},${escapeCSV(r.category)},${escapeCSV(r.reason)},${escapeCSV(r.action)},${escapeCSV(r.demos)},${escapeCSV(r.allergies)},${escapeCSV(r.notes)},${escapeCSV(intStr)},${highRiskStr},${evacStr},${escapeCSV(r.evacDest)},${escapeCSV(r.evacVehicle)}\n`;
+            });
+        } else {
+            // AUDIT TRAIL
+            csv += "System_Time,Clinical_Time,User,Action_Type,Patient_ID,Details,Sector,Lat,Lng\n";
+            auditLog.forEach(a => {
+                const sysDate = new Date(a.sysTime).toLocaleString();
+                const clinDate = new Date(a.clinTime).toLocaleString();
+                const lat = a.gps ? a.gps.lat : "";
+                const lng = a.gps ? a.gps.lng : "";
+                
+                csv += `${escapeCSV(sysDate)},${escapeCSV(clinDate)},${escapeCSV(a.user)},${escapeCSV(a.action)},${escapeCSV(a.patientId)},${escapeCSV(a.details)},${escapeCSV(a.sector)},${lat},${lng}\n`;
+            });
+        }
         
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `incident_log_${new Date().getTime()}.csv`;
+        a.download = `incident_${type}_${new Date().getTime()}.csv`;
         a.click();
         showToast("CSV Downloaded");
+    }
+
+    function copyLog() {
+        let text = "PATIENT LOG\n";
+        // Copy only unique latest for clipboard too
+         const unique = {};
+        incidentLog.forEach(e => {
+            if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
+                unique[e.id] = e;
+            }
+        });
+        
+        Object.values(unique).forEach(r => {
+            text += `${r.time} | ${r.id} | ${r.category} | ${r.action} | ${r.demos} ${r.notes}\n`;
+        });
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => showToast("Copied")).catch(() => alert("Copy failed"));
+        } else { alert("Copy failed"); }
     }
 
     function pad(num, size) {
