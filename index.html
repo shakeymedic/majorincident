@@ -136,8 +136,9 @@
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         display: block;
     }
-    .dashboard.expanded .dash-num { font-size: 1.4rem; display: block; }
+    .dashboard.expanded .dash-num { font-size: 1.2rem; display: block; }
     .dashboard.expanded .dash-label { font-size: 0.75rem; display: block; }
+    .dashboard.expanded .dash-sub { font-size: 0.7rem; font-weight: normal; display: block; opacity: 0.8; }
 
     .dash-p1 { background: var(--nhs-red); color: white; }
     .dash-p2 { background: var(--nhs-yellow); color: black; }
@@ -258,6 +259,26 @@
     }
     body.night-mode .clinical-note { background: #332b00; color: #fff; border-color: #665500; }
 
+    /* New Clinical Prompt Box */
+    .clinical-prompt {
+        font-size: 0.9rem;
+        color: #003087;
+        background: #e6f0fa;
+        padding: 1rem;
+        border-radius: 6px;
+        margin-bottom: 1rem;
+        border-left: 5px solid #005EB8;
+        display: none;
+    }
+    body.night-mode .clinical-prompt {
+        background: #001a33;
+        color: #cce0ff;
+        border-color: #3366cc;
+    }
+    .clinical-prompt h4 { margin: 0 0 5px 0; font-size: 0.95rem; text-transform: uppercase; }
+    .clinical-prompt ul { margin: 0; padding-left: 20px; }
+    .clinical-prompt li { margin-bottom: 4px; }
+
     .triage-tag {
         font-size: 4rem;
         font-weight: bold;
@@ -329,6 +350,20 @@
         flex-direction: column; align-items: center; justify-content: center; color: white;
     }
     #manual-id-box { background: var(--card-bg); padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; color: var(--text-color); }
+
+    /* ATMIST Modal */
+    #atmist-modal {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.9); z-index: 3000; display: none;
+        flex-direction: column; align-items: center; justify-content: center; color: white;
+    }
+    #atmist-box { 
+        background: var(--card-bg); padding: 20px; border-radius: 10px; width: 90%; max-width: 500px; color: var(--text-color); 
+        max-height: 90vh; overflow-y: auto;
+    }
+    .atmist-row { border-bottom: 1px solid #ccc; padding: 10px 0; display: flex; }
+    .atmist-label { font-weight: bold; width: 40px; font-size: 1.2rem; color: var(--nhs-blue); }
+    .atmist-val { flex: 1; font-size: 1.1rem; }
 
     /* QR Modal */
     #qr-modal {
@@ -406,6 +441,15 @@
     </div>
 </div>
 
+<!-- ATMIST Modal -->
+<div id="atmist-modal">
+    <div id="atmist-box">
+        <h3 style="margin-top:0; color:var(--nhs-blue);">ATMIST Handover</h3>
+        <div id="atmist-content"></div>
+        <button class="btn btn-primary" onclick="closeAtmist()">Close</button>
+    </div>
+</div>
+
 <!-- Scanner Modal -->
 <div id="scanner-modal">
     <h3 id="scan-title">Scan</h3>
@@ -442,10 +486,10 @@
 
     <!-- PERSISTENT GLOBAL DASHBOARD -->
     <div id="global-dashboard" class="dashboard">
-        <div class="dash-card dash-p1"><span class="dash-label">P1</span><span class="dash-num" id="count-p1">0</span></div>
-        <div class="dash-card dash-p2"><span class="dash-label">P2</span><span class="dash-num" id="count-p2">0</span></div>
-        <div class="dash-card dash-p3"><span class="dash-label">P3</span><span class="dash-num" id="count-p3">0</span></div>
-        <div class="dash-card dash-dead"><span class="dash-label">DEAD</span><span class="dash-num" id="count-dead">0</span></div>
+        <div class="dash-card dash-p1"><span class="dash-label">P1</span><span class="dash-num" id="count-p1">0 / 0</span><span class="dash-sub" style="font-size:0.6rem;">(On Scene)</span></div>
+        <div class="dash-card dash-p2"><span class="dash-label">P2</span><span class="dash-num" id="count-p2">0 / 0</span><span class="dash-sub" style="font-size:0.6rem;">(On Scene)</span></div>
+        <div class="dash-card dash-p3"><span class="dash-label">P3</span><span class="dash-num" id="count-p3">0 / 0</span><span class="dash-sub" style="font-size:0.6rem;">(On Scene)</span></div>
+        <div class="dash-card dash-dead"><span class="dash-label">DEAD</span><span class="dash-num" id="count-dead">0 / 0</span><span class="dash-sub" style="font-size:0.6rem;">(On Scene)</span></div>
         <div class="dash-card dash-evac" style="display:none; font-size:0.8rem;" id="evac-summary">Evacuated: 0 | On Scene: 0</div>
     </div>
 
@@ -558,7 +602,7 @@
                 <button class="btn btn-yes" onclick="handleAnswer(true)">YES</button>
                 <button class="btn btn-no" onclick="handleAnswer(false)">NO</button>
                 <button id="btn-back" class="btn btn-secondary" style="margin-top:10px; padding:0.8rem; background-color:#666;" onclick="stepBack()">&#8617; Back</button>
-                <button class="btn btn-secondary" style="margin-top:1rem; padding: 0.8rem;" onclick="resetToHome()">Cancel Case</button>
+                <button class="btn btn-secondary" style="margin-top:1rem; padding: 0.8rem;" onclick="confirmCancelCase()">Cancel Case</button>
             </div>
         </div>
 
@@ -574,6 +618,9 @@
                 <span id="tag-text">P1</span>
                 <div id="hr-badge" class="hr-badge" style="display:none;">HIGH RISK</div>
             </div>
+
+            <!-- CLINICAL PROMPT BOX FOR P1 -->
+            <div id="clinical-prompts" class="clinical-prompt"></div>
             
             <div id="action-box" class="clinical-note" style="font-size: 1.1rem; font-weight: bold; text-align: center; border-color: var(--nhs-red); color: var(--nhs-red);">
                 <!-- Actions -->
@@ -585,7 +632,10 @@
 
             <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions & Notes</button>
             
-            <button id="btn-retriage" class="btn btn-secondary" style="margin-top:10px; border:2px solid var(--nhs-blue);" onclick="reTriage()">&#8635; New Assessment / Re-Triage</button>
+            <div style="display:flex; gap:10px; margin-top:10px;">
+                <button id="btn-retriage" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-blue);" onclick="reTriage()">&#8635; Re-Triage</button>
+                <button id="btn-atmist" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-green);" onclick="generateAtmist()">&#128227; ATMIST</button>
+            </div>
 
             <!-- INLINE DETAILS CONTAINER -->
             <div id="details-container">
@@ -705,7 +755,7 @@
             <div class="input-group">
                 <label>N - Number of Casualties</label>
                 <div style="display:flex; gap:10px;">
-                    <input type="text" id="m-num" type="number" pattern="[0-9]*" style="flex:1;">
+                    <input type="text" id="m-num" type="text" style="flex:1;">
                     <button class="btn btn-secondary" style="width:auto; padding:0 10px; margin:0;" onclick="autoFillCasualties()">Auto-Fill</button>
                 </div>
             </div>
@@ -788,7 +838,7 @@
             const blob = new Blob([swContent], {type: 'application/javascript'});
             const swUrl = URL.createObjectURL(blob);
             
-            // Only register if not file/blob to prevent errors in preview
+            // Safety check: Don't register if we are in a blob/file context that forbids it
             if (window.location.protocol !== 'blob:' && window.location.protocol !== 'file:') {
                 navigator.serviceWorker.register(swUrl)
                     .then(() => console.log('Service Worker Registered'))
@@ -798,6 +848,58 @@
             console.warn('Service Worker setup skipped:', e);
         }
     }
+
+    // --- CONFIG ---
+    // Expanded Clinical Prompts based on PDF & Guidelines
+    const clinicalPrompts = {
+        "Catastrophic Bleeding": [
+            "CRITICAL: STOP THE BLEED",
+            "Apply Tourniquet / Pelvic Binder",
+            "Haemostatic Dressings",
+            "Consider TXA (if >4 units blood likely)",
+            "Massive Haemorrhage Protocol",
+            "Correction of Hypothermia"
+        ],
+        "Unresponsive to Voice": [
+            "Airway Threat - Protect Airway",
+            "Consider Advanced Airway (iGel/LMA/Intubation)",
+            "Recovery Position (if airway safe)",
+            "Neurosurgery for Intra-cranial Haemorrhage?",
+            "Correction of Low Blood Glucose"
+        ],
+        "RR outside 12-23": [
+            "Chest/Breathing Injury?",
+            "Consider Thoracostomy (Needle/Finger/Drain)",
+            "Consider Chest Seal",
+            "Non-Invasive Positive Pressure Vent (NIPPV)",
+            "Resuscitative Thoracostomy (if traumatic arrest)",
+            "Spinal Nursing (C1-C3 risk?)"
+        ],
+        "Tachycardia > 100": [
+            "Circulatory Shock?",
+            "Support Volume Resuscitation (Blood/Vasopressors)",
+            "Consider TXA",
+            "Vascular Surgery (Uncontrolled Haemorrhage)",
+            "Laparotomy/Thoracotomy (Torso Trauma)"
+        ],
+        "Penetrating Trauma": [
+            "Rapid Evacuation to Theatre",
+            "Damage Control Surgery",
+            "Stop Bleeding",
+            "Chest Seal for Torso Wounds"
+        ],
+         "Unconscious - Breathing": [
+            "Airway Protected?",
+            "Recovery Position",
+            "Monitor GCS",
+            "Spinal Precautions"
+        ],
+        "Age < 2": [
+            "Consider Specialist Paediatric Care",
+            "Warmth / Hypothermia Prevention",
+            "Glucose Check"
+        ]
+    };
 
     // --- STATE ---
     let userRole = null; 
@@ -1216,12 +1318,24 @@
         const flow = currentTool === 'TST' ? tstFlow : mittFlow;
         loadStep(flow.find(s => s.id === prevStepId));
     }
+    
+    function confirmCancelCase() {
+        if(confirm("Cancel current assessment? No data will be saved for this patient ID.")) {
+            resetToHome();
+        }
+    }
 
     function logResult(category, action, reason) {
         try {
             const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
             const timestamp = getClinicalTimestamp();
             
+            // Handle DECEASED with mandatory time
+            if (category === 'DEAD') {
+                 const timeOfDeath = prompt("Please confirm Time of Death (HH:MM):", time);
+                 if (timeOfDeath) action += ` [TOD: ${timeOfDeath}]`;
+            }
+
             // Create new entry
             const entry = {
                 id: currentPatientId, 
@@ -1263,7 +1377,7 @@
         const entry = incidentLog[currentLogIndex];
         pendingReTriageId = entry.id;
         
-        logAudit("RETRIAGE_STARTED", entry.id, `Re-triage from ${entry.tool}`, getClinicalTimestamp());
+        logAudit("RETRIAGE_STARTED", entry.id, `Re-triage from ${entry.tool}. Prev Cat: ${entry.category}`, getClinicalTimestamp());
         showScreen('home-screen');
         showToast(`Re-Triaging ${entry.id}. Select Tool.`);
     }
@@ -1281,6 +1395,22 @@
 
         document.getElementById('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
         document.getElementById('action-box').innerText = entry.action;
+        
+        // Show Clinical Prompts if applicable
+        const promptBox = document.getElementById('clinical-prompts');
+        const reasonKey = entry.reason;
+        
+        // Look up prompt in dictionary. Check for exact match first, then partial match if needed (e.g. for TST)
+        let prompts = clinicalPrompts[reasonKey];
+        if (!prompts && reasonKey === "Penetrating Trauma") prompts = clinicalPrompts["Penetrating Trauma"];
+        if (!prompts && reasonKey === "Age < 2") prompts = clinicalPrompts["Age < 2"];
+        
+        if (prompts) {
+            promptBox.style.display = 'block';
+            promptBox.innerHTML = `<h4>Clinical Considerations</h4><ul>${prompts.map(p => `<li>${p}</li>`).join('')}</ul>`;
+        } else {
+            promptBox.style.display = 'none';
+        }
         
         const locText = document.getElementById('location-status-text');
         let displayLoc = currentSector ? `Sec: ${currentSector}` : "";
@@ -1348,6 +1478,28 @@
         }
     }
     
+    function generateAtmist() {
+        if(currentLogIndex === -1) return;
+        const entry = incidentLog[currentLogIndex];
+        
+        let treatments = "None";
+        if (entry.interventions && Object.keys(entry.interventions).length > 0) {
+            treatments = Object.keys(entry.interventions).join(", ");
+        }
+
+        const html = `
+            <div class="atmist-row"><div class="atmist-label">A</div><div class="atmist-val">${entry.demos || "Unknown"}</div></div>
+            <div class="atmist-row"><div class="atmist-label">T</div><div class="atmist-val">${entry.time}</div></div>
+            <div class="atmist-row"><div class="atmist-label">M</div><div class="atmist-val">${entry.notes || "Not specified"}</div></div>
+            <div class="atmist-row"><div class="atmist-label">I</div><div class="atmist-val">See Body Map / Notes</div></div>
+            <div class="atmist-row"><div class="atmist-label">S</div><div class="atmist-val"><strong>${entry.category}</strong> (${entry.reason})</div></div>
+            <div class="atmist-row"><div class="atmist-label">T</div><div class="atmist-val">${treatments}</div></div>
+        `;
+        document.getElementById('atmist-content').innerHTML = html;
+        document.getElementById('atmist-modal').style.display = 'flex';
+    }
+    function closeAtmist() { document.getElementById('atmist-modal').style.display = 'none'; }
+    
     function recordIntervention(btn, type) {
         if(currentLogIndex === -1) return;
         
@@ -1398,6 +1550,7 @@
         pt.x = evt.clientX; pt.y = evt.clientY;
         const cursorPt = pt.matrixTransform(svg.getScreenCTM().inverse());
         
+        // Add X to SVG (visual only for session)
         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
         text.setAttribute("x", cursorPt.x - 5);
         text.setAttribute("y", cursorPt.y + 5);
@@ -1407,11 +1560,13 @@
         text.textContent = "X";
         svg.appendChild(text);
         
+        // Infer location (very basic)
         let loc = "Body";
         if(cursorPt.y < 80) loc = "Head/Neck";
         else if(cursorPt.y > 200) loc = "Legs";
         else loc = "Torso/Arms";
         
+        // Append to notes
         const noteField = document.getElementById('p-notes');
         const timestamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         const noteText = ` [Injury marked on ${loc} @ ${timestamp}]`;
@@ -1446,8 +1601,6 @@
         const transferObj = { type: "MIT_FULL_PATIENT", data: entry };
         const jsonStr = JSON.stringify(transferObj);
         
-        document.getElementById('qr-title').innerText = "Patient Passport";
-        document.getElementById('qr-desc').innerText = "Scan to receive FULL patient data";
         document.getElementById('qrcode').innerHTML = "";
         
         try {
@@ -1464,8 +1617,6 @@
     function generateMyIdentityQR() {
         const data = `MIT_USER|${triagerName}|${userRole}`;
         
-        document.getElementById('qr-title').innerText = "My Device Identity";
-        document.getElementById('qr-desc').innerText = "Colleagues scan this to log handover TO you.";
         document.getElementById('qrcode').innerHTML = "";
         new QRCode(document.getElementById("qrcode"), {
             text: data, width: 200, height: 200
@@ -1526,18 +1677,14 @@
         const parts = text.split('|');
         const colleagueName = parts[1] || "Unknown";
         
-        if (scanMode === 'HANDOVER') {
-             if(currentLogIndex > -1) {
-                 const entry = incidentLog[currentLogIndex];
-                 entry.notes += ` [Handed over to ${colleagueName}]`;
-                 entry.evacuated = true; 
-                 entry.evacVehicle = `Handover: ${colleagueName}`;
-                 logAudit("HANDOVER_OUT", entry.id, `To ${colleagueName}`, Date.now());
-                 saveLocalData();
-                 showToast(`Logged handover to ${colleagueName}`);
-             }
-        } else {
-             showToast(`Scanned Identity: ${colleagueName}`);
+        if (currentLogIndex > -1) {
+             const entry = incidentLog[currentLogIndex];
+             entry.notes += ` [Handed over to ${colleagueName}]`;
+             entry.evacuated = true; 
+             entry.evacVehicle = `Handover: ${colleagueName}`;
+             logAudit("HANDOVER_OUT", entry.id, `To ${colleagueName}`, Date.now());
+             saveLocalData();
+             showToast(`Logged handover to ${colleagueName}`);
         }
     }
 
@@ -1720,6 +1867,8 @@
 
     function updateDashboard() {
         let p1=0, p2=0, p3=0, dead=0, evac=0;
+        let totP1=0, totP2=0, totP3=0, totDead=0;
+        
         const unique = {};
         incidentLog.forEach(e => {
             if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
@@ -1728,16 +1877,28 @@
         });
         
         Object.values(unique).forEach(e => {
-            if(e.category === 'P1') p1++;
-            else if(e.category === 'P2') p2++;
-            else if(e.category === 'P3') p3++;
-            else dead++;
-            if(e.evacuated) evac++;
+            // Count totals
+            if(e.category === 'P1') totP1++;
+            else if(e.category === 'P2') totP2++;
+            else if(e.category === 'P3') totP3++;
+            else totDead++;
+
+            // Count Active on Scene (not evacuated)
+            if(e.evacuated) {
+                evac++;
+            } else {
+                if(e.category === 'P1') p1++;
+                else if(e.category === 'P2') p2++;
+                else if(e.category === 'P3') p3++;
+                else dead++;
+            }
         });
-        document.getElementById('count-p1').innerText = p1;
-        document.getElementById('count-p2').innerText = p2;
-        document.getElementById('count-p3').innerText = p3;
-        document.getElementById('count-dead').innerText = dead;
+        
+        // Display: Active / Total
+        document.getElementById('count-p1').innerText = `${p1} / ${totP1}`;
+        document.getElementById('count-p2').innerText = `${p2} / ${totP2}`;
+        document.getElementById('count-p3').innerText = `${p3} / ${totP3}`;
+        document.getElementById('count-dead').innerText = `${dead} / ${totDead}`;
         
         document.getElementById('evac-summary').innerText = `Evacuated: ${evac} | On Scene: ${Object.keys(unique).length - evac}`;
     }
