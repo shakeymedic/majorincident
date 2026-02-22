@@ -191,6 +191,8 @@
     .btn-secondary { background-color: var(--nhs-grey); }
     .btn-danger { background-color: var(--nhs-red); }
     .btn-evac { background-color: var(--nhs-dark-blue); border: 2px solid var(--nhs-blue); }
+    
+    .demo-btn { padding: 0.8rem; font-size: 0.9rem; flex: 1; margin-bottom: 0; background-color: var(--nhs-grey); }
 
     .id-mode-btn.active {
         background-color: var(--nhs-dark-blue);
@@ -536,7 +538,7 @@
     </div>
 
     <main>
-        <div id="intro-screen" class="screen active" style="padding: 2rem;">
+        <div id="intro-screen" class="screen" style="padding: 2rem;">
             <h2 style="margin-bottom:1.5rem;">Configuration</h2>
             
             <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin-bottom:2rem; border:2px solid var(--nhs-blue);" onclick="showLog()">
@@ -719,6 +721,12 @@
 
                     <div class="input-group">
                         <label>Demographics</label>
+                        <div style="display:flex; gap:5px; margin-bottom:10px;">
+                            <button class="btn demo-btn" onclick="addDemoText('Adult')">Adult</button>
+                            <button class="btn demo-btn" onclick="addDemoText('Child')">Child</button>
+                            <button class="btn demo-btn" onclick="addDemoText('Male')">Male</button>
+                            <button class="btn demo-btn" onclick="addDemoText('Female')">Female</button>
+                        </div>
                         <input type="text" id="p-demos" placeholder="Age / Gender (e.g. 35M)" onblur="autoSave('Demographics Update')">
                     </div>
 
@@ -939,17 +947,57 @@
     let watchId = null;
     let html5QrcodeScanner = null;
     let scanMode = null; 
+    
+    let db;
+    const request = indexedDB.open("MITT_DB", 1);
+    
+    request.onupgradeneeded = (event) => {
+        db = event.target.result;
+        if (!db.objectStoreNames.contains('logs')) {
+            db.createObjectStore('logs');
+        }
+    };
+    
+    request.onsuccess = (event) => {
+        db = event.target.result;
+        loadLogsFromDB();
+    };
+
+    function triggerHaptic(type) {
+        if (!navigator.vibrate) return;
+        if (type === 'success') navigator.vibrate(200);
+        if (type === 'alert') navigator.vibrate([100, 50, 100, 50, 100]);
+        if (type === 'tap') navigator.vibrate(50);
+    }
+
+    function playBeep() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            osc.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+        } catch(e) {}
+    }
 
     window.onload = function() {
         initGPS();
-        loadLocalData(); 
-        updateDashboard();
+        loadLocalSettings();
         requestWakeLock();
         if (localStorage.getItem('mit_night_mode') === 'true') {
             document.body.classList.add('night-mode');
         }
+        
+        if (userRole === null) {
+            showScreen('intro-screen');
+        } else {
+            updateDashboard();
+            showScreen('home-screen');
+        }
     };
-
+    
     function showToast(message) {
         const x = document.getElementById("toast");
         x.innerText = message;
@@ -1000,10 +1048,71 @@
         }
     }
 
-    function saveLocalData() {
-        localStorage.setItem('mit_triage_log', JSON.stringify(incidentLog));
-        localStorage.setItem('mit_audit_log', JSON.stringify(auditLog));
-        localStorage.setItem('mit_methane_history', JSON.stringify(methaneHistory));
+    function loadLocalSettings() {
+        const savedCount = localStorage.getItem('mit_patient_counter');
+        const savedRole = localStorage.getItem('mit_user_role');
+        const savedTriager = localStorage.getItem('mit_triager');
+        const savedPrefix = localStorage.getItem('mit_device_prefix');
+        const savedSector = localStorage.getItem('mit_sector');
+        const savedIdMode = localStorage.getItem('mit_id_mode');
+
+        if (savedCount) patientCounter = parseInt(savedCount);
+        if (savedTriager) {
+            triagerName = savedTriager;
+            document.getElementById('intro-triager').value = triagerName;
+            document.getElementById('header-user').innerText = `User: ${triagerName}`;
+        }
+        if (savedPrefix) {
+            devicePrefix = savedPrefix;
+            document.getElementById('intro-device-prefix').value = devicePrefix;
+        }
+        if (savedSector) {
+            currentSector = savedSector;
+            document.getElementById('intro-sector').value = currentSector;
+            document.getElementById('header-sector').innerText = currentSector;
+        }
+        if (savedIdMode) {
+            idMode = savedIdMode;
+            setIdMode(idMode);
+        }
+        if (savedRole) setUserRole(savedRole);
+    }
+    
+    function loadLogsFromDB() {
+        const tx = db.transaction('logs', 'readonly');
+        const store = tx.objectStore('logs');
+        
+        store.get('incidentLog').onsuccess = (e) => {
+            if (e.target.result) {
+                incidentLog = e.target.result;
+                if(incidentLog.length > 0) {
+                    document.getElementById('btn-resume-log').style.display = 'block';
+                    document.getElementById('resume-count').innerText = incidentLog.length;
+                }
+                updateDashboard();
+            }
+        };
+        store.get('auditLog').onsuccess = (e) => {
+            if (e.target.result) auditLog = e.target.result;
+        };
+        store.get('methaneHistory').onsuccess = (e) => {
+            if (e.target.result) methaneHistory = e.target.result;
+        };
+        
+        const savedMethane = localStorage.getItem('mit_methane');
+        if (savedMethane) {
+            const m = JSON.parse(savedMethane);
+            document.getElementById('m-decl').value = m.m || "Standby";
+            document.getElementById('m-loc').value = m.e || "";
+            document.getElementById('m-type').value = m.t || "";
+            document.getElementById('m-haz').value = m.h || "";
+            document.getElementById('m-acc').value = m.a || "";
+            document.getElementById('m-num').value = m.n || "";
+            document.getElementById('m-svc').value = m.e_svc || "";
+        }
+    }
+
+    function saveState() {
         localStorage.setItem('mit_patient_counter', patientCounter.toString());
         localStorage.setItem('mit_triager', triagerName);
         localStorage.setItem('mit_device_prefix', devicePrefix);
@@ -1021,65 +1130,13 @@
             e_svc: document.getElementById('m-svc').value
         };
         localStorage.setItem('mit_methane', JSON.stringify(methaneData));
-    }
 
-    function loadLocalData() {
-        const savedLog = localStorage.getItem('mit_triage_log');
-        const savedAudit = localStorage.getItem('mit_audit_log');
-        const savedMethaneHist = localStorage.getItem('mit_methane_history');
-        const savedCount = localStorage.getItem('mit_patient_counter');
-        const savedRole = localStorage.getItem('mit_user_role');
-        const savedTriager = localStorage.getItem('mit_triager');
-        const savedPrefix = localStorage.getItem('mit_device_prefix');
-        const savedSector = localStorage.getItem('mit_sector');
-        const savedMethane = localStorage.getItem('mit_methane');
-        const savedIdMode = localStorage.getItem('mit_id_mode');
-
-        if (savedLog) {
-            incidentLog = JSON.parse(savedLog);
-            if(incidentLog.length > 0) {
-                document.getElementById('btn-resume-log').style.display = 'block';
-                document.getElementById('resume-count').innerText = incidentLog.length;
-            }
-        }
-        if (savedAudit) auditLog = JSON.parse(savedAudit);
-        if (savedMethaneHist) methaneHistory = JSON.parse(savedMethaneHist);
-        if (savedCount) patientCounter = parseInt(savedCount);
-        
-        if (savedTriager) {
-            triagerName = savedTriager;
-            document.getElementById('intro-triager').value = triagerName;
-            document.getElementById('header-user').innerText = `User: ${triagerName}`;
-        }
-        
-        if (savedPrefix) {
-            devicePrefix = savedPrefix;
-            document.getElementById('intro-device-prefix').value = devicePrefix;
-        }
-
-        if (savedSector) {
-            currentSector = savedSector;
-            document.getElementById('intro-sector').value = currentSector;
-            document.getElementById('header-sector').innerText = currentSector;
-        }
-        
-        if (savedIdMode) {
-            idMode = savedIdMode;
-            setIdMode(idMode);
-        }
-        
-        if (savedMethane) {
-            const m = JSON.parse(savedMethane);
-            document.getElementById('m-decl').value = m.m;
-            document.getElementById('m-loc').value = m.e;
-            document.getElementById('m-type').value = m.t;
-            document.getElementById('m-haz').value = m.h;
-            document.getElementById('m-acc').value = m.a;
-            document.getElementById('m-num').value = m.n;
-            document.getElementById('m-svc').value = m.e_svc;
-        }
-
-        if (savedRole) setUserRole(savedRole);
+        if (!db) return;
+        const tx = db.transaction('logs', 'readwrite');
+        const store = tx.objectStore('logs');
+        store.put(incidentLog, 'incidentLog');
+        store.put(auditLog, 'auditLog');
+        store.put(methaneHistory, 'methaneHistory');
     }
 
     function clearAllData() {
@@ -1087,7 +1144,13 @@
         const confirmCode = prompt("FINAL SECURITY CHECK:\nTo wipe all data, type 'DELETE' below:");
         if(confirmCode === "DELETE") {
             localStorage.clear();
-            location.reload(); 
+            if(db) {
+                const tx = db.transaction('logs', 'readwrite');
+                tx.objectStore('logs').clear();
+                tx.oncomplete = () => { location.reload(); };
+            } else {
+                location.reload();
+            }
         } else if (confirmCode !== null) {
             showToast("Incorrect code. Data SAFE.");
         }
@@ -1136,7 +1199,7 @@
         if(inputSec) currentSector = inputSec;
         document.getElementById('header-sector').innerText = currentSector;
         
-        saveLocalData();
+        saveState();
         
         document.getElementById('btn-mitt').style.display = (role === 'NON_HCP') ? 'none' : 'block';
         document.getElementById('risk-container').style.display = (role === 'HCP') ? 'block' : 'none';
@@ -1170,7 +1233,7 @@
             document.getElementById('mode-manual').classList.add('active');
             document.getElementById('prefix-container').style.display = 'none';
         }
-        saveLocalData();
+        saveState();
     }
 
     function resetApp() {
@@ -1189,9 +1252,20 @@
             if(currentLogIndex > -1) {
                 incidentLog[currentLogIndex].id = currentPatientId;
                 logAudit("ID_CHANGE", currentPatientId, `Changed from ${oldId} to ${currentPatientId}`, getClinicalTimestamp());
-                saveLocalData();
+                saveState();
             }
         }
+    }
+
+    function addDemoText(text) {
+        const field = document.getElementById('p-demos');
+        const currentVal = field.value.trim();
+        if (currentVal) {
+            field.value = currentVal + " / " + text;
+        } else {
+            field.value = text;
+        }
+        autoSave('Demographics Added');
     }
 
     const tstFlow = [
@@ -1296,6 +1370,7 @@
 
     function handleAnswer(answer) {
         try {
+            triggerHaptic('tap');
             const stepId = document.getElementById('question-screen').dataset.stepId;
             stepHistory.push(stepId);
             
@@ -1312,6 +1387,7 @@
             if (outcome.type === 'next') {
                 loadStep(flow.find(s => s.id === outcome.step));
             } else if (outcome.type === 'result') {
+                triggerHaptic('success');
                 logResult(outcome.category, outcome.action, outcome.reason);
             }
         } catch (err) {
@@ -1393,7 +1469,7 @@
         
         logAudit("TRIAGE_COMPLETE", entry.id, `Category: ${category}, Reason: ${reason}`, timestamp);
         
-        saveLocalData();
+        saveState();
         updateDashboard();
         renderResultScreen(entry);
     }
@@ -1530,6 +1606,7 @@
     function recordIntervention(btn, type) {
         if(currentLogIndex === -1) return;
         
+        triggerHaptic('tap');
         const entry = incidentLog[currentLogIndex];
         const timeStr = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         const ts = getClinicalTimestamp();
@@ -1547,7 +1624,7 @@
             btn.querySelector('.int-time').innerText = timeStr;
             logAudit("INTERVENTION_ADDED", entry.id, type, ts);
         }
-        saveLocalData();
+        saveState();
     }
     
     function toggleEvac() {
@@ -1559,7 +1636,7 @@
         entry.evacDest = document.getElementById('p-evac-dest').value;
         
         logAudit(entry.evacuated ? "EVACUATION" : "EVACUATION_UNDO", entry.id, `Vehicle: ${entry.evacVehicle}, Dest: ${entry.evacDest}`, ts);
-        saveLocalData();
+        saveState();
         updateDashboard();
         renderResultScreen(entry); 
     }
@@ -1721,6 +1798,9 @@
 
     function onScanSuccess(decodedText, decodedResult) {
         stopScanner();
+        playBeep();
+        triggerHaptic('success');
+        
         if (decodedText.startsWith("MIT_USER")) {
             handleIdentityScan(decodedText);
         } else {
@@ -1750,7 +1830,7 @@
              entry.evacuated = true; 
              entry.evacVehicle = `Handover: ${colleagueName}`;
              logAudit("HANDOVER_OUT", entry.id, `To ${colleagueName}`, Date.now());
-             saveLocalData();
+             saveState();
              showToast(`Logged handover to ${colleagueName}`);
         }
     }
@@ -1771,7 +1851,7 @@
                 entry.highRisk = data.highRisk;
                 
                 logAudit("DATA_IMPORT_UPDATE", newId, `Full JSON from ${originTriager}`, Date.now());
-                saveLocalData();
+                saveState();
                 showToast("Record Updated");
             }
         } else {
@@ -1783,7 +1863,7 @@
             
             incidentLog.push(entry);
             logAudit("DATA_IMPORT_NEW", newId, `Full JSON from ${originTriager}`, Date.now());
-            saveLocalData();
+            saveState();
             updateDashboard();
             showToast(`Imported ${newId}`);
         }
@@ -1824,7 +1904,7 @@
         };
         incidentLog.push(entry);
         logAudit("DATA_IMPORT_LEGACY", newId, `From ${originTriager}`, Date.now());
-        saveLocalData();
+        saveState();
         updateDashboard();
         showToast(`Imported ${newId}`);
     }
@@ -1867,7 +1947,7 @@
                 logAudit("CATEGORY_CHANGE", entry.id, `Changed ${oldCat} -> ${entry.category}`, getClinicalTimestamp());
             }
             
-            saveLocalData();
+            saveState();
             updateDashboard();
         }
     }
@@ -1923,7 +2003,7 @@
             timestamp: Date.now()
         };
         methaneHistory.push(mData);
-        saveLocalData(); 
+        saveState(); 
         showToast("Report Saved"); 
         showScreen('home-screen'); 
     }
@@ -1932,7 +2012,7 @@
         window.pendingReTriageId = null;
         if(idMode === 'AUTO') {
             patientCounter++;
-            saveLocalData();
+            saveState();
         }
         initiateTriage(currentTool); 
     }
@@ -2098,23 +2178,6 @@
         a.download = `incident_${type}_${new Date().getTime()}.csv`;
         a.click();
         showToast("CSV Downloaded");
-    }
-
-    function copyLog() {
-        let text = "PATIENT LOG\n";
-         const unique = {};
-        incidentLog.forEach(e => {
-            if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
-                unique[e.id] = e;
-            }
-        });
-        
-        Object.values(unique).forEach(r => {
-            text += `${r.time} | ${r.id} | ${r.category} | ${r.action} | ${r.demos} ${r.notes}\n`;
-        });
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(() => showToast("Copied")).catch(() => alert("Copy failed"));
-        } else { alert("Copy failed"); }
     }
 
     function pad(num, size) {
