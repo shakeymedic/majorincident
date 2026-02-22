@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#005EB8">
 <meta name="description" content="Major Incident Triage Tool">
+<link rel="manifest" href="manifest.json">
 <title>Major Incident Triage</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -63,7 +64,6 @@
         transition: background-color 0.3s, color 0.3s;
     }
 
-    /* Card effect */
     .card {
         background-color: var(--card-bg);
         border-radius: 8px;
@@ -170,9 +170,9 @@
     .btn {
         display: block;
         width: 100%;
-        padding: 1.2rem;
+        padding: 1.4rem;
         margin-bottom: 1rem;
-        font-size: 1.15rem;
+        font-size: 1.2rem;
         font-weight: bold;
         text-align: center;
         border: none;
@@ -186,8 +186,8 @@
     }
     .btn:active { opacity: 0.9; transform: scale(0.98); }
     .btn-primary { background-color: var(--nhs-blue); }
-    .btn-yes { background-color: var(--nhs-green); font-size: 1.8rem; height: 100px; display: flex; align-items: center; justify-content: center; }
-    .btn-no { background-color: var(--nhs-red); font-size: 1.8rem; height: 100px; display: flex; align-items: center; justify-content: center; }
+    .btn-yes { background-color: var(--nhs-green); font-size: 1.8rem; height: 110px; display: flex; align-items: center; justify-content: center; }
+    .btn-no { background-color: var(--nhs-red); font-size: 1.8rem; height: 110px; display: flex; align-items: center; justify-content: center; }
     .btn-secondary { background-color: var(--nhs-grey); }
     .btn-danger { background-color: var(--nhs-red); }
     .btn-evac { background-color: var(--nhs-dark-blue); border: 2px solid var(--nhs-blue); }
@@ -198,7 +198,7 @@
         position: relative;
     }
     .id-mode-btn.active::after {
-        content: "‚úì"; position: absolute; right: 10px; font-size: 1.2em;
+        content: "✓"; position: absolute; right: 10px; font-size: 1.2em;
     }
 
     .header-controls { display: flex; gap: 10px; }
@@ -206,9 +206,9 @@
         background: rgba(255,255,255,0.2);
         border: 1px solid rgba(255,255,255,0.4);
         color: white;
-        padding: 8px 14px;
+        padding: 10px 16px;
         border-radius: 20px;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
         cursor: pointer;
         font-weight: bold;
     }
@@ -239,15 +239,15 @@
         letter-spacing: 0.5px;
     }
 
-    .input-group { margin-bottom: 1.2rem; position: relative; }
-    .input-group label { display: block; font-weight: bold; margin-bottom: 0.5rem; color: var(--nhs-blue); font-size: 1rem; }
+    .input-group { margin-bottom: 1.4rem; position: relative; }
+    .input-group label { display: block; font-weight: bold; margin-bottom: 0.6rem; color: var(--nhs-blue); font-size: 1.1rem; }
     body.night-mode .input-group label { color: var(--nhs-yellow); }
     .input-group input, .input-group textarea, .input-group select {
         width: 100%;
-        padding: 1rem;
+        padding: 1.2rem;
         border: 1px solid #ccc;
         border-radius: 8px;
-        font-size: 16px;
+        font-size: 18px;
         font-family: inherit;
         background: var(--card-bg);
         color: var(--text-color);
@@ -260,10 +260,10 @@
         bottom: 12px;
         background: none;
         border: none;
-        font-size: 1.5rem;
+        font-size: 1.8rem;
         cursor: pointer;
         opacity: 0.6;
-        padding: 5px;
+        padding: 8px;
     }
 
     .screen { display: none; height: 100%; flex-direction: column; }
@@ -348,14 +348,14 @@
     .int-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.5rem; }
     .int-btn {
         background: var(--card-bg); border: 2px solid var(--nhs-blue); color: var(--nhs-blue);
-        padding: 15px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; text-align: center; font-size: 1rem;
+        padding: 20px 10px; border-radius: 8px; font-weight: bold; cursor: pointer; text-align: center; font-size: 1.1rem;
         transition: all 0.2s;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    .int-btn::before { content: "‚óã"; font-size: 1.2rem; margin-bottom: 2px; }
+    .int-btn::before { content: "○"; font-size: 1.4rem; margin-bottom: 4px; }
     .int-btn.active { background: var(--nhs-green); border-color: var(--nhs-green); color: white; }
-    .int-btn.active::before { content: "‚úì"; }
-    .int-time { display: block; font-size: 0.8rem; font-weight: normal; margin-top: 4px; }
+    .int-btn.active::before { content: "✓"; }
+    .int-time { display: block; font-size: 0.9rem; font-weight: normal; margin-top: 6px; }
 
     .log-container { overflow-x: auto; margin-bottom: 1rem; -webkit-overflow-scrolling: touch; border: 1px solid #ccc; border-radius: 4px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -379,7 +379,6 @@
     #details-container { border-top: 1px solid #ccc; margin-top: 1.5rem; padding-top: 1.5rem; display: none; }
     #details-container.show { display: block; }
     
-    /* Modals */
     .modal-overlay {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0,0,0,0.9); z-index: 2000; display: none;
@@ -403,14 +402,13 @@
     #toast.show { visibility: visible; opacity: 1; top: 50px; }
 
     .editable-id { border-bottom: 2px dashed var(--nhs-blue); cursor: text; padding-bottom: 2px; }
-    .editable-id::after { content: " ‚úé"; font-size: 0.8em; opacity: 0.5; }
+    .editable-id::after { content: " ✎"; font-size: 0.8em; opacity: 0.5; }
 
-    /* Time Offset Dropdown */
     #time-offset-container {
         display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-bottom: 15px;
     }
     #time-offset {
-        padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 1rem; background: var(--card-bg); color: var(--text-color); width: auto;
+        padding: 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 1.1rem; background: var(--card-bg); color: var(--text-color); width: auto;
     }
 
     @media print {
@@ -432,7 +430,9 @@
 <div id="body-map-modal" class="modal-overlay">
     <h3 style="color:white; margin-bottom:10px;">Tap Injury Location</h3>
     <svg id="bodymap" viewBox="0 0 200 400" width="300" height="500" onclick="handleBodyMapClick(event)">
-        <path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/> <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/> </svg>
+        <path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
+        <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
+    </svg>
     <button class="btn btn-secondary" style="width: auto; margin-top: 20px;" onclick="closeBodyMap()">Done</button>
 </div>
 
@@ -498,7 +498,7 @@
         </div>
         <div class="header-controls">
             <button class="icon-btn" onclick="toggleBlackout()" aria-label="Blackout Mode">Blackout</button>
-            <button class="icon-btn" onclick="toggleNightMode()" aria-label="Night Mode">&#9790;</button>
+            <button class="icon-btn" onclick="toggleNightMode()" aria-label="Night Mode">☾</button>
         </div>
     </header>
 
@@ -536,12 +536,11 @@
     </div>
 
     <main>
-        
         <div id="intro-screen" class="screen active" style="padding: 2rem;">
             <h2 style="margin-bottom:1.5rem;">Configuration</h2>
             
             <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin-bottom:2rem; border:2px solid var(--nhs-blue);" onclick="showLog()">
-                &#128196; View Existing Log (<span id="resume-count">0</span>)
+                📋 View Existing Log (<span id="resume-count">0</span>)
             </button>
 
             <div class="card">
@@ -641,7 +640,7 @@
                 <button class="btn btn-yes" onclick="handleAnswer(true)">YES</button>
                 <button class="btn btn-no" onclick="handleAnswer(false)">NO</button>
                 <div style="display:flex; gap:10px; margin-top:10px;">
-                    <button id="btn-back" class="btn btn-secondary" style="flex:1; background-color:#666;" onclick="stepBack()">&#8617; Back</button>
+                    <button id="btn-back" class="btn btn-secondary" style="flex:1; background-color:#666;" onclick="stepBack()">↩ Back</button>
                     <button class="btn btn-secondary" style="flex:1;" onclick="confirmCancelCase()">Cancel</button>
                 </div>
             </div>
@@ -663,7 +662,7 @@
             <div id="clinical-prompts" class="clinical-prompt"></div>
             
             <div id="action-box" class="clinical-note" style="font-size: 1.1rem; font-weight: bold; text-align: center; border-color: var(--nhs-red); color: var(--nhs-red);">
-                </div>
+            </div>
             
             <div style="text-align:center; font-size:0.9rem; margin-bottom:1rem;">
                 GPS: <span id="location-status-text">...</span>
@@ -672,12 +671,11 @@
             <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions & Notes</button>
             
             <div style="display:flex; gap:10px; margin-top:10px;">
-                <button id="btn-retriage" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-blue); color: var(--nhs-blue); background: var(--card-bg);" onclick="reTriage()">&#8635; Re-Triage</button>
-                <button id="btn-atmist" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-green); color: var(--nhs-green); background: var(--card-bg);" onclick="generateAtmist()">&#128227; ATMIST</button>
+                <button id="btn-retriage" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-blue); color: var(--nhs-blue); background: var(--card-bg);" onclick="reTriage()">↻ Re-Triage</button>
+                <button id="btn-atmist" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-green); color: var(--nhs-green); background: var(--card-bg);" onclick="generateAtmist()">📢 ATMIST</button>
             </div>
 
             <div id="details-container">
-                
                 <div id="time-offset-container">
                     <label style="font-size:0.9rem; font-weight:bold;">Time of Event:</label>
                     <select id="time-offset">
@@ -701,7 +699,7 @@
                 </div>
 
                 <h3>Clinical Notes</h3>
-                <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="openBodyMap()">&#128100; Mark Injury on Body Map</button>
+                <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="openBodyMap()">👤 Mark Injury on Body Map</button>
                 
                 <div class="card">
                     <div class="input-group">
@@ -732,13 +730,13 @@
                     <div class="input-group">
                         <label>Notes</label>
                         <textarea id="p-notes" rows="3" placeholder="Injuries, mechanism etc." onblur="autoSave('Notes Update')"></textarea>
-                        <button class="voice-btn" onclick="startVoice('p-notes')">&#127908;</button>
+                        <button class="voice-btn" onclick="startVoice('p-notes')">🎙</button>
                     </div>
                 </div>
 
                 <div id="risk-container" style="display:none; margin-bottom: 1.5rem;">
                      <label style="display:flex; align-items:center; gap:15px; font-weight:bold; color:var(--nhs-red); padding:15px; border:2px solid var(--nhs-red); border-radius:8px; background: rgba(218, 41, 28, 0.05);">
-                        <input type="checkbox" id="risk-check" style="width:24px; height:24px;" onchange="autoSave('High Risk Flag')">
+                        <input type="checkbox" id="risk-check" style="width:28px; height:28px;" onchange="autoSave('High Risk Flag')">
                         HIGH RISK OF DETERIORATION
                      </label>
                 </div>
@@ -763,7 +761,7 @@
             </div>
 
             <div style="margin-top:auto; padding-top:1.5rem;">
-                <button class="btn btn-primary" onclick="nextPatient()">NEXT PATIENT &rarr;</button>
+                <button class="btn btn-primary" onclick="nextPatient()">NEXT PATIENT →</button>
                 <button class="btn btn-secondary" onclick="showLog()">View Log</button>
             </div>
         </div>
@@ -845,48 +843,32 @@
 </div>
 
 <script>
-    /* PWA Service Worker Registration */
     if ('serviceWorker' in navigator) {
-        try {
-            const swContent = `
-                const CACHE_NAME = 'mit-triage-v1';
-                const urlsToCache = [
-                    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
-                    'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
-                ];
-                
-                self.addEventListener('install', event => {
-                    event.waitUntil(
-                        caches.open(CACHE_NAME).then(cache => {
-                            return cache.addAll(urlsToCache);
-                        })
-                    );
-                });
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('Service Worker Registered'))
+                .catch(err => console.warn('Service Worker setup skipped:', err));
+        });
+    }
 
-                self.addEventListener('fetch', event => {
-                    event.respondWith(
-                        caches.match(event.request).then(response => {
-                            return response || fetch(event.request);
-                        })
-                    );
-                });
-            `;
-            const blob = new Blob([swContent], {type: 'application/javascript'});
-            const swUrl = URL.createObjectURL(blob);
-            
-            // Safety check: Don't register if we are in a blob/file context that forbids it
-            if (window.location.protocol !== 'blob:' && window.location.protocol !== 'file:') {
-                navigator.serviceWorker.register(swUrl)
-                    .then(() => console.log('Service Worker Registered'))
-                    .catch(err => console.warn('Service Worker failed (harmless in preview):', err));
+    let wakeLock = null;
+
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+            } catch (err) {
+                console.warn('Wake Lock error:', err);
             }
-        } catch (e) {
-            console.warn('Service Worker setup skipped:', e);
         }
     }
 
-    // --- CONFIG ---
-    // Expanded Clinical Prompts based on PDF & Guidelines
+    document.addEventListener('visibilitychange', () => {
+        if (wakeLock !== null && document.visibilityState === 'visible') {
+            requestWakeLock();
+        }
+    });
+
     const clinicalPrompts = {
         "Catastrophic Bleeding": [
             "CRITICAL: STOP THE BLEED",
@@ -937,7 +919,6 @@
         ]
     };
 
-    // --- STATE ---
     let userRole = null; 
     let triagerName = "";
     let devicePrefix = "";
@@ -953,18 +934,17 @@
     let idMode = 'AUTO'; 
     let pendingReTriageId = null;
     
-    // GPS State
     let currentPosition = null; 
     let gpsAccuracy = null;
     let watchId = null;
     let html5QrcodeScanner = null;
-    let scanMode = null; // 'PATIENT' or 'HANDOVER'
+    let scanMode = null; 
 
-    // --- INITIALIZATION ---
     window.onload = function() {
         initGPS();
         loadLocalData(); 
         updateDashboard();
+        requestWakeLock();
         if (localStorage.getItem('mit_night_mode') === 'true') {
             document.body.classList.add('night-mode');
         }
@@ -1020,7 +1000,6 @@
         }
     }
 
-    // --- PERSISTENCE ---
     function saveLocalData() {
         localStorage.setItem('mit_triage_log', JSON.stringify(incidentLog));
         localStorage.setItem('mit_audit_log', JSON.stringify(auditLog));
@@ -1114,7 +1093,6 @@
         }
     }
     
-    // --- AUDIT LOGGING ---
     function logAudit(actionType, patientId, details, clinicalTime) {
         const sysTime = Date.now();
         const entry = {
@@ -1135,7 +1113,6 @@
         return Date.now() - (offsetMins * 60000);
     }
 
-    // --- ROLE & SETUP ---
     function setUserRole(role) {
         userRole = role;
         
@@ -1200,7 +1177,6 @@
         if(confirm("Return to setup? Log data is SAFE.")) showScreen('intro-screen');
     }
 
-    // --- PATIENT ID EDITING ---
     function editPatientId(inResult = false) {
         const newId = prompt("Edit Patient ID:", currentPatientId);
         if(newId && newId.trim() !== "") {
@@ -1218,7 +1194,6 @@
         }
     }
 
-    // --- TRIAGE LOGIC ---
     const tstFlow = [
         { id: 'walking', question: "Is the casualty walking?", instruction: "Instruct casualties to move to a safe area.", yes: { type: 'result', category: 'P3', action: "Survivor Reception Centre", reason: "Walking" }, no: { type: 'next', step: 'bleeding' } },
         { id: 'bleeding', question: "Is there severe bleeding?", instruction: "Look for catastrophic haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately", reason: "Catastrophic Bleeding" }, no: { type: 'next', step: 'talking' } },
@@ -1261,7 +1236,6 @@
         badge.style.display = 'inline-block';
         badge.style.backgroundColor = tool === 'MITT' ? '#E87722' : '#007F3B'; 
         
-        // Check for re-triage pending ID
         if (pendingReTriageId) {
             currentPatientId = pendingReTriageId;
             pendingReTriageId = null;
@@ -1274,7 +1248,6 @@
             document.getElementById('manual-id-modal').style.display = 'flex';
             document.getElementById('manual-id-input').focus();
         } else {
-            // Auto Mode
             const prefix = devicePrefix ? `${devicePrefix}-${tool}` : tool;
             currentPatientId = `${prefix}-${pad(patientCounter, 3)}`;
             startFlow();
@@ -1286,7 +1259,6 @@
         if(val) {
             currentPatientId = val;
             document.getElementById('manual-id-modal').style.display = 'none';
-            // Sync counter attempt
             const parts = val.split(/[-_ ]/);
             const lastPart = parts[parts.length-1];
             const potentialNum = parseInt(lastPart);
@@ -1366,13 +1338,10 @@
             const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
             const timestamp = getClinicalTimestamp();
             
-            // Handle DECEASED with mandatory time
             if (category === 'DEAD') {
                  document.getElementById('tod-modal').style.display = 'flex';
-                 // Store pending entry data temporarily in global or handle in confirmDeath
-                 // Simple hack: Store pending result
                  window.pendingDeadEntry = {category, action, reason, time, timestamp};
-                 return; // Stop here, wait for modal
+                 return; 
             }
             
             completeLogResult(category, action, reason, time, timestamp);
@@ -1395,7 +1364,6 @@
     
     function closeTodModal() {
         document.getElementById('tod-modal').style.display = 'none';
-        // Go back to question? or cancel?
     }
 
     function completeLogResult(category, action, reason, time, timestamp) {
@@ -1445,7 +1413,6 @@
         const tag = document.getElementById('result-tag');
         document.getElementById('tag-text').innerText = entry.category;
         
-        // Label logic
         let labelText = "";
         if (entry.category === 'P1') labelText = "IMMEDIATE";
         else if (entry.category === 'P2') labelText = "URGENT";
@@ -1462,11 +1429,9 @@
         document.getElementById('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
         document.getElementById('action-box').innerText = entry.action;
         
-        // Show Clinical Prompts if applicable
         const promptBox = document.getElementById('clinical-prompts');
         const reasonKey = entry.reason;
         
-        // Look up prompt in dictionary. Check for exact match first, then partial match if needed (e.g. for TST)
         let prompts = clinicalPrompts[reasonKey];
         if (!prompts && reasonKey === "Penetrating Trauma") prompts = clinicalPrompts["Penetrating Trauma"];
         if (!prompts && reasonKey === "Age < 2") prompts = clinicalPrompts["Age < 2"];
@@ -1489,7 +1454,6 @@
         }
         locText.innerHTML = displayLoc;
         
-        // Set inputs
         document.getElementById('p-cat-override').value = entry.category;
         document.getElementById('p-demos').value = entry.demos;
         document.getElementById('p-allergies').value = entry.allergies;
@@ -1508,13 +1472,11 @@
             evacBtn.style.backgroundColor = "var(--nhs-dark-blue)";
         }
         
-        // Reset buttons
         document.querySelectorAll('.int-btn').forEach(btn => {
              btn.classList.remove('active');
              btn.querySelector('.int-time').innerText = "";
         });
         
-        // Set active buttons safely
         const intButtons = document.querySelectorAll('.int-btn');
         intButtons.forEach(btn => {
              const type = btn.getAttribute('data-type');
@@ -1530,7 +1492,6 @@
         showScreen('result-screen');
     }
 
-    // --- DETAILS, INTERVENTIONS, BODY MAP ---
     function toggleDetails() {
         const container = document.getElementById('details-container');
         const btn = document.getElementById('btn-toggle-details');
@@ -1616,7 +1577,6 @@
         pt.x = evt.clientX; pt.y = evt.clientY;
         const cursorPt = pt.matrixTransform(svg.getScreenCTM().inverse());
         
-        // Add X to SVG (visual only for session)
         const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
         text.setAttribute("x", cursorPt.x - 5);
         text.setAttribute("y", cursorPt.y + 5);
@@ -1626,13 +1586,11 @@
         text.textContent = "X";
         svg.appendChild(text);
         
-        // Infer location (very basic)
         let loc = "Body";
         if(cursorPt.y < 80) loc = "Head/Neck";
         else if(cursorPt.y > 200) loc = "Legs";
         else loc = "Torso/Arms";
         
-        // Append to notes
         const noteField = document.getElementById('p-notes');
         const timestamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         const noteText = ` [Injury marked on ${loc} @ ${timestamp}]`;
@@ -1670,11 +1628,23 @@
         startScanner();
     }
     
-    // QR Code
     function generatePatientQR() {
         if(currentLogIndex === -1) return;
         const entry = incidentLog[currentLogIndex];
-        const transferObj = { type: "MIT_FULL_PATIENT", data: entry };
+        
+        const compressedEntry = {
+            id: entry.id,
+            category: entry.category,
+            action: entry.action,
+            triager: entry.triager,
+            notes: entry.notes,
+            interventions: entry.interventions,
+            allergies: entry.allergies,
+            demos: entry.demos,
+            highRisk: entry.highRisk
+        };
+
+        const transferObj = { type: "MIT_FULL_PATIENT", data: compressedEntry };
         const jsonStr = JSON.stringify(transferObj);
         
         document.getElementById('qrcode').innerHTML = "";
@@ -1706,17 +1676,15 @@
 
     function closeQR() { document.getElementById('qr-modal').style.display = 'none'; }
 
-    // SCANNER
     function startScanner() {
         document.getElementById('scanner-modal').style.display = 'flex';
         
-        // Ensure clean state
         if (html5QrcodeScanner) {
             html5QrcodeScanner.clear().then(() => {
                 initScannerInstance();
             }).catch(err => {
                 console.warn("Clear failed", err);
-                initScannerInstance(); // Try anyway
+                initScannerInstance(); 
             });
         } else {
             initScannerInstance();
@@ -1961,7 +1929,6 @@
     }
 
     function nextPatient() {
-        // Reset manual ID
         window.pendingReTriageId = null;
         if(idMode === 'AUTO') {
             patientCounter++;
@@ -1984,13 +1951,11 @@
         });
         
         Object.values(unique).forEach(e => {
-            // Count totals
             if(e.category === 'P1') totP1++;
             else if(e.category === 'P2') totP2++;
             else if(e.category === 'P3') totP3++;
             else totDead++;
 
-            // Count Active on Scene (not evacuated)
             if(e.evacuated) {
                 evac++;
             } else {
@@ -2001,7 +1966,6 @@
             }
         });
         
-        // Display: Active / Total
         document.getElementById('count-p1').innerText = `${p1} / ${totP1}`;
         document.getElementById('count-p2').innerText = `${p2} / ${totP2}`;
         document.getElementById('count-p3').innerText = `${p3} / ${totP3}`;
@@ -2014,7 +1978,6 @@
         const tbody = document.getElementById('log-body');
         tbody.innerHTML = '';
         
-        // Show current state of unique IDs to match dashboard
         const unique = {};
         incidentLog.forEach((e, i) => {
              if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
