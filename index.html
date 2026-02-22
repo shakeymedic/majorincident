@@ -8,7 +8,6 @@
 <meta name="theme-color" content="#005EB8">
 <meta name="description" content="Major Incident Triage Tool">
 <title>Major Incident Triage</title>
-<!-- QR Library (Cached by Service Worker for offline use) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
@@ -199,7 +198,7 @@
         position: relative;
     }
     .id-mode-btn.active::after {
-        content: "✓"; position: absolute; right: 10px; font-size: 1.2em;
+        content: "‚úì"; position: absolute; right: 10px; font-size: 1.2em;
     }
 
     .header-controls { display: flex; gap: 10px; }
@@ -353,9 +352,9 @@
         transition: all 0.2s;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    .int-btn::before { content: "○"; font-size: 1.2rem; margin-bottom: 2px; }
+    .int-btn::before { content: "‚óã"; font-size: 1.2rem; margin-bottom: 2px; }
     .int-btn.active { background: var(--nhs-green); border-color: var(--nhs-green); color: white; }
-    .int-btn.active::before { content: "✓"; }
+    .int-btn.active::before { content: "‚úì"; }
     .int-time { display: block; font-size: 0.8rem; font-weight: normal; margin-top: 4px; }
 
     .log-container { overflow-x: auto; margin-bottom: 1rem; -webkit-overflow-scrolling: touch; border: 1px solid #ccc; border-radius: 4px; }
@@ -404,7 +403,7 @@
     #toast.show { visibility: visible; opacity: 1; top: 50px; }
 
     .editable-id { border-bottom: 2px dashed var(--nhs-blue); cursor: text; padding-bottom: 2px; }
-    .editable-id::after { content: " ✎"; font-size: 0.8em; opacity: 0.5; }
+    .editable-id::after { content: " ‚úé"; font-size: 0.8em; opacity: 0.5; }
 
     /* Time Offset Dropdown */
     #time-offset-container {
@@ -430,17 +429,13 @@
 <div id="toast">Notification</div>
 <div id="blackout-curtain" onclick="toggleBlackout()"></div>
 
-<!-- Body Map Modal -->
 <div id="body-map-modal" class="modal-overlay">
     <h3 style="color:white; margin-bottom:10px;">Tap Injury Location</h3>
     <svg id="bodymap" viewBox="0 0 200 400" width="300" height="500" onclick="handleBodyMapClick(event)">
-        <path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/> <!-- Head -->
-        <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/> <!-- Body/Limbs -->
-    </svg>
+        <path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/> <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/> </svg>
     <button class="btn btn-secondary" style="width: auto; margin-top: 20px;" onclick="closeBodyMap()">Done</button>
 </div>
 
-<!-- Manual ID Modal -->
 <div id="manual-id-modal" class="modal-overlay">
     <div class="modal-box">
         <h3>Enter Patient ID</h3>
@@ -455,7 +450,6 @@
     </div>
 </div>
 
-<!-- Confirm Death Modal -->
 <div id="tod-modal" class="modal-overlay">
     <div class="modal-box">
         <h3 style="color:var(--nhs-red);">Confirm Deceased</h3>
@@ -471,7 +465,6 @@
     </div>
 </div>
 
-<!-- ATMIST Modal -->
 <div id="atmist-modal" class="modal-overlay">
     <div class="modal-box">
         <h3 style="margin-top:0; color:var(--nhs-blue);">ATMIST Handover</h3>
@@ -480,7 +473,6 @@
     </div>
 </div>
 
-<!-- Scanner Modal -->
 <div id="scanner-modal" class="modal-overlay">
     <div class="modal-box" style="width:95%; max-width:600px; padding:10px; display:flex; flex-direction:column; align-items:center;">
         <h3 id="scan-title" style="margin-bottom:5px;">Scan</h3>
@@ -490,7 +482,6 @@
     </div>
 </div>
 
-<!-- QR Modal -->
 <div id="qr-modal" class="modal-overlay">
     <div class="modal-box" style="display:flex; flex-direction:column; align-items:center;">
         <h3 id="qr-title">Patient Passport</h3>
@@ -518,7 +509,6 @@
         <span id="gps-indicator" class="gps-status gps-inactive" style="margin-left: auto;">GPS: Searching...</span>
     </div>
 
-    <!-- PERSISTENT GLOBAL DASHBOARD -->
     <div id="global-dashboard" class="dashboard">
         <div class="dash-card dash-p1">
             <span class="dash-label">P1</span>
@@ -547,7 +537,6 @@
 
     <main>
         
-        <!-- INTRO SCREEN -->
         <div id="intro-screen" class="screen active" style="padding: 2rem;">
             <h2 style="margin-bottom:1.5rem;">Configuration</h2>
             
@@ -603,7 +592,6 @@
             </button>
         </div>
 
-        <!-- HOME SCREEN -->
         <div id="home-screen" class="screen">
             <div style="text-align:center; margin-bottom: 2rem;">
                 <p style="font-size:1.2rem;">Select Action:</p>
@@ -639,7 +627,6 @@
             </div>
         </div>
 
-        <!-- TRIAGE QUESTION SCREEN -->
         <div id="question-screen" class="screen">
             <h2 id="question-header">Assessment</h2>
             <p style="font-size:1.1rem;">Patient: <strong id="q-patient-id" class="editable-id" onclick="editPatientId()">...</strong></p>
@@ -650,7 +637,6 @@
                 Question goes here?
             </div>
 
-            <!-- YES/NO BUTTONS -->
             <div style="margin-top: auto;">
                 <button class="btn btn-yes" onclick="handleAnswer(true)">YES</button>
                 <button class="btn btn-no" onclick="handleAnswer(false)">NO</button>
@@ -661,7 +647,6 @@
             </div>
         </div>
 
-        <!-- RESULT SCREEN -->
         <div id="result-screen" class="screen">
             <h2>Triage Result</h2>
             <div style="display:flex; justify-content:center; gap:15px; align-items:center;">
@@ -675,12 +660,10 @@
                 <div id="hr-badge" class="hr-badge" style="display:none;">HIGH RISK</div>
             </div>
 
-            <!-- CLINICAL PROMPT BOX FOR P1 -->
             <div id="clinical-prompts" class="clinical-prompt"></div>
             
             <div id="action-box" class="clinical-note" style="font-size: 1.1rem; font-weight: bold; text-align: center; border-color: var(--nhs-red); color: var(--nhs-red);">
-                <!-- Actions -->
-            </div>
+                </div>
             
             <div style="text-align:center; font-size:0.9rem; margin-bottom:1rem;">
                 GPS: <span id="location-status-text">...</span>
@@ -693,10 +676,8 @@
                 <button id="btn-atmist" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-green); color: var(--nhs-green); background: var(--card-bg);" onclick="generateAtmist()">&#128227; ATMIST</button>
             </div>
 
-            <!-- INLINE DETAILS CONTAINER -->
             <div id="details-container">
                 
-                <!-- Time Offset Control -->
                 <div id="time-offset-container">
                     <label style="font-size:0.9rem; font-weight:bold;">Time of Event:</label>
                     <select id="time-offset">
@@ -787,7 +768,6 @@
             </div>
         </div>
 
-        <!-- METHANE SCREEN -->
         <div id="methane-screen" class="screen">
             <h2>METHANE Report</h2>
             <div class="input-group">
@@ -826,14 +806,12 @@
             <button class="btn btn-secondary" onclick="resetToHome()">Cancel</button>
         </div>
 
-        <!-- METHANE HISTORY SCREEN -->
         <div id="methane-history-screen" class="screen">
             <h2>METHANE History</h2>
             <div id="methane-history-list" style="flex:1; overflow-y:auto;"></div>
             <button class="btn btn-primary" onclick="showMethane()">Back to Editor</button>
         </div>
 
-        <!-- LOG SCREEN -->
         <div id="log-screen" class="screen">
             <h2>Patient Log <small style="font-weight:normal; font-size:0.9rem;">(Tap row to edit)</small></h2>
             
@@ -1681,6 +1659,16 @@
         };
         recognition.start();
     }
+
+    function scanPatientQR() {
+        scanMode = 'PATIENT';
+        startScanner();
+    }
+
+    function scanHandover() {
+        scanMode = 'HANDOVER';
+        startScanner();
+    }
     
     // QR Code
     function generatePatientQR() {
@@ -1696,6 +1684,8 @@
                 text: jsonStr, width: 256, height: 256,
                 correctLevel : QRCode.CorrectLevel.L
             });
+            document.getElementById('qr-title').innerText = "Patient Passport";
+            document.getElementById('qr-desc').innerText = "Scan to transfer data";
             document.getElementById('qr-modal').style.display = 'flex';
         } catch(e) {
             showToast("Data too large for QR");
@@ -1709,6 +1699,8 @@
         new QRCode(document.getElementById("qrcode"), {
             text: data, width: 200, height: 200
         });
+        document.getElementById('qr-title').innerText = "My ID";
+        document.getElementById('qr-desc').innerText = "Show to a colleague for handover";
         document.getElementById('qr-modal').style.display = 'flex';
     }
 
