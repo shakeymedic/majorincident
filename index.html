@@ -11,6 +11,8 @@
 <title>Major Incident Triage</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
     :root {
         --nhs-blue: #005EB8;
@@ -413,6 +415,8 @@
         padding: 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 1.1rem; background: var(--card-bg); color: var(--text-color); width: auto;
     }
 
+    #patient-map { height: 50vh; width: 100%; border-radius: 8px; border: 2px solid #ccc; z-index: 1;}
+
     @media print {
         header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, .modal-overlay, .voice-btn { display: none !important; }
         .screen { display: none !important; }
@@ -486,7 +490,7 @@
 
 <div id="qr-modal" class="modal-overlay">
     <div class="modal-box" style="display:flex; flex-direction:column; align-items:center;">
-        <h3 id="qr-title">Patient Passport</h3>
+        <h3 id="qr-title">Patient Data</h3>
         <div id="qrcode"></div>
         <p id="qr-desc">Scan to transfer data</p>
         <button class="btn btn-secondary" style="width: 100%; margin-top:10px;" onclick="closeQR()">Close</button>
@@ -499,6 +503,7 @@
             <h1>Major Incident <span id="mode-indicator" class="mode-badge" style="display:none;"></span></h1>
         </div>
         <div class="header-controls">
+            <button class="icon-btn" onclick="resetToHome()" aria-label="Home">🏠</button>
             <button class="icon-btn" onclick="toggleBlackout()" aria-label="Blackout Mode">Blackout</button>
             <button class="icon-btn" onclick="toggleNightMode()" aria-label="Night Mode">☾</button>
         </div>
@@ -610,12 +615,16 @@
 
             <div style="display:flex; gap:10px; margin-bottom:1rem;">
                 <button class="btn btn-secondary" style="flex:1; background-color: var(--nhs-dark-blue); font-size:1rem;" onclick="scanPatientQR()">
-                    Scan QR<br><span style="font-size:0.8rem; font-weight:normal;">Receive Pt</span>
+                    Receive Patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan QR Data</span>
                 </button>
                 <button class="btn btn-secondary" style="flex:1; font-size:1rem;" onclick="generateMyIdentityQR()">
-                    My ID<br><span style="font-size:0.8rem; font-weight:normal;">Show QR</span>
+                    My ID<br><span style="font-size:0.8rem; font-weight:normal;">Scan for bulk handover</span>
                 </button>
             </div>
+
+            <button class="btn btn-secondary" style="background-color: var(--nhs-green); color: white;" onclick="showMap()">
+                🗺️ View Patient Map
+            </button>
 
             <button class="btn btn-secondary" onclick="showMethane()">
                 METHANE Report<br>
@@ -652,7 +661,6 @@
             <h2>Triage Result</h2>
             <div style="display:flex; justify-content:center; gap:15px; align-items:center;">
                 <p style="font-size:1.2rem;">ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong></p>
-                <button class="btn btn-secondary" style="width:auto; padding:5px 12px; font-size:0.9rem;" onclick="generatePatientQR()">Show QR</button>
             </div>
             
             <div id="result-tag" class="triage-tag">
@@ -669,6 +677,10 @@
             <div style="text-align:center; font-size:0.9rem; margin-bottom:1rem;">
                 GPS: <span id="location-status-text">...</span>
             </div>
+
+            <button class="btn btn-primary" style="margin-bottom:15px;" onclick="generatePatientQR()">
+                📱 Handover Data (Show QR)
+            </button>
 
             <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions & Notes</button>
             
@@ -761,7 +773,7 @@
                     </div>
                     
                     <button class="btn btn-secondary btn-handover" style="margin-bottom:10px; background-color:#555;" onclick="scanHandover()">
-                        Transfer Care (Scan Colleague)
+                        Transfer Care (Scan Colleague ID)
                     </button>
                     
                     <button id="btn-evac" class="btn btn-evac" onclick="toggleEvac()">Mark as EVACUATED</button>
@@ -771,6 +783,14 @@
             <div style="margin-top:auto; padding-top:1.5rem;">
                 <button class="btn btn-primary" onclick="nextPatient()">NEXT PATIENT →</button>
                 <button class="btn btn-secondary" onclick="showLog()">View Log</button>
+            </div>
+        </div>
+
+        <div id="map-screen" class="screen">
+            <h2>Patient Locations</h2>
+            <div id="patient-map"></div>
+            <div style="padding: 1rem 0;">
+                <button class="btn btn-primary" onclick="resetToHome()">Back to Home</button>
             </div>
         </div>
 
@@ -947,6 +967,8 @@
     let watchId = null;
     let html5QrcodeScanner = null;
     let scanMode = null; 
+    let patientMap = null;
+    let mapMarkers = [];
     
     let db;
     const request = indexedDB.open("MITT_DB", 1);
@@ -1711,14 +1733,23 @@
         
         const compressedEntry = {
             id: entry.id,
+            time: entry.time,
+            timestamp: entry.timestamp,
+            tool: entry.tool,
             category: entry.category,
             action: entry.action,
+            reason: entry.reason,
             triager: entry.triager,
-            notes: entry.notes,
-            interventions: entry.interventions,
-            allergies: entry.allergies,
+            location: entry.location,
+            sector: entry.sector,
             demos: entry.demos,
-            highRisk: entry.highRisk
+            allergies: entry.allergies,
+            notes: entry.notes,
+            highRisk: entry.highRisk,
+            interventions: entry.interventions,
+            evacuated: entry.evacuated,
+            evacDest: entry.evacDest,
+            evacVehicle: entry.evacVehicle
         };
 
         const transferObj = { type: "MIT_FULL_PATIENT", data: compressedEntry };
@@ -1731,7 +1762,7 @@
                 text: jsonStr, width: 256, height: 256,
                 correctLevel : QRCode.CorrectLevel.L
             });
-            document.getElementById('qr-title').innerText = "Patient Passport";
+            document.getElementById('qr-title').innerText = "Patient Data";
             document.getElementById('qr-desc').innerText = "Scan to transfer data";
             document.getElementById('qr-modal').style.display = 'flex';
         } catch(e) {
@@ -1843,12 +1874,8 @@
         if(existingIndex > -1) {
             if(confirm(`Patient ${newId} already exists. Update record with handover data?`)) {
                 const entry = incidentLog[existingIndex];
-                entry.category = data.category;
-                entry.notes += ` [Imported Update from ${originTriager}: ${data.notes}]`;
-                entry.interventions = { ...entry.interventions, ...data.interventions };
-                entry.allergies = data.allergies || entry.allergies;
-                entry.demos = data.demos || entry.demos;
-                entry.highRisk = data.highRisk;
+                Object.assign(entry, data);
+                entry.notes += ` [Imported Update from ${originTriager}]`;
                 
                 logAudit("DATA_IMPORT_UPDATE", newId, `Full JSON from ${originTriager}`, Date.now());
                 saveState();
@@ -1856,10 +1883,7 @@
             }
         } else {
             const entry = { ...data };
-            entry.tool = "IMPORT";
-            entry.action = "DATA IMPORTED";
-            entry.triager = triagerName;
-            entry.notes = `${data.notes} [Origin: ${originTriager}]`;
+            entry.notes += ` [Origin: ${originTriager}]`;
             
             incidentLog.push(entry);
             logAudit("DATA_IMPORT_NEW", newId, `Full JSON from ${originTriager}`, Date.now());
@@ -2117,6 +2141,63 @@
             tbody.appendChild(tr);
         });
         showScreen('log-screen');
+    }
+
+    function showMap() {
+        showScreen('map-screen');
+        if (!patientMap) {
+            patientMap = L.map('patient-map').setView([54.0, -2.0], 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(patientMap);
+        }
+
+        mapMarkers.forEach(m => patientMap.removeLayer(m));
+        mapMarkers = [];
+
+        const unique = {};
+        incidentLog.forEach(e => {
+            if (!unique[e.id] || unique[e.id].timestamp < e.timestamp) {
+                unique[e.id] = e;
+            }
+        });
+
+        let bounds = [];
+
+        Object.values(unique).forEach(patient => {
+            if (patient.location && patient.location.lat && patient.location.lng) {
+                const lat = parseFloat(patient.location.lat);
+                const lng = parseFloat(patient.location.lng);
+                
+                let markerColor = 'blue';
+                if (patient.category === 'P1') markerColor = 'red';
+                if (patient.category === 'P2') markerColor = 'yellow';
+                if (patient.category === 'P3') markerColor = 'green';
+                if (patient.category === 'DEAD') markerColor = 'black';
+
+                const marker = L.circleMarker([lat, lng], {
+                    radius: 8,
+                    fillColor: markerColor,
+                    color: "#fff",
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(patientMap);
+
+                marker.bindPopup(`<b>${patient.id}</b><br>Category: ${patient.category}<br>${patient.notes || ''}`);
+                mapMarkers.push(marker);
+                bounds.push([lat, lng]);
+            }
+        });
+
+        if (bounds.length > 0) {
+            patientMap.fitBounds(bounds, { padding: [50, 50] });
+        } else if (currentPosition) {
+            patientMap.setView([currentPosition.lat, currentPosition.lng], 15);
+        }
+
+        setTimeout(() => { if (patientMap) patientMap.invalidateSize(); }, 300);
     }
 
     function escapeCSV(str) {
