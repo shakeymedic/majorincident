@@ -13,6 +13,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 <style>
     :root {
         --nhs-blue: #005EB8;
@@ -192,9 +195,11 @@
     .btn-no { background-color: var(--nhs-red); font-size: 1.8rem; height: 110px; display: flex; align-items: center; justify-content: center; }
     .btn-secondary { background-color: var(--nhs-grey); }
     .btn-danger { background-color: var(--nhs-red); }
+    .btn-nfc { background-color: #5b2c6f; border: 2px solid #8e44ad; }
     .btn-evac { background-color: var(--nhs-dark-blue); border: 2px solid var(--nhs-blue); }
     
     .demo-btn { padding: 0.8rem; font-size: 0.9rem; flex: 1; margin-bottom: 0; background-color: var(--nhs-grey); }
+    .injury-btn { padding: 0.6rem; font-size: 1rem; flex: 1; margin-bottom: 0; background-color: var(--nhs-blue); white-space: nowrap; }
 
     .id-mode-btn.active {
         background-color: var(--nhs-dark-blue);
@@ -613,10 +618,15 @@
                 <span style="font-size:0.9rem; font-weight:normal;">Secondary Clinical Triage</span>
             </button>
 
-            <div style="display:flex; gap:10px; margin-bottom:1rem;">
+            <div style="display:flex; gap:10px; margin-bottom:1rem; flex-wrap: wrap;">
                 <button class="btn btn-secondary" style="flex:1; background-color: var(--nhs-dark-blue); font-size:1rem;" onclick="scanPatientQR()">
                     Receive Patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan QR Data</span>
                 </button>
+                <button class="btn btn-nfc" style="flex:1; font-size:1rem;" onclick="startNfcReceive()">
+                    NFC Receive<br><span style="font-size:0.8rem; font-weight:normal;">Tap Device</span>
+                </button>
+            </div>
+            <div style="display:flex; gap:10px; margin-bottom:1rem;">
                 <button class="btn btn-secondary" style="flex:1; font-size:1rem;" onclick="generateMyIdentityQR()">
                     My ID<br><span style="font-size:0.8rem; font-weight:normal;">Scan for bulk handover</span>
                 </button>
@@ -678,9 +688,14 @@
                 GPS: <span id="location-status-text">...</span>
             </div>
 
-            <button class="btn btn-primary" style="margin-bottom:15px;" onclick="generatePatientQR()">
-                📱 Handover Data (Show QR)
-            </button>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button class="btn btn-primary" style="flex: 1;" onclick="generatePatientQR()">
+                    📱 QR Handover
+                </button>
+                <button class="btn btn-nfc" style="flex: 1;" onclick="triggerNfcSend()">
+                    📡 NFC Tap
+                </button>
+            </div>
 
             <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions & Notes</button>
             
@@ -713,6 +728,19 @@
                 </div>
 
                 <h3>Clinical Notes</h3>
+                
+                <div class="input-group">
+                    <label>Quick Injury Select</label>
+                    <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px;">
+                        <button class="btn injury-btn" onclick="addInjuryText('💥 Blast')">💥 Blast</button>
+                        <button class="btn injury-btn" onclick="addInjuryText('🧱 Crush')">🧱 Crush</button>
+                        <button class="btn injury-btn" onclick="addInjuryText('🔥 Burn')">🔥 Burn</button>
+                        <button class="btn injury-btn" onclick="addInjuryText('💨 Airway')">💨 Airway</button>
+                        <button class="btn injury-btn" onclick="addInjuryText('🦴 Fracture')">🦴 Fracture</button>
+                        <button class="btn injury-btn" onclick="addInjuryText('🩸 Bleeding')">🩸 Bleed</button>
+                    </div>
+                </div>
+
                 <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="openBodyMap()">👤 Mark Injury on Body Map</button>
                 
                 <div class="card">
@@ -789,8 +817,9 @@
         <div id="map-screen" class="screen">
             <h2>Patient Locations</h2>
             <div id="patient-map"></div>
-            <div style="padding: 1rem 0;">
-                <button class="btn btn-primary" onclick="resetToHome()">Back to Home</button>
+            <div style="padding: 1rem 0; display: flex; gap: 10px;">
+                <button class="btn btn-secondary" style="flex: 1;" onclick="setCCSLocation()">📍 Set CCS Here</button>
+                <button class="btn btn-primary" style="flex: 1;" onclick="resetToHome()">Back to Home</button>
             </div>
         </div>
 
@@ -961,6 +990,7 @@
     let stepHistory = [];
     let idMode = 'AUTO'; 
     let pendingReTriageId = null;
+    let cachedCcsLocation = null;
     
     let currentPosition = null; 
     let gpsAccuracy = null;
@@ -968,7 +998,7 @@
     let html5QrcodeScanner = null;
     let scanMode = null; 
     let patientMap = null;
-    let mapMarkers = [];
+    let mapMarkerCluster = null;
     
     let db;
     const request = indexedDB.open("MITT_DB", 1);
@@ -1077,6 +1107,7 @@
         const savedPrefix = localStorage.getItem('mit_device_prefix');
         const savedSector = localStorage.getItem('mit_sector');
         const savedIdMode = localStorage.getItem('mit_id_mode');
+        const savedCcs = localStorage.getItem('mit_ccs_location');
 
         if (savedCount) patientCounter = parseInt(savedCount);
         if (savedTriager) {
@@ -1097,6 +1128,7 @@
             idMode = savedIdMode;
             setIdMode(idMode);
         }
+        if (savedCcs) cachedCcsLocation = JSON.parse(savedCcs);
         if (savedRole) setUserRole(savedRole);
     }
     
@@ -1140,6 +1172,7 @@
         localStorage.setItem('mit_device_prefix', devicePrefix);
         localStorage.setItem('mit_sector', currentSector);
         localStorage.setItem('mit_id_mode', idMode);
+        if (cachedCcsLocation) localStorage.setItem('mit_ccs_location', JSON.stringify(cachedCcsLocation));
         if (userRole) localStorage.setItem('mit_user_role', userRole);
         
         const methaneData = {
@@ -1290,22 +1323,33 @@
         autoSave('Demographics Added');
     }
 
+    function addInjuryText(text) {
+        const field = document.getElementById('p-notes');
+        const currentVal = field.value.trim();
+        if (currentVal) {
+            field.value = currentVal + " " + text;
+        } else {
+            field.value = text;
+        }
+        autoSave('Injury Icon Added');
+    }
+
     const tstFlow = [
-        { id: 'walking', question: "Is the casualty walking?", instruction: "Instruct casualties to move to a safe area.", yes: { type: 'result', category: 'P3', action: "Survivor Reception Centre", reason: "Walking" }, no: { type: 'next', step: 'bleeding' } },
-        { id: 'bleeding', question: "Is there severe bleeding?", instruction: "Look for catastrophic haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately", reason: "Catastrophic Bleeding" }, no: { type: 'next', step: 'talking' } },
-        { id: 'talking', question: "Is the casualty talking?", instruction: "Can they obey simple commands?", yes: { type: 'next', step: 'penetrating' }, no: { type: 'next', step: 'breathing' } },
-        { id: 'penetrating', question: "Is there a penetrating injury to the Head, Neck, Torso or Groin?", instruction: "Check Head, Neck, Torso or Groin.", yes: { type: 'result', category: 'P1', action: "Immediate Priority", reason: "Penetrating Trauma" }, no: { type: 'result', category: 'P2', action: "Urgent Priority", reason: "Casualty Not Walking" } },
-        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open airway. Check for signs of life.", yes: { type: 'result', category: 'P1', action: "Recovery Position", reason: "Unconscious - Breathing" }, no: { type: 'result', category: 'DEAD', action: "Dead (unless resources allow CPR)", reason: "Apnoeic" } }
+        { id: 'walking', question: "Walking?", instruction: "Instruct casualties to move to a safe area.", yes: { type: 'result', category: 'P3', action: "Survivor Reception Centre", reason: "Walking" }, no: { type: 'next', step: 'bleeding' } },
+        { id: 'bleeding', question: "Severe bleeding?", instruction: "Look for catastrophic haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately", reason: "Catastrophic Bleeding" }, no: { type: 'next', step: 'talking' } },
+        { id: 'talking', question: "Talking?", instruction: "Can they obey simple commands?", yes: { type: 'next', step: 'penetrating' }, no: { type: 'next', step: 'breathing' } },
+        { id: 'penetrating', question: "Penetrating injury to Head, Neck, Torso or Groin?", instruction: "Check core areas.", yes: { type: 'result', category: 'P1', action: "Immediate Priority", reason: "Penetrating Trauma" }, no: { type: 'result', category: 'P2', action: "Urgent Priority", reason: "Casualty Not Walking" } },
+        { id: 'breathing', question: "Breathing?", instruction: "Open airway. Check for signs of life.", yes: { type: 'result', category: 'P1', action: "Recovery Position", reason: "Unconscious - Breathing" }, no: { type: 'result', category: 'DEAD', action: "Dead (unless resources allow CPR)", reason: "Apnoeic" } }
     ];
 
     const mittFlow = [
-        { id: 'cat_bleed', question: "Is there catastrophic bleeding?", instruction: "Assess for life-threatening haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately", reason: "Catastrophic Bleeding" }, no: { type: 'next', step: 'walking' } },
-        { id: 'walking', question: "Is the casualty walking?", instruction: "", yes: { type: 'result', category: 'P3', action: "Minor Injuries Unit", reason: "Walking" }, no: { type: 'next', step: 'breathing' } },
-        { id: 'breathing', question: "Is the casualty breathing?", instruction: "Open Airway. (Paeds: 5 rescue breaths if drowning/smoke).", yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', action: "Confirm Dead", reason: "Apnoeic" } },
-        { id: 'voice', question: "Does casualty respond to voice?", instruction: "AVPU Scale: Alert or Voice?", yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', action: "Unconscious - P1", reason: "Unresponsive to Voice" } },
-        { id: 'age', question: "Is the casualty aged over 2 years?", instruction: "Estimate age if unknown.", yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', action: "Paediatric Priority (Under 2)", reason: "Age < 2" } },
-        { id: 'rr', question: "Is Respiratory Rate 12 - 23?", instruction: "Count breaths per minute.", yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', action: "Abnormal Respiration - P1", reason: "RR outside 12-23" } },
-        { id: 'hr', question: "Is Heart Rate < 100?", instruction: "Check radial pulse or capillary refill.", yes: { type: 'result', category: 'P2', action: "Stable Physiology - P2", reason: "Stable Physiology" }, no: { type: 'result', category: 'P1', action: "Tachycardic (HR ≥ 100) - P1", reason: "Tachycardia > 100" } }
+        { id: 'cat_bleed', question: "Catastrophic bleeding?", instruction: "Assess for life-threatening haemorrhage.", yes: { type: 'result', category: 'P1', action: "Control Bleeding Immediately", reason: "Catastrophic Bleeding" }, no: { type: 'next', step: 'walking' } },
+        { id: 'walking', question: "Walking?", instruction: "", yes: { type: 'result', category: 'P3', action: "Minor Injuries Unit", reason: "Walking" }, no: { type: 'next', step: 'breathing' } },
+        { id: 'breathing', question: "Breathing?", instruction: "Open Airway. (Paeds: 5 rescue breaths if drowning/smoke).", yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', action: "Confirm Dead", reason: "Apnoeic" } },
+        { id: 'voice', question: "Responds to voice?", instruction: "AVPU Scale: Alert or Voice?", yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', action: "Unconscious - P1", reason: "Unresponsive to Voice" } },
+        { id: 'age', question: "Aged over 2 years?", instruction: "Estimate age if unknown.", yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', action: "Paediatric Priority (Under 2)", reason: "Age < 2" } },
+        { id: 'rr', question: "Respiratory Rate 12 - 23?", instruction: "Count breaths per minute.", yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', action: "Abnormal Respiration - P1", reason: "RR outside 12-23" } },
+        { id: 'hr', question: "Heart Rate < 100?", instruction: "Check radial pulse or capillary refill.", yes: { type: 'result', category: 'P2', action: "Stable Physiology - P2", reason: "Stable Physiology" }, no: { type: 'result', category: 'P1', action: "Tachycardic (HR ≥ 100) - P1", reason: "Tachycardia > 100" } }
     ];
 
     function showScreen(id) {
@@ -1717,18 +1761,8 @@
         recognition.start();
     }
 
-    function scanPatientQR() {
-        scanMode = 'PATIENT';
-        startScanner();
-    }
-
-    function scanHandover() {
-        scanMode = 'HANDOVER';
-        startScanner();
-    }
-    
-    function generatePatientQR() {
-        if(currentLogIndex === -1) return;
+    function getCompressedEntryJSON() {
+        if(currentLogIndex === -1) return null;
         const entry = incidentLog[currentLogIndex];
         
         const compressedEntry = {
@@ -1753,7 +1787,65 @@
         };
 
         const transferObj = { type: "MIT_FULL_PATIENT", data: compressedEntry };
-        const jsonStr = JSON.stringify(transferObj);
+        return JSON.stringify(transferObj);
+    }
+
+    async function triggerNfcSend() {
+        const jsonStr = getCompressedEntryJSON();
+        if (!jsonStr) return;
+
+        if ('NDEFReader' in window) {
+            try {
+                const ndef = new NDEFReader();
+                await ndef.write(jsonStr);
+                showToast("NFC Ready. Tap devices together.");
+            } catch(error) {
+                console.error(error);
+                showToast("NFC Error. Try QR instead.");
+            }
+        } else {
+            showToast("Web NFC not supported on this browser.");
+        }
+    }
+
+    async function startNfcReceive() {
+        if ('NDEFReader' in window) {
+            try {
+                const ndef = new NDEFReader();
+                await ndef.scan();
+                showToast("NFC Scanner Active. Tap device.");
+                
+                ndef.onreading = event => {
+                    const decoder = new TextDecoder();
+                    for (const record of event.message.records) {
+                        if (record.recordType === "text") {
+                            const textData = decoder.decode(record.data);
+                            onScanSuccess(textData);
+                        }
+                    }
+                };
+            } catch(error) {
+                console.error(error);
+                showToast("NFC Scanner Error");
+            }
+        } else {
+            showToast("Web NFC not supported on this browser.");
+        }
+    }
+
+    function scanPatientQR() {
+        scanMode = 'PATIENT';
+        startScanner();
+    }
+
+    function scanHandover() {
+        scanMode = 'HANDOVER';
+        startScanner();
+    }
+    
+    function generatePatientQR() {
+        const jsonStr = getCompressedEntryJSON();
+        if (!jsonStr) return;
         
         document.getElementById('qrcode').innerHTML = "";
         
@@ -1827,8 +1919,8 @@
         }
     }
 
-    function onScanSuccess(decodedText, decodedResult) {
-        stopScanner();
+    function onScanSuccess(decodedText) {
+        if (html5QrcodeScanner) stopScanner();
         playBeep();
         triggerHaptic('success');
         
@@ -1847,7 +1939,7 @@
                      return;
                 }
             }
-            showToast("Unknown QR Format");
+            showToast("Unknown Format Received");
         }
     }
 
@@ -2143,6 +2235,17 @@
         showScreen('log-screen');
     }
 
+    function setCCSLocation() {
+        if (!currentPosition) {
+            showToast("Awaiting GPS lock to set CCS.");
+            return;
+        }
+        cachedCcsLocation = { lat: currentPosition.lat, lng: currentPosition.lng };
+        saveState();
+        showToast("CCS Location Saved to Map.");
+        showMap(); 
+    }
+
     function showMap() {
         showScreen('map-screen');
         if (!patientMap) {
@@ -2151,10 +2254,15 @@
                 maxZoom: 19,
                 attribution: '© OpenStreetMap'
             }).addTo(patientMap);
+            
+            mapMarkerCluster = L.markerClusterGroup({
+                maxClusterRadius: 40,
+                spiderfyOnMaxZoom: true
+            });
+            patientMap.addLayer(mapMarkerCluster);
         }
 
-        mapMarkers.forEach(m => patientMap.removeLayer(m));
-        mapMarkers = [];
+        mapMarkerCluster.clearLayers();
 
         const unique = {};
         incidentLog.forEach(e => {
@@ -2170,26 +2278,32 @@
                 const lat = parseFloat(patient.location.lat);
                 const lng = parseFloat(patient.location.lng);
                 
-                let markerColor = 'blue';
-                if (patient.category === 'P1') markerColor = 'red';
-                if (patient.category === 'P2') markerColor = 'yellow';
-                if (patient.category === 'P3') markerColor = 'green';
-                if (patient.category === 'DEAD') markerColor = 'black';
+                let markerColor = '#005EB8'; 
+                if (patient.category === 'P1') markerColor = '#DA291C'; 
+                if (patient.category === 'P2') markerColor = '#FAE100'; 
+                if (patient.category === 'P3') markerColor = '#007F3B'; 
+                if (patient.category === 'DEAD') markerColor = '#212b32';
 
-                const marker = L.circleMarker([lat, lng], {
-                    radius: 8,
-                    fillColor: markerColor,
-                    color: "#fff",
-                    weight: 1,
-                    opacity: 1,
-                    fillOpacity: 0.8
-                }).addTo(patientMap);
+                const htmlStr = `<div style="background-color: ${markerColor}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white;"></div>`;
+                const customIcon = L.divIcon({ html: htmlStr, className: 'custom-div-icon', iconSize: [18, 18], iconAnchor: [9, 9] });
+
+                const marker = L.marker([lat, lng], { icon: customIcon });
 
                 marker.bindPopup(`<b>${patient.id}</b><br>Category: ${patient.category}<br>${patient.notes || ''}`);
-                mapMarkers.push(marker);
+                mapMarkerCluster.addLayer(marker);
                 bounds.push([lat, lng]);
             }
         });
+
+        if (cachedCcsLocation) {
+            const ccsLat = parseFloat(cachedCcsLocation.lat);
+            const ccsLng = parseFloat(cachedCcsLocation.lng);
+            const ccsIconHtml = `<div style="background-color: #007F3B; color: white; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white;">+</div>`;
+            const ccsIcon = L.divIcon({ html: ccsIconHtml, className: 'ccs-div-icon', iconSize: [28, 28], iconAnchor: [14, 14] });
+            const ccsMarker = L.marker([ccsLat, ccsLng], { icon: ccsIcon, zIndexOffset: 1000 }).addTo(patientMap);
+            ccsMarker.bindPopup("<b>Casualty Clearing Station (CCS)</b>");
+            bounds.push([ccsLat, ccsLng]);
+        }
 
         if (bounds.length > 0) {
             patientMap.fitBounds(bounds, { padding: [50, 50] });
