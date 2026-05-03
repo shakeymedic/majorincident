@@ -90,7 +90,7 @@
         z-index: 10;
     }
 
-    h1 { margin: 0; font-size: 1.2rem; font-weight: bold; white-space: nowrap; }
+    h1 { margin: 0; font-size: 1.2rem; font-weight: bold; white-space: nowrap; display: flex; align-items: center; }
     
     .status-bar {
         background-color: var(--nhs-dark-blue);
@@ -848,7 +848,7 @@
             <div class="input-group">
                 <label>N - Number of Casualties</label>
                 <div style="display:flex; gap:10px;">
-                    <input type="text" id="m-num" type="text" style="flex:1;">
+                    <input type="text" id="m-num" style="flex:1;">
                     <button class="btn btn-secondary" style="width:auto; padding:0 10px; margin:0;" onclick="autoFillCasualties()">Auto-Fill</button>
                 </div>
             </div>
@@ -1765,29 +1765,51 @@
         if(currentLogIndex === -1) return null;
         const entry = incidentLog[currentLogIndex];
         
-        const compressedEntry = {
-            id: entry.id,
-            time: entry.time,
-            timestamp: entry.timestamp,
-            tool: entry.tool,
-            category: entry.category,
-            action: entry.action,
-            reason: entry.reason,
-            triager: entry.triager,
-            location: entry.location,
-            sector: entry.sector,
-            demos: entry.demos,
-            allergies: entry.allergies,
-            notes: entry.notes,
-            highRisk: entry.highRisk,
-            interventions: entry.interventions,
-            evacuated: entry.evacuated,
-            evacDest: entry.evacDest,
-            evacVehicle: entry.evacVehicle
-        };
+        const short = {};
+        if(entry.id) short.i = entry.id;
+        if(entry.time) short.tm = entry.time;
+        if(entry.timestamp) short.ts = entry.timestamp;
+        if(entry.tool) short.tl = entry.tool;
+        if(entry.category) short.c = entry.category;
+        if(entry.action) short.a = entry.action;
+        if(entry.reason) short.r = entry.reason;
+        if(entry.triager) short.tr = entry.triager;
+        if(entry.location && entry.location.lat) short.l = {lt: entry.location.lat, lg: entry.location.lng};
+        if(entry.sector) short.s = entry.sector;
+        if(entry.demos) short.d = entry.demos;
+        if(entry.allergies) short.al = entry.allergies;
+        if(entry.notes) short.n = entry.notes;
+        if(entry.highRisk) short.hr = 1;
+        if(entry.interventions && Object.keys(entry.interventions).length > 0) short.in = entry.interventions;
+        if(entry.evacuated) short.ev = 1;
+        if(entry.evacDest) short.ed = entry.evacDest;
+        if(entry.evacVehicle) short.evv = entry.evacVehicle;
 
-        const transferObj = { type: "MIT_FULL_PATIENT", data: compressedEntry };
+        const transferObj = { t: "MIT_P", d: short };
         return JSON.stringify(transferObj);
+    }
+
+    function decompressData(short) {
+        return {
+            id: short.i || "",
+            time: short.tm || "",
+            timestamp: short.ts || Date.now(),
+            tool: short.tl || "",
+            category: short.c || "P3",
+            action: short.a || "",
+            reason: short.r || "",
+            triager: short.tr || "Unknown",
+            location: short.l ? {lat: short.l.lt, lng: short.l.lg, acc: 0} : null,
+            sector: short.s || "",
+            demos: short.d || "",
+            allergies: short.al || "",
+            notes: short.n || "",
+            highRisk: !!short.hr,
+            interventions: short.in || {},
+            evacuated: !!short.ev,
+            evacDest: short.ed || "",
+            evacVehicle: short.evv || ""
+        };
     }
 
     async function triggerNfcSend() {
@@ -1929,8 +1951,9 @@
         } else {
             try {
                 const jsonObj = JSON.parse(decodedText);
-                if (jsonObj.type === "MIT_FULL_PATIENT") {
-                    handleFullPatientImport(jsonObj.data);
+                if (jsonObj.type === "MIT_FULL_PATIENT" || jsonObj.t === "MIT_P") {
+                    const data = jsonObj.t === "MIT_P" ? decompressData(jsonObj.d) : jsonObj.data;
+                    handleFullPatientImport(data);
                     return;
                 }
             } catch(e) {
