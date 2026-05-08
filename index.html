@@ -2488,8 +2488,8 @@
         document.getElementById('preview-modal').style.display = 'none';
         saveState();
         updateDashboard();
-        // Best-effort ACK QR
-        try { showAckQR(data.id, meta.sender || data.triager || ''); } catch(e){}
+        // Best-effort ACK QR — receiver is the local user, NOT the sender.
+        try { showAckQR(data.id, triagerName || ''); } catch(e){}
     }
 
     function handleLegacyPatientScan(text) {
@@ -2528,7 +2528,7 @@
 
     // ---------- ACK flow ----------
     function showAckQR(patientId, receiverName) {
-        const ack = { t: 'MIT_ACK', v: 1, pid: patientId, rcv: receiverName || triagerName || '', g: Date.now(), app: APP_VERSION };
+        const ack = MITTLib.buildAckPayload(patientId, receiverName || triagerName || '', { appVersion: APP_VERSION });
         const text = JSON.stringify(ack);
         const target = document.getElementById('qrcode');
         try { _renderQR(target, text, 240); } catch(e) { return; }

@@ -141,6 +141,32 @@ group('mergePatientRecords', () => {
     });
 });
 
+group('buildAckPayload', () => {
+    test('uses provided receiver name verbatim', () => {
+        const ack = lib.buildAckPayload('TST-001', 'Receiver Medic', { now: 1700000000000, appVersion: '0.5.0' });
+        assert.strictEqual(ack.t, 'MIT_ACK');
+        assert.strictEqual(ack.pid, 'TST-001');
+        assert.strictEqual(ack.rcv, 'Receiver Medic');
+        assert.strictEqual(ack.g, 1700000000000);
+        assert.strictEqual(ack.app, '0.5.0');
+    });
+    test('regression: ACK records the local accepting user, NOT the sender', () => {
+        // Simulates acceptPreview: the local user (triagerName) is the receiver.
+        // The sender's name must never end up in `rcv`, otherwise when the
+        // sender scans the ACK their device logs HANDOVER_ACCEPTED against the
+        // wrong identity.
+        const senderName = 'Sender Medic';
+        const localTriager = 'Local Medic';
+        const ack = lib.buildAckPayload('TST-001', localTriager, {});
+        assert.strictEqual(ack.rcv, localTriager);
+        assert.notStrictEqual(ack.rcv, senderName);
+    });
+    test('handles empty receiver gracefully', () => {
+        const ack = lib.buildAckPayload('TST-001', '', {});
+        assert.strictEqual(ack.rcv, '');
+    });
+});
+
 group('triage flows', () => {
     test('TST: walking yes -> P3', () => {
         assert.deepStrictEqual(lib.tstNext('walking', true), { type: 'result', category: 'P3', reason: 'Walking' });

@@ -162,6 +162,22 @@
         return out;
     }
 
+    // ACK payload builder. The receiver name MUST be the local user accepting
+    // receipt — never the sender's name — so that when the sender scans the
+    // ACK and logs HANDOVER_ACCEPTED, the audit trail records the correct
+    // identity.
+    function buildAckPayload(patientId, receiverName, ctx) {
+        ctx = ctx || {};
+        return {
+            t: 'MIT_ACK',
+            v: 1,
+            pid: patientId || '',
+            rcv: receiverName || '',
+            g: ctx.now || Date.now(),
+            app: ctx.appVersion || '',
+        };
+    }
+
     // Triage flow logic (TST + MITT) — pure decision functions for tests
     function tstNext(stepId, answer) {
         const flow = {
@@ -191,7 +207,8 @@
     const api = {
         QR_SCHEMA_VERSION, QR_DEFAULT_TTL_MS, QR_MAX_FUTURE_SKEW_MS,
         escapeHTML, fnv1a, canonicalJSON, buildPatientPayload, decompressData,
-        validatePatientWrapper, mergePatientRecords, tstNext, mittNext,
+        validatePatientWrapper, mergePatientRecords, buildAckPayload,
+        tstNext, mittNext,
     };
 
     if (typeof module !== 'undefined' && module.exports) {
