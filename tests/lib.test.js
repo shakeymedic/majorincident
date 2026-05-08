@@ -191,5 +191,190 @@ group('triage flows', () => {
     });
 });
 
+group('structured injuries', () => {
+    test('buildInjuryMark normalises x/y and classifies region/side', () => {
+        const m = lib.buildInjuryMark({ x: 30, y: 50, label: 'Burn', severity: 'severe', ts: 1700000000000 });
+        assert.strictEqual(m.region, 'Head/Neck');
+        assert.strictEqual(m.side, 'Left');
+        assert.ok(m.x > 0 && m.x < 1);
+        assert.ok(m.y > 0 && m.y < 1);
+        assert.strictEqual(m.label, 'Burn');
+        assert.strictEqual(m.severity, 'severe');
+    });
+    test('classifyBodymapPoint covers torso/legs/right side', () => {
+        assert.deepStrictEqual(lib.classifyBodymapPoint(150, 300), { region: 'Legs', side: 'Right' });
+        assert.deepStrictEqual(lib.classifyBodymapPoint(110, 150), { region: 'Torso/Arms', side: 'Right' });
+    });
+    test('injuriesToText formats marks for legacy notes', () => {
+        const m = lib.buildInjuryMark({ x: 100, y: 150, label: 'Bleed', severity: 'moderate', ts: 1700000000000 });
+        const txt = lib.injuriesToText([m]);
+        assert.match(txt, /Torso\/Arms/);
+        assert.match(txt, /Bleed/);
+    });
+    test('sanitiseInjuries clamps fields and rejects junk', () => {
+        const bad = [null, 'string', { x: -5, y: 99, label: 'A'.repeat(200), severity: 'XX'.repeat(20) }];
+        const ok = lib.sanitiseInjuries(bad);
+        assert.strictEqual(ok.length, 1);
+        assert.strictEqual(ok[0].x, 0);
+        assert.strictEqual(ok[0].y, 1);
+        assert.ok(ok[0].label.length <= 64);
+    });
+    test('round-trip through QR preserves injuries', () => {
+        const entry = { id: 'X', category: 'P1', injuries: [{ region: 'Head/Neck', side: 'Left', x: 0.1, y: 0.1, label: 'Cut', severity: 'minor', time: '12:00', ts: 1 }] };
+        const w = lib.buildPatientPayload(entry, {}, { now: 1700000000000 });
+        const r = lib.validatePatientWrapper(w, { now: 1700000000000 });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.data.injuries.length, 1);
+        assert.strictEqual(r.data.injuries[0].label, 'Cut');
+    });
+});
+
+group('mergePatientRecords + injuries', () => {
+    test('union injury marks without dropping local', () => {
+        const local = { id: 'A', category: 'P2', _rev: 1, injuries: [{ region: 'Legs', x: 0.5, y: 0.7, label: 'Frac', ts: 1 }] };
+        const incoming = { id: 'A', injuries: [{ region: 'Torso/Arms', x: 0.5, y: 0.4, label: 'Burn', ts: 2 }] };
+        const out = lib.mergePatientRecords(local, incoming, { recordVersion: 2 });
+        assert.strictEqual(out.injuries.length, 2);
+    });
+    test('reassessment fields preserved across merge if incoming newer', () => {
+        const local = { id: 'A', category: 'P1', _rev: 1, lastReassessed: 100 };
+        const incoming = { id: 'A', lastReassessed: 200, reassessOutcome: 'worsened' };
+        const out = lib.mergePatientRecords(local, incoming, { recordVersion: 2 });
+        assert.strictEqual(out.lastReassessed, 200);
+        assert.strictEqual(out.reassessOutcome, 'worsened');
+    });
+});
+
+group('bulk handover', () => {
+    const ctx = { now: 1700000000000, sender: 'Lead 1', appVersion: '0.5.0' };
+    const entries = [
+        { id: 'TST-001', category: 'P1', triager: 'A', _rev: 1 },
+        { id: 'TST-002', category: 'P2', triager: 'A', _rev: 1 },
+    ];
+    test('build/validate round-trip', () => {
+        const w = lib.buildBulkPayload(entries, { sector: 'CCS', ttlMs: 60000 }, ctx);
+        assert.strictEqual(w.t, 'MIT_BULK');
+        assert.strictEqual(w.n, 2);
+        assert.match(w.h, /^[0-9a-f]{8}$/);
+        const r = lib.validateBulkWrapper(w, { now: ctx.now });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.data.length, 2);
+        assert.strictEqual(r.data[0].id, 'TST-001');
+        assert.strictEqual(r.meta.sector, 'CCS');
+    });
+    test('rejects expired bulk', () => {
+        const w = lib.buildBulkPayload(entries, { ttlMs: 60000 }, ctx);
+        const r = lib.validateBulkWrapper(w, { now: ctx.now + 120000 });
+        assert.strictEqual(r.ok, false);
+        assert.match(r.reason, /expired/i);
+    });
+    test('bulkPayloadFits flags oversize payloads', () => {
+        const big = Array.from({ length: 60 }, (_, i) => ({
+            id: 'X-' + i, category: 'P1', triager: 'A',
+            notes: 'Lorem ipsum dolor sit amet, '.repeat(8),
+        }));
+        const w = lib.buildBulkPayload(big, {}, ctx);
+        assert.strictEqual(lib.bulkPayloadFits(w), false);
+    });
+});
+
+group('duplicate matching', () => {
+    test('exact ID returns 1.0', () => {
+        assert.strictEqual(lib.similarityScore({ id: 'A' }, { id: 'A' }), 1);
+    });
+    test('different IDs but matching demos+sector+time score high', () => {
+        const a = { id: 'A', demos: '35M', sector: 'CCS', category: 'P1', timestamp: 1000 };
+        const b = { id: 'B', demos: '35M', sector: 'CCS', category: 'P1', timestamp: 1000 };
+        const s = lib.similarityScore(a, b);
+        assert.ok(s > 0.85, 'expected high similarity, got ' + s);
+    });
+    test('GPS proximity contributes to score', () => {
+        const a = { id: 'A', location: { lat: '53.480000', lng: '-2.242600' } };
+        const b = { id: 'B', location: { lat: '53.480010', lng: '-2.242600' } };
+        const s = lib.similarityScore(a, b);
+        assert.ok(s > 0.5);
+    });
+    test('findDuplicateCandidates respects threshold and never silently merges', () => {
+        const incoming = { id: 'NEW', demos: '40F', sector: 'Decon', category: 'P2', timestamp: 5000 };
+        const existing = [
+            { id: 'OLD', demos: '40F', sector: 'Decon', category: 'P2', timestamp: 5000 },
+            { id: 'X',   demos: '12M', sector: 'Other', category: 'P3', timestamp: 9999999 },
+        ];
+        const cands = lib.findDuplicateCandidates(incoming, existing);
+        assert.strictEqual(cands.length, 1);
+        assert.strictEqual(cands[0].candidate.id, 'OLD');
+        assert.ok(cands[0].score >= 0.65);
+    });
+});
+
+group('reassessment', () => {
+    test('P1 due in 10 minutes from triage', () => {
+        const e = { id: 'A', category: 'P1', timestamp: 1000 };
+        assert.strictEqual(lib.nextReassessmentDue(e), 1000 + 10*60*1000);
+    });
+    test('DEAD has no reassessment', () => {
+        assert.strictEqual(lib.nextReassessmentDue({ id: 'A', category: 'DEAD' }), null);
+    });
+    test('reassessmentStatus flags overdue', () => {
+        const e = { id: 'A', category: 'P1', timestamp: 0 };
+        const s = lib.reassessmentStatus(e, 60*60*1000);
+        assert.strictEqual(s.state, 'overdue');
+    });
+    test('applyReassessment bumps lastReassessed and rev', () => {
+        const e = { id: 'A', category: 'P1', timestamp: 1, _rev: 2 };
+        const out = lib.applyReassessment(e, 'improved', 1000);
+        assert.strictEqual(out.lastReassessed, 1000);
+        assert.strictEqual(out.reassessOutcome, 'improved');
+        assert.strictEqual(out._rev, 3);
+    });
+});
+
+group('deterioration', () => {
+    test('P2 -> P1 is worsening', () => {
+        assert.strictEqual(lib.categoryWorsened('P2', 'P1'), true);
+    });
+    test('P1 -> DEAD is worsening', () => {
+        assert.strictEqual(lib.categoryWorsened('P1', 'DEAD'), true);
+    });
+    test('P2 -> P3 (improvement) is NOT worsening', () => {
+        assert.strictEqual(lib.categoryWorsened('P2', 'P3'), false);
+    });
+    test('same category is not worsening', () => {
+        assert.strictEqual(lib.categoryWorsened('P1', 'P1'), false);
+    });
+});
+
+group('timeline', () => {
+    test('combines triage, interventions, injuries, audit in chronological order', () => {
+        const entry = {
+            id: 'A', category: 'P1', reason: 'Bleed', tool: 'TST', timestamp: 1000,
+            interventions: { Tourniquet: { time: '12:00', ts: 2000 } },
+            injuries: [{ region: 'Legs', side: 'Right', label: 'Frac', ts: 1500 }],
+            lastReassessed: 3000, reassessOutcome: 'unchanged',
+        };
+        const audit = [
+            { patientId: 'A', action: 'EVACUATION', clinTime: 4000, sysTime: 4000, details: 'AMB-1' },
+            { patientId: 'B', action: 'X', clinTime: 999, sysTime: 999 },
+        ];
+        const tl = lib.buildPatientTimeline(entry, audit);
+        const ts = tl.map(e => e.ts);
+        const sorted = ts.slice().sort((a,b)=>a-b);
+        assert.deepStrictEqual(ts, sorted);
+        const kinds = tl.map(e => e.kind);
+        assert.ok(kinds.includes('triage'));
+        assert.ok(kinds.includes('intervention'));
+        assert.ok(kinds.includes('injury'));
+        assert.ok(kinds.includes('reassess'));
+        assert.ok(kinds.includes('audit'));
+    });
+});
+
+group('shortCodeFromHash', () => {
+    test('produces 6-char base32 codes', () => {
+        const c = lib.shortCodeFromHash('abc12345');
+        assert.match(c, /^[0-9A-HJKMNP-TV-Z]{6}$/);
+    });
+});
+
 console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
