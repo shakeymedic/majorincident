@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v4-2026-05-08';
+const CACHE_NAME = 'mit-triage-v5-2026-05-08';
 const PRECACHE_URLS = [
     './',
     './index.html',
@@ -23,7 +23,14 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS))
     );
-    self.skipWaiting();
+    // Do NOT auto-skipWaiting; we want the page to surface an "Update available"
+    // banner so an in-progress incident is not disrupted by an unexpected reload.
+});
+
+self.addEventListener('message', event => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });
 
 self.addEventListener('activate', event => {

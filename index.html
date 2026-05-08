@@ -36,16 +36,61 @@
     }
 
     body.night-mode {
-        --nhs-blue: #005EB8;
-        --nhs-dark-blue: #000000;
+        --nhs-blue: #4a9fff;
+        --nhs-dark-blue: #002966;
+        --nhs-green: #00b35a;
+        --nhs-red: #ff5a4d;
+        --nhs-yellow: #ffe14d;
+        --nhs-grey: #8a99a7;
         --nhs-pale-grey: #121212;
-        --white: #000000;
+        --white: #0a0a0a;
         --black: #FFFFFF;
-        --text-color: #e0e0e0;
-        --bg-color: #000000;
-        --card-bg: #1e1e1e;
-        --toast-bg: #555;
+        --text-color: #f0f0f0;
+        --bg-color: #050505;
+        --card-bg: #1c1c1e;
+        --toast-bg: #2c2c2e;
     }
+    body.night-mode .modal-overlay { background: rgba(0,0,0,0.95); }
+    body.night-mode .modal-box { border: 1px solid #2c2c2e; }
+    body.night-mode .btn-primary { background-color: #1f6fbf; }
+    body.night-mode .btn-secondary { background-color: #5a6772; }
+
+    /* Gloved-use mode: oversize taps, no thin borders, high contrast */
+    body.gloved .btn { padding: 1.9rem 1.4rem; font-size: 1.4rem; min-height: 84px; border: 2px solid rgba(0,0,0,0.2); }
+    body.gloved .btn-yes, body.gloved .btn-no { height: 140px; font-size: 2.2rem; border: 4px solid #000; }
+    body.gloved .input-group input,
+    body.gloved .input-group textarea,
+    body.gloved .input-group select { padding: 1.5rem; font-size: 22px; }
+    body.gloved .icon-btn { padding: 14px 20px; font-size: 1.05rem; }
+    body.gloved .injury-btn { padding: 1rem; font-size: 1.1rem; min-height: 60px; }
+    body.gloved .demo-btn { padding: 1.1rem; font-size: 1.05rem; min-height: 60px; }
+    body.gloved .int-btn { padding: 28px 12px; font-size: 1.25rem; min-height: 92px; }
+
+    /* One-handed mode: sticky bottom action bar; primary actions reachable by thumb */
+    body.one-hand .screen { padding-bottom: 90px; }
+    body.one-hand .one-hand-bar { display: flex !important; }
+    .one-hand-bar {
+        display: none;
+        position: fixed; bottom: 0; left: 0; right: 0;
+        gap: 8px; padding: 10px 12px;
+        background: var(--card-bg);
+        border-top: 2px solid var(--nhs-blue);
+        z-index: 1500;
+        box-shadow: 0 -4px 12px rgba(0,0,0,0.25);
+    }
+    .one-hand-bar .btn { margin: 0; flex: 1; padding: 1.2rem 0.8rem; font-size: 1.05rem; min-height: 64px; }
+
+    /* Panic / simple mode: hide non-essentials, surface the one-tap path */
+    body.panic .status-bar,
+    body.panic #global-dashboard,
+    body.panic footer,
+    body.panic #btn-mitt,
+    body.panic #intro-screen .card label[for],
+    body.panic .home-secondary { display: none !important; }
+    body.panic header { padding: 0.6rem; }
+    body.panic header .icon-btn { font-size: 0.85rem; padding: 6px 10px; }
+    body.panic .instruction-card { font-size: 2rem; }
+    body.panic .btn-yes, body.panic .btn-no { height: 150px; font-size: 2.4rem; }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -466,8 +511,131 @@
 
     #patient-map { height: 50vh; width: 100%; border-radius: 8px; border: 2px solid #ccc; z-index: 1;}
 
+    /* SW update banner */
+    #sw-update-banner {
+        display: none;
+        position: fixed;
+        bottom: 12px; left: 12px; right: 12px;
+        z-index: 4000;
+        background: var(--nhs-dark-blue);
+        color: white;
+        padding: 14px 16px;
+        border-radius: 12px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+        align-items: center;
+        gap: 10px;
+        font-size: 0.95rem;
+    }
+    #sw-update-banner.show { display: flex; }
+    #sw-update-banner button {
+        background: var(--nhs-yellow);
+        color: #000;
+        border: none;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+    #sw-update-banner .dismiss {
+        background: transparent;
+        color: white;
+        border: 1px solid rgba(255,255,255,0.6);
+    }
+    body.one-hand #sw-update-banner { bottom: 92px; }
+
+    /* Reassessment pill */
+    .reassess-pill {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 14px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-right: 4px;
+    }
+    .reassess-pill.ok { background: #d4edda; color: #155724; }
+    .reassess-pill.due-soon { background: #fff3cd; color: #856404; }
+    .reassess-pill.overdue { background: var(--nhs-red); color: white; animation: pulse 2s infinite; }
+    body.night-mode .reassess-pill.ok { background: #14431f; color: #b6f0c2; }
+    body.night-mode .reassess-pill.due-soon { background: #4a3c10; color: #ffe59c; }
+
+    .deteriorate-flag {
+        background: var(--nhs-red); color: white;
+        padding: 2px 8px; border-radius: 8px; font-size: 0.8rem; font-weight: bold;
+    }
+
+    /* Treatment timeline */
+    .timeline {
+        list-style: none; padding-left: 0; margin: 0;
+        border-left: 3px solid var(--nhs-blue);
+    }
+    .timeline li {
+        position: relative;
+        margin: 0;
+        padding: 8px 12px 8px 18px;
+        border-bottom: 1px solid rgba(0,0,0,0.08);
+    }
+    .timeline li::before {
+        content: "";
+        position: absolute;
+        left: -8px; top: 14px;
+        width: 12px; height: 12px;
+        border-radius: 50%;
+        background: var(--nhs-blue);
+        border: 2px solid var(--card-bg);
+    }
+    .timeline .tl-time { font-size: 0.8rem; color: var(--nhs-grey); display: block; }
+    .timeline .tl-label { font-weight: bold; }
+    .timeline .tl-detail { font-size: 0.85rem; color: var(--nhs-grey); }
+    .timeline li.kind-injury::before { background: var(--nhs-red); }
+    .timeline li.kind-reassess::before { background: var(--nhs-green); }
+    .timeline li.kind-audit::before { background: var(--nhs-grey); }
+
+    /* Step-by-step handover screen */
+    .handover-step {
+        background: var(--card-bg);
+        border: 2px solid var(--nhs-blue);
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+    }
+    .handover-step h3 { margin: 0 0 0.5rem 0; color: var(--nhs-blue); }
+    body.night-mode .handover-step h3 { color: var(--nhs-yellow); }
+
+    /* Body-map injury controls */
+    .injury-form {
+        display: flex; flex-wrap: wrap; gap: 6px;
+        margin-top: 12px; align-items: center;
+        background: rgba(255,255,255,0.85);
+        padding: 8px; border-radius: 8px;
+    }
+    .injury-form select, .injury-form input { padding: 8px; font-size: 0.95rem; }
+
+    /* Printable wristband */
+    .wristband {
+        display: flex; flex-direction: column; align-items: center;
+        background: white; color: black;
+        padding: 16px;
+        border: 2px dashed #333;
+        border-radius: 8px;
+        max-width: 320px;
+        margin: 0 auto;
+        font-family: -apple-system, sans-serif;
+    }
+    .wristband .wb-cat {
+        font-weight: 900; font-size: 2rem; padding: 6px 16px; border-radius: 6px;
+        margin-bottom: 6px;
+    }
+    .wristband .wb-id { font-weight: bold; font-size: 1.1rem; }
+    .wristband .wb-meta { font-size: 0.75rem; color: #555; margin-top: 4px; text-align: center; }
+    .wristband .wb-qr { margin: 8px 0; background: white; }
     @media print {
-        header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, .modal-overlay, .voice-btn { display: none !important; }
+        body * { visibility: hidden !important; }
+        #print-area, #print-area * { visibility: visible !important; }
+        #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+    }
+
+    @media print {
+        header, .btn, .status-bar, .header-controls, #toast, #global-dashboard, .int-grid, .modal-overlay, .voice-btn, .one-hand-bar, #sw-update-banner { display: none !important; }
         .screen { display: none !important; }
         #log-screen { display: block !important; }
         .log-container { overflow: visible; }
@@ -483,13 +651,148 @@
 <div id="aria-alert-region" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
 <div id="blackout-curtain" onclick="toggleBlackout()"></div>
 
-<div id="body-map-modal" class="modal-overlay">
-    <h3 style="color:white; margin-bottom:10px;">Tap Injury Location</h3>
-    <svg id="bodymap" viewBox="0 0 200 400" width="300" height="500" onclick="handleBodyMapClick(event)">
-        <path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
-        <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
-    </svg>
-    <button class="btn btn-secondary" style="width: auto; margin-top: 20px;" onclick="closeBodyMap()">Done</button>
+<div id="sw-update-banner" role="status" aria-live="polite">
+    <span style="flex:1;">A new version of MITT is ready.</span>
+    <button class="dismiss" onclick="dismissSwUpdate()" aria-label="Dismiss update">Later</button>
+    <button onclick="applySwUpdate()" aria-label="Reload to update">Reload Now</button>
+</div>
+
+<div id="print-area" style="display:none;"></div>
+
+<div id="body-map-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="body-map-title">
+    <div style="display:flex; flex-direction:column; align-items:center; max-height:95vh; overflow-y:auto;">
+        <h3 id="body-map-title" style="color:white; margin-bottom:6px;">Tap Injury Location</h3>
+        <p style="color:#ddd; font-size:0.85rem; margin:0 0 6px 0;">Pick severity & label first, then tap the body. Marks persist across re-renders.</p>
+        <div class="injury-form" id="bodymap-form">
+            <select id="bodymap-label" aria-label="Injury label">
+                <option value="">— Label —</option>
+                <option>Bleed</option>
+                <option>Burn</option>
+                <option>Fracture</option>
+                <option>Penetrating</option>
+                <option>Blast</option>
+                <option>Crush</option>
+                <option>Airway</option>
+                <option>Amputation</option>
+            </select>
+            <select id="bodymap-severity" aria-label="Severity">
+                <option value="unspecified">— Severity —</option>
+                <option value="minor">Minor</option>
+                <option value="moderate">Moderate</option>
+                <option value="severe">Severe</option>
+            </select>
+            <button class="btn btn-secondary" style="width:auto; margin:0; padding:8px 14px;" onclick="undoLastInjury()">↩ Undo</button>
+            <button class="btn btn-secondary" style="width:auto; margin:0; padding:8px 14px;" onclick="clearInjuries()">✕ Clear</button>
+        </div>
+        <svg id="bodymap" viewBox="0 0 200 400" width="300" height="500" onclick="handleBodyMapClick(event)" style="margin-top:8px;">
+            <path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
+            <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
+            <g id="bodymap-marks"></g>
+        </svg>
+        <button class="btn btn-secondary" style="width: auto; margin-top: 14px;" onclick="closeBodyMap()">Done</button>
+    </div>
+</div>
+
+<div id="handover-flow-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="handover-flow-title">
+    <div class="modal-box" style="max-width:520px;">
+        <h3 id="handover-flow-title" style="margin-top:0; color:var(--nhs-blue);">Two-Way Handover</h3>
+        <div class="handover-step" id="handover-step1">
+            <h3>Step 1 — Sender</h3>
+            <p style="margin:0 0 8px 0;">Show the patient QR you generated to the receiver. They scan it, review, and accept.</p>
+            <p class="qr-meta" id="handover-step1-state">Waiting for receiver acknowledgement…</p>
+        </div>
+        <div class="handover-step" id="handover-step2" style="opacity:0.5;">
+            <h3>Step 2 — Receiver</h3>
+            <p style="margin:0 0 8px 0;">After accepting, the receiver shows their <strong>acknowledgement QR</strong> back to you.</p>
+            <p class="qr-meta">Once you scan it, this handover is recorded as <strong>ACCEPTED</strong>.</p>
+        </div>
+        <div class="handover-step" id="handover-step3" style="opacity:0.4;">
+            <h3>Step 3 — Confirmation</h3>
+            <p style="margin:0;">Audit timeline updated. Tag the patient physically.</p>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:1rem;">
+            <button class="btn btn-primary" style="flex:1;" onclick="scanAckFromFlow()">📷 Scan ACK QR (Step 2)</button>
+            <button class="btn btn-secondary" style="flex:1;" onclick="closeHandoverFlow()">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="ack-success-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="ack-success-title">
+    <div class="modal-box" style="text-align:center; max-width:420px;">
+        <div style="font-size:3rem; line-height:1;">✓</div>
+        <h3 id="ack-success-title" style="margin:0.5rem 0; color:var(--nhs-green);">Handover Accepted</h3>
+        <p id="ack-success-detail" style="margin-bottom:1rem;"></p>
+        <button class="btn btn-primary" onclick="closeAckSuccess()">Done</button>
+    </div>
+</div>
+
+<div id="reassess-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reassess-title">
+    <div class="modal-box" style="max-width:460px;">
+        <h3 id="reassess-title" style="margin-top:0; color:var(--nhs-blue);">Reassess Patient</h3>
+        <p id="reassess-summary" style="font-weight:bold;"></p>
+        <p style="font-size:0.9rem;">Record current clinical state. Updates the timeline and resets the next-due timer.</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:1rem;">
+            <button class="btn btn-secondary" style="flex:1; background:var(--nhs-green);" onclick="submitReassessment('improved')">↑ Improved</button>
+            <button class="btn btn-secondary" style="flex:1; background:#666;" onclick="submitReassessment('unchanged')">= Unchanged</button>
+            <button class="btn btn-danger" style="flex:1;" onclick="submitReassessment('worsened')">↓ Worsened</button>
+        </div>
+        <button class="btn btn-secondary" onclick="closeReassessModal()">Cancel</button>
+    </div>
+</div>
+
+<div id="timeline-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="timeline-title">
+    <div class="modal-box" style="max-width:600px; max-height:85vh; overflow-y:auto;">
+        <h3 id="timeline-title" style="margin-top:0;">Patient Timeline</h3>
+        <p id="timeline-meta" class="qr-meta"></p>
+        <ul id="timeline-list" class="timeline"></ul>
+        <button class="btn btn-secondary" style="margin-top:1rem;" onclick="closeTimelineModal()">Close</button>
+    </div>
+</div>
+
+<div id="dup-warn-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="dup-warn-title">
+    <div class="modal-box" style="max-width:560px; max-height:85vh; overflow-y:auto;">
+        <h3 id="dup-warn-title" style="margin-top:0; color:var(--nhs-red);">⚠ Possible Duplicate Patient</h3>
+        <p>The incoming record looks similar to one or more existing patients. <strong>Never silently merge — confirm identity first.</strong></p>
+        <div id="dup-warn-list"></div>
+        <div style="display:flex; gap:10px; margin-top:1rem;">
+            <button class="btn btn-primary" style="flex:1; background:var(--nhs-green);" onclick="dupResolve('keep-separate')">Keep as new patient</button>
+            <button class="btn btn-secondary" style="flex:1;" onclick="dupResolve('merge-into')">Merge into selected</button>
+            <button class="btn btn-danger" style="flex:1;" onclick="dupResolve('cancel')">Cancel import</button>
+        </div>
+    </div>
+</div>
+
+<div id="modes-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modes-title">
+    <div class="modal-box" style="max-width:460px;">
+        <h3 id="modes-title" style="margin-top:0;">Display & Interaction Modes</h3>
+        <p style="font-size:0.9rem;">Mobile-first toggles. Settings persist locally.</p>
+        <label style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #ccc;">
+            <input type="checkbox" id="mode-gloved" style="width:24px; height:24px;" onchange="toggleGloved()">
+            <span><strong>Gloved-Use Mode</strong><br><small>Larger taps, fewer thin fields, higher contrast.</small></span>
+        </label>
+        <label style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #ccc;">
+            <input type="checkbox" id="mode-onehand" style="width:24px; height:24px;" onchange="toggleOneHand()">
+            <span><strong>One-Handed Mode</strong><br><small>Sticky bottom action bar with key actions in thumb reach.</small></span>
+        </label>
+        <label style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #ccc;">
+            <input type="checkbox" id="mode-panic" style="width:24px; height:24px;" onchange="togglePanic()">
+            <span><strong>Panic / Simple Mode</strong><br><small>Hides non-essentials. Surfaces the fastest TST path.</small></span>
+        </label>
+        <button class="btn btn-primary" style="margin-top:1rem;" onclick="closeModesMenu()">Done</button>
+    </div>
+</div>
+
+<div id="bulk-receive-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="bulk-receive-title">
+    <div class="modal-box" style="max-width:600px; max-height:85vh; overflow-y:auto;">
+        <h3 id="bulk-receive-title" style="margin-top:0;">Bulk Sector Handover — Review</h3>
+        <p id="bulk-receive-meta" class="qr-meta"></p>
+        <p id="bulk-receive-warn" class="qr-meta warn" style="display:none;"></p>
+        <div id="bulk-receive-list"></div>
+        <div style="display:flex; gap:10px; margin-top:1rem;">
+            <button class="btn btn-primary" style="flex:1; background:var(--nhs-green);" id="btn-bulk-accept" onclick="acceptBulkPreview()">✓ Accept All</button>
+            <button class="btn btn-danger" style="flex:1;" onclick="declineBulkPreview()">✕ Decline</button>
+        </div>
+    </div>
 </div>
 
 <div id="manual-id-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="manual-id-title">
@@ -605,6 +908,7 @@
         </div>
         <div class="header-controls">
             <button class="icon-btn" onclick="resetToHome()" aria-label="Home">🏠</button>
+            <button class="icon-btn" onclick="openModesMenu()" aria-label="Display modes" id="btn-modes" title="Modes">⚙</button>
             <button class="icon-btn" onclick="toggleBlackout()" aria-label="Blackout Mode">Blackout</button>
             <button class="icon-btn" onclick="toggleNightMode()" aria-label="Night Mode">☾</button>
         </div>
@@ -726,6 +1030,9 @@
                 <button class="btn btn-secondary" style="flex:1; font-size:1rem;" onclick="generateMyIdentityQR()">
                     My ID<br><span style="font-size:0.8rem; font-weight:normal;">Scan for bulk handover</span>
                 </button>
+                <button class="btn btn-secondary home-secondary" style="flex:1; font-size:1rem; background-color: var(--nhs-dark-blue);" onclick="openBulkHandover()">
+                    📦 Bulk Handover<br><span style="font-size:0.8rem; font-weight:normal;">Sector → another lead</span>
+                </button>
             </div>
 
             <button class="btn btn-secondary" style="background-color: var(--nhs-green); color: white;" onclick="showMap()">
@@ -798,6 +1105,11 @@
             <div style="display:flex; gap:10px; margin-top:10px;">
                 <button id="btn-retriage" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-blue); color: var(--nhs-blue); background: var(--card-bg);" onclick="reTriage()">↻ Re-Triage</button>
                 <button id="btn-atmist" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-green); color: var(--nhs-green); background: var(--card-bg);" onclick="generateAtmist()">📢 ATMIST</button>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+                <button id="btn-reassess" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-yellow); color: var(--text-color); background: var(--card-bg); min-width:130px;" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
+                <button class="btn btn-secondary" style="flex:1; min-width:130px; background:#444;" onclick="openTimelineForCurrent()">🕒 Timeline</button>
+                <button class="btn btn-secondary" style="flex:1; min-width:130px; background:#555;" onclick="printPatientLabel()">🖨 Print Label</button>
             </div>
 
             <div id="details-container">
@@ -970,6 +1282,11 @@
                 <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('SNAPSHOT')">Casualty Register (CSV)</button>
                 <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('AUDIT')">Forensic Audit Trail (CSV)</button>
             </div>
+            <div class="log-actions" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem; background:var(--nhs-dark-blue); color:white;" onclick="openBulkHandover()">📦 Bulk Sector Handover</button>
+                <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem; background:#666;" onclick="refreshLog()" title="Refresh due/overdue indicators">↻ Refresh</button>
+            </div>
+            <div id="alert-strip" style="margin-bottom:10px;"></div>
             
             <div class="log-container">
                 <table id="log-table">
@@ -996,12 +1313,17 @@
     <footer style="text-align:center; padding:6px 8px; font-size:0.75rem; color:var(--nhs-grey); flex-shrink:0;">
         <span id="app-version-label">MITT</span>
     </footer>
+    <nav class="one-hand-bar" id="one-hand-bar" aria-label="One-handed quick actions">
+        <button class="btn btn-primary" onclick="oneHandPrimary()" id="oh-primary">Triage</button>
+        <button class="btn btn-secondary" onclick="scanPatientQR()">Scan</button>
+        <button class="btn btn-secondary" onclick="showLog()">Log</button>
+    </nav>
 </div>
 
 <script>
     // ---------- App version / build hash ----------
-    const APP_VERSION = '0.4.0';
-    const APP_BUILD = '2026-05-08';
+    const APP_VERSION = '0.5.0';
+    const APP_BUILD = '2026-05-08-2';
     const QR_SCHEMA_VERSION = 2;
     const QR_DEFAULT_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours; configurable
     const QR_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;  // tolerate small clock skew
@@ -1191,6 +1513,13 @@
                 case 'tod-modal': closeTodModal(); break;
                 case 'atmist-modal': closeAtmist(); break;
                 case 'body-map-modal': closeBodyMap(); break;
+                case 'handover-flow-modal': closeHandoverFlow(); break;
+                case 'ack-success-modal': closeAckSuccess(); break;
+                case 'reassess-modal': closeReassessModal(); break;
+                case 'timeline-modal': closeTimelineModal(); break;
+                case 'dup-warn-modal': dupResolve('cancel'); break;
+                case 'bulk-receive-modal': declineBulkPreview(); break;
+                case 'modes-modal': closeModesMenu(); break;
                 default: m.style.display = 'none';
             }
         }
@@ -1872,7 +2201,21 @@
         document.getElementById('details-container').classList.remove('show');
         document.getElementById('btn-toggle-details').innerText = "+ Interventions & Notes";
 
+        updateReassessPill(entry);
         showScreen('result-screen');
+    }
+
+    function updateReassessPill(entry) {
+        const pill = document.getElementById('reassess-state-pill');
+        if (!pill) return;
+        const status = MITTLib.reassessmentStatus(entry, Date.now());
+        pill.className = 'reassess-pill ' + status.state;
+        if (status.state === 'na') { pill.textContent = ''; return; }
+        const due = status.dueAt;
+        const remaining = Math.round((due - Date.now()) / 60000);
+        if (status.state === 'overdue') pill.textContent = `OVERDUE ${Math.abs(remaining)}m`;
+        else if (status.state === 'due-soon') pill.textContent = `Due ~${remaining}m`;
+        else pill.textContent = `OK ${remaining}m`;
     }
 
     function toggleDetails() {
@@ -1957,57 +2300,113 @@
     }
 
     function openBodyMap() {
+        if (currentLogIndex === -1) return;
         document.getElementById('body-map-modal').style.display = 'flex';
+        renderInjuryMarks();
     }
     function closeBodyMap() {
         document.getElementById('body-map-modal').style.display = 'none';
     }
+    function renderInjuryMarks() {
+        const g = document.getElementById('bodymap-marks');
+        if (!g) return;
+        clearChildren(g);
+        if (currentLogIndex === -1) return;
+        const entry = incidentLog[currentLogIndex];
+        const marks = entry.injuries || [];
+        marks.forEach((m, i) => {
+            const cx = m.x * MITTLib.BODYMAP_VIEWBOX.w;
+            const cy = m.y * MITTLib.BODYMAP_VIEWBOX.h;
+            const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); dot.setAttribute('r', 6);
+            const sevColor = m.severity === 'severe' ? '#b00' : m.severity === 'moderate' ? '#d80' : m.severity === 'minor' ? '#080' : '#900';
+            dot.setAttribute('fill', sevColor);
+            dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '2');
+            g.appendChild(dot);
+            if (m.label) {
+                const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                t.setAttribute('x', cx + 8); t.setAttribute('y', cy + 4);
+                t.setAttribute('fill', sevColor); t.setAttribute('font-size', '10'); t.setAttribute('font-weight', 'bold');
+                t.textContent = m.label;
+                g.appendChild(t);
+            }
+        });
+    }
     function handleBodyMapClick(evt) {
-        if(currentLogIndex === -1) return;
+        if (currentLogIndex === -1) return;
         const svg = document.getElementById('bodymap');
         const pt = svg.createSVGPoint();
         pt.x = evt.clientX; pt.y = evt.clientY;
         const cursorPt = pt.matrixTransform(svg.getScreenCTM().inverse());
-        
-        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        text.setAttribute("x", cursorPt.x - 5);
-        text.setAttribute("y", cursorPt.y + 5);
-        text.setAttribute("fill", "red");
-        text.setAttribute("font-size", "24");
-        text.setAttribute("font-weight", "bold");
-        text.textContent = "X";
-        svg.appendChild(text);
-        
-        let loc = "Body";
-        if(cursorPt.y < 80) loc = "Head/Neck";
-        else if(cursorPt.y > 200) loc = "Legs";
-        else loc = "Torso/Arms";
-        
+        const label = document.getElementById('bodymap-label').value || '';
+        const severity = document.getElementById('bodymap-severity').value || 'unspecified';
+        const mark = MITTLib.buildInjuryMark({ x: cursorPt.x, y: cursorPt.y, label, severity, ts: getClinicalTimestamp() });
+        const entry = incidentLog[currentLogIndex];
+        if (!Array.isArray(entry.injuries)) entry.injuries = [];
+        entry.injuries.push(mark);
+        // Backwards-compat: also stamp a brief note so legacy CSV/free-text still reflects it
         const noteField = document.getElementById('p-notes');
-        const timestamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-        const noteText = ` [Injury marked on ${loc} @ ${timestamp}]`;
-        noteField.value += noteText;
-        
-        logAudit("BODYMAP_MARK", incidentLog[currentLogIndex].id, loc, getClinicalTimestamp());
-        autoSave();
+        if (noteField) {
+            const tag = ` [Injury ${mark.side} ${mark.region}${label ? ' '+label : ''}${severity!=='unspecified' ? ' ('+severity+')' : ''} @ ${mark.time}]`;
+            noteField.value = (noteField.value || '') + tag;
+        }
+        logAudit("BODYMAP_MARK", entry.id, `${mark.side} ${mark.region}${label ? ' '+label : ''}${severity!=='unspecified' ? ' ('+severity+')' : ''}`, getClinicalTimestamp());
+        renderInjuryMarks();
+        autoSave('Injury Mark');
+    }
+    function undoLastInjury() {
+        if (currentLogIndex === -1) return;
+        const entry = incidentLog[currentLogIndex];
+        if (Array.isArray(entry.injuries) && entry.injuries.length) {
+            const removed = entry.injuries.pop();
+            logAudit('BODYMAP_UNDO', entry.id, `Removed ${removed.region} ${removed.label || ''}`, getClinicalTimestamp());
+            renderInjuryMarks();
+            autoSave('Injury Undo');
+        }
+    }
+    async function clearInjuries() {
+        if (currentLogIndex === -1) return;
+        const ok = await inAppConfirm({ title: 'Clear injury marks?', message: 'This removes all marks on this patient. Free-text notes are preserved.', okLabel: 'Clear', danger: true });
+        if (!ok) return;
+        const entry = incidentLog[currentLogIndex];
+        entry.injuries = [];
+        logAudit('BODYMAP_CLEAR', entry.id, 'Cleared all marks', getClinicalTimestamp());
+        renderInjuryMarks();
+        autoSave('Injury Clear');
     }
 
     function startVoice(fieldId) {
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            showToast("Voice not supported on this browser.", { alert: true }); return;
-        }
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            showToast("Voice not supported. Type your note instead.", { alert: true });
+            return;
+        }
         const recognition = new SpeechRecognition();
         recognition.lang = "en-GB";
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        showToast('🎙 Listening… speak now');
         recognition.onresult = function(event) {
-            document.getElementById(fieldId).value += " " + event.results[0][0].transcript;
+            const transcript = event.results[0][0].transcript;
+            const stamp = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            const tagged = `[Voice ${stamp}] ${transcript}`;
+            const field = document.getElementById(fieldId);
+            field.value = (field.value ? field.value + ' ' : '') + tagged;
+            if (currentLogIndex > -1) {
+                logAudit('VOICE_NOTE', incidentLog[currentLogIndex].id, transcript.slice(0, 200), getClinicalTimestamp());
+            }
             autoSave('Voice Note Added');
+            showToast('Voice note saved');
         };
         recognition.onerror = function(event) {
             console.error(event.error);
-            showToast("Voice Error: " + event.error);
+            const msg = event.error === 'not-allowed' ? 'Mic permission denied — type instead.' :
+                        event.error === 'no-speech' ? 'No speech detected.' :
+                        'Voice error: ' + event.error;
+            showToast(msg, { alert: true });
         };
-        recognition.start();
+        try { recognition.start(); }
+        catch (e) { showToast('Voice start failed — type instead.', { alert: true }); }
     }
 
     // ---------- Patient QR schema ----------
@@ -2136,7 +2535,28 @@
         setText('qr-expiry', `Expires: ${new Date(wrapper.x).toLocaleTimeString()} • Schema v${wrapper.v} rv${wrapper.rv} • App v${APP_VERSION}`);
         document.getElementById('qr-modal').style.display = 'flex';
         logAudit('QR_GENERATED', entry.id, `Schema v${wrapper.v}, rv${wrapper.rv}, expires ${new Date(wrapper.x).toISOString()}`, Date.now());
+        // Mark this patient as 'pending handover' until ACK seen
+        entry.handoverState = 'pending';
+        entry.handoverAt = Date.now();
+        entry._rev = (entry._rev || 0) + 1;
         saveState();
+        // After QR closes, prompt the guided handover flow so sender clearly waits for ACK
+        try { document.getElementById('qr-modal').dataset.handoverPid = entry.id; } catch(e){}
+    }
+    function openHandoverFlowAfterQr() {
+        const pid = document.getElementById('qr-modal').dataset.handoverPid || '';
+        if (!pid) return;
+        const flow = document.getElementById('handover-flow-modal');
+        if (!flow) return;
+        const state = document.getElementById('handover-step1-state');
+        if (state) state.textContent = `Patient ${pid} — waiting for receiver to scan & ACK.`;
+        flow.style.display = 'flex';
+    }
+    function closeHandoverFlow() { document.getElementById('handover-flow-modal').style.display = 'none'; }
+    function scanAckFromFlow() {
+        document.getElementById('handover-flow-modal').style.display = 'none';
+        scanMode = 'PATIENT';
+        startScanner();
     }
 
     function generateMyIdentityQR() {
@@ -2153,8 +2573,20 @@
     }
 
     function closeQR() {
-        document.getElementById('qr-modal').style.display = 'none';
+        const modal = document.getElementById('qr-modal');
+        modal.style.display = 'none';
         if (_qrFullscreen) toggleQrFullscreen();
+        // If this QR was a patient handover (pid stamped), continue the guided flow.
+        if (modal.dataset.handoverPid) {
+            const pid = modal.dataset.handoverPid;
+            modal.dataset.handoverPid = '';
+            // Show guided flow so user knows to wait for ACK
+            setTimeout(() => {
+                const state = document.getElementById('handover-step1-state');
+                if (state) state.textContent = `Patient ${pid} — waiting for receiver to scan & ACK.`;
+                document.getElementById('handover-flow-modal').style.display = 'flex';
+            }, 80);
+        }
     }
     function toggleQrFullscreen() {
         const modal = document.getElementById('qr-modal');
@@ -2315,6 +2747,10 @@
                 handleAck(parsed);
                 return;
             }
+            if (parsed.t === 'MIT_BULK') {
+                handleBulkWrapper(parsed);
+                return;
+            }
         }
         // Legacy formats (pipe-delimited)
         if (typeof txt === 'string') {
@@ -2374,6 +2810,28 @@
         const acceptBtn = document.getElementById('btn-accept-preview');
         acceptBtn.disabled = false;
         acceptBtn.style.display = 'block';
+        // Near-duplicate detection (different ID, similar features)
+        if (result.ok && result.data) {
+            const cands = MITTLib.findDuplicateCandidates(result.data, incidentLog, { threshold: 0.65 });
+            const exactDup = incidentLog.findIndex(e => e.id === result.data.id) > -1;
+            if (cands.length > 0 && !exactDup) {
+                const note = document.createElement('div');
+                note.style.marginTop = '6px';
+                note.style.padding = '8px';
+                note.style.borderRadius = '6px';
+                note.style.background = 'rgba(218, 41, 28, 0.10)';
+                note.style.border = '1px solid var(--nhs-red)';
+                const heading = document.createElement('strong');
+                heading.textContent = 'Possible duplicate (different ID): ';
+                note.appendChild(heading);
+                note.appendChild(document.createTextNode(cands.slice(0, 3).map(c => `${c.candidate.id} (${Math.round(c.score*100)}%)`).join(', ')));
+                note.appendChild(document.createElement('br'));
+                const small = document.createElement('small');
+                small.textContent = 'Verify identity before accepting. Use ATMIST/photo if available.';
+                note.appendChild(small);
+                appendRow(content, 'Duplicate?', note);
+            }
+        }
 
         if (!result.ok) {
             warn.textContent = `Cannot import: ${result.reason}`;
@@ -2469,8 +2927,30 @@
         if (!_pendingImport) { document.getElementById('preview-modal').style.display = 'none'; return; }
         const { data, meta } = _pendingImport;
         const existingIndex = incidentLog.findIndex(e => e.id === data.id);
-        if (existingIndex > -1) {
-            // Safe merge: never overwrite local interventions / notes; append imported notes.
+        // If no exact-ID match but possible duplicates exist, surface explicit choice.
+        if (existingIndex === -1) {
+            const cands = MITTLib.findDuplicateCandidates(data, incidentLog, { threshold: 0.65 });
+            if (cands.length > 0) {
+                document.getElementById('preview-modal').style.display = 'none';
+                openDupWarn(cands);
+                return; // resolved asynchronously by dupResolve()
+            }
+        }
+        _commitImport(existingIndex);
+    }
+    function _commitImport(existingIndex, mergeIntoId) {
+        const { data, meta } = _pendingImport;
+        if (mergeIntoId) {
+            const idx = incidentLog.findIndex(e => e.id === mergeIntoId);
+            if (idx > -1) {
+                // Caller chose to merge incoming into a different existing record
+                const merged = mergePatientRecords(incidentLog[idx], data, meta);
+                merged.notes = (merged.notes || '') + ` [Operator-confirmed duplicate of incoming ID ${data.id}]`;
+                incidentLog[idx] = merged;
+                logAudit('DATA_IMPORT_MERGE_DUP', mergeIntoId, `Confirmed duplicate from ${meta.sender || 'Unknown'}; incoming id was ${data.id} (rv${meta.recordVersion})`, Date.now());
+                showToast(`Merged into ${mergeIntoId}`);
+            }
+        } else if (existingIndex > -1) {
             const local = incidentLog[existingIndex];
             const merged = mergePatientRecords(local, data, meta);
             incidentLog[existingIndex] = merged;
@@ -2488,8 +2968,47 @@
         document.getElementById('preview-modal').style.display = 'none';
         saveState();
         updateDashboard();
-        // Best-effort ACK QR — receiver is the local user, NOT the sender.
         try { showAckQR(data.id, triagerName || ''); } catch(e){}
+    }
+    let _dupCandidates = null;
+    function openDupWarn(cands) {
+        _dupCandidates = cands;
+        const list = document.getElementById('dup-warn-list');
+        clearChildren(list);
+        cands.slice(0, 5).forEach((c, i) => {
+            const row = document.createElement('label');
+            row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '8px';
+            row.style.padding = '8px'; row.style.borderBottom = '1px solid #ccc';
+            const radio = document.createElement('input'); radio.type = 'radio'; radio.name = 'dup-pick'; radio.value = c.candidate.id;
+            if (i === 0) radio.checked = true;
+            const span = document.createElement('span');
+            span.innerHTML = '';
+            const strong = document.createElement('strong'); strong.textContent = c.candidate.id;
+            span.appendChild(strong);
+            span.appendChild(document.createTextNode(` — ${c.candidate.category || '?'}, ${c.candidate.demos || '?'}, ${c.candidate.sector || '?'} • match ${Math.round(c.score*100)}%`));
+            row.appendChild(radio); row.appendChild(span);
+            list.appendChild(row);
+        });
+        document.getElementById('dup-warn-modal').style.display = 'flex';
+    }
+    function dupResolve(action) {
+        const modal = document.getElementById('dup-warn-modal');
+        if (action === 'cancel') {
+            if (_pendingImport) logAudit('QR_DECLINED', _pendingImport.data.id, 'Operator declined after duplicate warning', Date.now());
+            _pendingImport = null; _dupCandidates = null;
+            modal.style.display = 'none';
+            return;
+        }
+        if (action === 'merge-into') {
+            const picked = document.querySelector('input[name="dup-pick"]:checked');
+            if (!picked) { showToast('Select a candidate to merge into'); return; }
+            modal.style.display = 'none';
+            _commitImport(-1, picked.value);
+            return;
+        }
+        // keep-separate
+        modal.style.display = 'none';
+        _commitImport(-1);
     }
 
     function handleLegacyPatientScan(text) {
@@ -2541,8 +3060,29 @@
     }
     function handleAck(payload) {
         const pid = payload.pid || '-';
-        logAudit('HANDOVER_ACCEPTED', pid, `By ${payload.rcv || '-'}`, Date.now());
-        showToast(`Receipt confirmed for ${pid}`);
+        const rcv = payload.rcv || '-';
+        logAudit('HANDOVER_ACCEPTED', pid, `By ${rcv}`, Date.now());
+        // Mark local entry as handover-accepted so dashboard/log can reflect it
+        const idx = incidentLog.findIndex(e => e.id === pid);
+        if (idx > -1) {
+            const entry = incidentLog[idx];
+            entry.handoverState = 'accepted';
+            entry.handoverTo = rcv;
+            entry.handoverAt = Date.now();
+            entry._rev = (entry._rev || 0) + 1;
+            saveState();
+        }
+        const detail = document.getElementById('ack-success-detail');
+        if (detail) detail.textContent = `Patient ${pid} handover to ${rcv} confirmed and audited.`;
+        const flow = document.getElementById('handover-flow-modal');
+        if (flow) flow.style.display = 'none';
+        const m = document.getElementById('ack-success-modal');
+        if (m) m.style.display = 'flex';
+        triggerHaptic('success');
+        announce(`Handover accepted for ${pid}`, true);
+    }
+    function closeAckSuccess() {
+        document.getElementById('ack-success-modal').style.display = 'none';
     }
 
     function onScanFailure(error) { /* ignored - frequent during scanning */ }
@@ -2581,11 +3121,18 @@
             document.getElementById('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
             
             if(oldCat !== entry.category) {
-                logAudit("CATEGORY_CHANGE", entry.id, `Changed ${oldCat} -> ${entry.category}`, getClinicalTimestamp());
+                if (MITTLib.categoryWorsened(oldCat, entry.category)) {
+                    entry.lastDeteriorationAt = Date.now();
+                    logAudit("DETERIORATION", entry.id, `Worsened ${oldCat} -> ${entry.category}`, getClinicalTimestamp());
+                    triggerHaptic('alert');
+                } else {
+                    logAudit("CATEGORY_CHANGE", entry.id, `Changed ${oldCat} -> ${entry.category}`, getClinicalTimestamp());
+                }
             }
-            
+
             saveState();
             updateDashboard();
+            try { updateReassessPill(entry); } catch(e){}
         }
     }
     
@@ -2708,6 +3255,29 @@
         const sorted = Object.values(unique).sort((a, b) => b.timestamp - a.timestamp);
         const now = Date.now();
 
+        // Build alert summary
+        const alertStrip = document.getElementById('alert-strip');
+        if (alertStrip) {
+            clearChildren(alertStrip);
+            const overdue = sorted.filter(r => MITTLib.reassessmentStatus(r, now).state === 'overdue');
+            const dueSoon = sorted.filter(r => MITTLib.reassessmentStatus(r, now).state === 'due-soon');
+            const recentDeterior = sorted.filter(r => r.lastDeteriorationAt && (now - r.lastDeteriorationAt) < 30 * 60 * 1000);
+            if (overdue.length || dueSoon.length || recentDeterior.length) {
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.style.borderLeft = '6px solid var(--nhs-red)';
+                div.style.fontSize = '0.95rem';
+                const header = document.createElement('strong');
+                header.textContent = '⚠ Active alerts: ';
+                div.appendChild(header);
+                const parts = [];
+                if (overdue.length) parts.push(`${overdue.length} overdue reassessment${overdue.length !== 1 ? 's' : ''}`);
+                if (dueSoon.length) parts.push(`${dueSoon.length} due soon`);
+                if (recentDeterior.length) parts.push(`${recentDeterior.length} deteriorating`);
+                div.appendChild(document.createTextNode(parts.join(' • ')));
+                alertStrip.appendChild(div);
+            }
+        }
         sorted.forEach(row => {
             const tr = document.createElement('tr');
             tr.className = 'clickable-row';
@@ -2715,6 +3285,8 @@
                 const tqTime = row.interventions['Tourniquet'].ts;
                 if (tqTime && (now - tqTime > 7200000)) tr.classList.add('critical-alert');
             }
+            const ra = MITTLib.reassessmentStatus(row, now);
+            if (ra.state === 'overdue') tr.classList.add('critical-alert');
             tr.onclick = function () { editEntry(row.originalIndex); };
 
             const tdTime = document.createElement('td'); tdTime.textContent = row.time || ''; tr.appendChild(tdTime);
@@ -2739,6 +3311,34 @@
             tr.appendChild(tdLoc);
 
             const tdDetails = document.createElement('td'); tdDetails.style.fontSize = '0.8rem';
+            // Reassess pill
+            if (ra.state !== 'na') {
+                const pill = document.createElement('span');
+                pill.className = 'reassess-pill ' + ra.state;
+                const mins = Math.round((ra.dueAt - now) / 60000);
+                pill.textContent = ra.state === 'overdue' ? `OVERDUE ${Math.abs(mins)}m`
+                                  : ra.state === 'due-soon' ? `Due ${mins}m`
+                                  : `OK ${mins}m`;
+                tdDetails.appendChild(pill);
+            }
+            if (row.lastDeteriorationAt && (now - row.lastDeteriorationAt) < 30 * 60 * 1000) {
+                const det = document.createElement('span');
+                det.className = 'deteriorate-flag';
+                det.textContent = 'DETERIORATING';
+                tdDetails.appendChild(det);
+                tdDetails.appendChild(document.createTextNode(' '));
+            }
+            if (row.handoverState === 'pending') {
+                const h = document.createElement('span');
+                h.className = 'reassess-pill due-soon';
+                h.textContent = 'Handover Pending';
+                tdDetails.appendChild(h);
+            } else if (row.handoverState === 'accepted') {
+                const h = document.createElement('span');
+                h.className = 'reassess-pill ok';
+                h.textContent = 'Handover ✓';
+                tdDetails.appendChild(h);
+            }
             if (row.highRisk) {
                 const hr = document.createElement('span');
                 hr.style.color = 'red'; hr.style.fontWeight = 'bold';
@@ -2914,6 +3514,308 @@
         while (num.length < size) num = "0" + num;
         return num;
     }
+
+    // ---------- Reassessment ----------
+    function openReassessModal() {
+        if (currentLogIndex === -1) return;
+        const e = incidentLog[currentLogIndex];
+        if (e.category === 'DEAD') { showToast('No reassessment for DEAD'); return; }
+        const status = MITTLib.reassessmentStatus(e, Date.now());
+        const dueLabel = status.dueAt ? ` (next due ${new Date(status.dueAt).toLocaleTimeString()})` : '';
+        document.getElementById('reassess-summary').textContent = `${e.id} — ${e.category}${dueLabel}`;
+        document.getElementById('reassess-modal').style.display = 'flex';
+    }
+    function closeReassessModal() { document.getElementById('reassess-modal').style.display = 'none'; }
+    function submitReassessment(outcome) {
+        if (currentLogIndex === -1) return;
+        const old = incidentLog[currentLogIndex];
+        const updated = MITTLib.applyReassessment(old, outcome, Date.now());
+        if (outcome === 'worsened') updated.lastDeteriorationAt = Date.now();
+        incidentLog[currentLogIndex] = updated;
+        logAudit('REASSESS', updated.id, `Outcome: ${outcome}`, getClinicalTimestamp());
+        saveState();
+        updateDashboard();
+        updateReassessPill(updated);
+        closeReassessModal();
+        showToast(`Reassessment recorded: ${outcome}`);
+    }
+
+    // ---------- Treatment timeline ----------
+    function openTimelineForCurrent() {
+        if (currentLogIndex === -1) return;
+        openTimelineFor(incidentLog[currentLogIndex]);
+    }
+    function openTimelineFor(entry) {
+        const events = MITTLib.buildPatientTimeline(entry, auditLog || []);
+        const meta = document.getElementById('timeline-meta');
+        meta.textContent = `${entry.id} — ${entry.category}${entry.reason ? ' ('+entry.reason+')' : ''} • ${events.length} events`;
+        const ul = document.getElementById('timeline-list');
+        clearChildren(ul);
+        events.forEach(ev => {
+            const li = document.createElement('li');
+            li.className = 'kind-' + ev.kind;
+            const time = document.createElement('span'); time.className = 'tl-time';
+            time.textContent = ev.ts ? new Date(ev.ts).toLocaleString() : '';
+            const label = document.createElement('div'); label.className = 'tl-label'; label.textContent = ev.label;
+            li.appendChild(time); li.appendChild(label);
+            if (ev.detail) {
+                const det = document.createElement('div'); det.className = 'tl-detail'; det.textContent = ev.detail;
+                li.appendChild(det);
+            }
+            ul.appendChild(li);
+        });
+        document.getElementById('timeline-modal').style.display = 'flex';
+    }
+    function closeTimelineModal() { document.getElementById('timeline-modal').style.display = 'none'; }
+
+    // ---------- Bulk handover ----------
+    function openBulkHandover() {
+        const candidates = incidentLog.filter(e => !e.evacuated);
+        if (!candidates.length) { showToast('No on-scene patients to hand over.'); return; }
+        // Group by sector
+        const sectors = {};
+        candidates.forEach(e => { const s = e.sector || '(no sector)'; sectors[s] = (sectors[s] || 0) + 1; });
+        const opts = Object.entries(sectors).map(([s, n]) => `${s} (${n})`).join('\n');
+        inAppPrompt({ title: 'Bulk Sector Handover', message: `Type a sector name to hand over its patients. Available:\n${opts}\nLeave blank to bundle ALL on-scene patients.`, defaultValue: currentSector || '' })
+            .then(answer => {
+                if (answer === null) return;
+                const sector = answer.trim();
+                const list = sector ? candidates.filter(e => (e.sector || '') === sector) : candidates;
+                if (!list.length) { showToast(`No patients in sector "${sector}"`); return; }
+                const ctx = { sender: triagerName, appVersion: APP_VERSION };
+                const wrapper = MITTLib.buildBulkPayload(list, { sector, ttlMs: QR_DEFAULT_TTL_MS }, ctx);
+                if (!MITTLib.bulkPayloadFits(wrapper)) {
+                    inAppConfirm({
+                        title: 'Bulk QR too large',
+                        message: `Cannot encode ${list.length} patients into one QR (data too dense). Use Casualty Register CSV export instead?`,
+                        okLabel: 'Export CSV',
+                    }).then(ok => { if (ok) downloadCSV('SNAPSHOT'); });
+                    logAudit('BULK_HANDOVER_FAILED', '-', `Sector ${sector || 'ALL'} — payload too large (${list.length} patients)`, Date.now());
+                    return;
+                }
+                const text = JSON.stringify(wrapper);
+                const target = document.getElementById('qrcode');
+                try { _renderQR(target, text, Math.min(360, Math.max(280, Math.floor(window.innerWidth * 0.78)))); }
+                catch(e) { showToast('QR generation failed', { alert: true }); return; }
+                setText('qr-title', `Bulk Handover — ${sector || 'ALL'}`);
+                setText('qr-summary', `${list.length} patient${list.length !== 1 ? 's' : ''} • ${triagerName || ''}`);
+                setText('qr-desc', 'Show to receiver. They will preview and accept the whole batch.');
+                setText('qr-expiry', `Expires: ${new Date(wrapper.x).toLocaleTimeString()} • App v${APP_VERSION}`);
+                document.getElementById('qr-modal').style.display = 'flex';
+                logAudit('BULK_HANDOVER_GENERATED', '-', `Sector ${sector || 'ALL'} — ${list.length} patients`, Date.now());
+            });
+    }
+    let _pendingBulkImport = null;
+    function handleBulkWrapper(wrapper) {
+        const result = MITTLib.validateBulkWrapper(wrapper);
+        const meta = document.getElementById('bulk-receive-meta');
+        const warn = document.getElementById('bulk-receive-warn');
+        const list = document.getElementById('bulk-receive-list');
+        clearChildren(list);
+        warn.style.display = 'none'; warn.textContent = '';
+        const acceptBtn = document.getElementById('btn-bulk-accept');
+        acceptBtn.disabled = false;
+        if (!result.ok) {
+            warn.style.display = 'block';
+            warn.textContent = `Cannot import: ${result.reason}`;
+            acceptBtn.disabled = true;
+            meta.textContent = '';
+            logAudit('BULK_HANDOVER_REJECTED', '-', result.reason, Date.now());
+        } else {
+            meta.textContent = `Sector: ${result.meta.sector || 'ALL'} • From ${result.meta.sender || 'Unknown'} • ${result.data.length} patients`;
+            if (result.meta.integrityOk === false) {
+                warn.style.display = 'block';
+                warn.textContent = '⚠ Integrity hash mismatch — verify with sender.';
+            }
+            result.data.forEach(d => {
+                const row = document.createElement('div');
+                row.style.padding = '6px 0';
+                row.style.borderBottom = '1px solid rgba(0,0,0,0.08)';
+                const strong = document.createElement('strong'); strong.textContent = d.id;
+                row.appendChild(strong);
+                row.appendChild(document.createTextNode(` — ${d.category}${d.reason ? ' • ' + d.reason : ''}${d.demos ? ' • ' + d.demos : ''}`));
+                // Duplicate hint
+                if (incidentLog.some(e => e.id === d.id)) {
+                    const dupTag = document.createElement('span');
+                    dupTag.className = 'reassess-pill due-soon'; dupTag.style.marginLeft = '6px';
+                    dupTag.textContent = 'Will merge';
+                    row.appendChild(dupTag);
+                } else {
+                    const cands = MITTLib.findDuplicateCandidates(d, incidentLog, { threshold: 0.7 });
+                    if (cands.length) {
+                        const dupTag = document.createElement('span');
+                        dupTag.className = 'deteriorate-flag'; dupTag.style.marginLeft = '6px';
+                        dupTag.textContent = `Possible duplicate of ${cands[0].candidate.id}`;
+                        row.appendChild(dupTag);
+                    }
+                }
+                list.appendChild(row);
+            });
+            _pendingBulkImport = { result };
+        }
+        document.getElementById('bulk-receive-modal').style.display = 'flex';
+    }
+    function declineBulkPreview() {
+        if (_pendingBulkImport) logAudit('BULK_HANDOVER_DECLINED', '-', `Sector ${_pendingBulkImport.result.meta.sector || 'ALL'}`, Date.now());
+        _pendingBulkImport = null;
+        document.getElementById('bulk-receive-modal').style.display = 'none';
+    }
+    function acceptBulkPreview() {
+        if (!_pendingBulkImport) { document.getElementById('bulk-receive-modal').style.display = 'none'; return; }
+        const { result } = _pendingBulkImport;
+        let imported = 0, merged = 0;
+        result.data.forEach(d => {
+            const idx = incidentLog.findIndex(e => e.id === d.id);
+            const meta = { schemaVersion: result.meta.schemaVersion, recordVersion: d._rev || 0, sender: result.meta.sender };
+            if (idx > -1) {
+                incidentLog[idx] = mergePatientRecords(incidentLog[idx], d, meta);
+                merged++;
+            } else {
+                const entry = Object.assign({}, d);
+                entry.notes = (entry.notes || '') + ` [Origin: ${result.meta.sender || 'Unknown'} (bulk)]`;
+                entry._rev = (d._rev || 0) + 1;
+                incidentLog.push(entry);
+                imported++;
+            }
+        });
+        logAudit('BULK_HANDOVER_ACCEPTED', '-', `Sector ${result.meta.sector || 'ALL'} • imported ${imported}, merged ${merged}`, Date.now());
+        _pendingBulkImport = null;
+        document.getElementById('bulk-receive-modal').style.display = 'none';
+        saveState();
+        updateDashboard();
+        showToast(`Bulk handover: ${imported} new, ${merged} merged.`);
+    }
+
+    // ---------- Printable wristband label ----------
+    function printPatientLabel() {
+        if (currentLogIndex === -1) return;
+        const entry = incidentLog[currentLogIndex];
+        const wrapper = buildPatientPayload(entry, { ttlMs: QR_DEFAULT_TTL_MS });
+        const text = JSON.stringify(wrapper);
+        const area = document.getElementById('print-area');
+        clearChildren(area);
+        area.style.display = 'block';
+        const card = document.createElement('div'); card.className = 'wristband';
+        const cat = document.createElement('div'); cat.className = 'wb-cat';
+        cat.textContent = entry.category;
+        cat.style.background = entry.category === 'P1' ? '#DA291C'
+                              : entry.category === 'P2' ? '#FAE100'
+                              : entry.category === 'P3' ? '#007F3B'
+                              : '#222';
+        cat.style.color = entry.category === 'P2' ? '#000' : '#fff';
+        const id = document.createElement('div'); id.className = 'wb-id'; id.textContent = entry.id;
+        const qrDiv = document.createElement('div'); qrDiv.className = 'wb-qr';
+        const meta = document.createElement('div'); meta.className = 'wb-meta';
+        const generatedAt = new Date().toLocaleString();
+        const code = MITTLib.shortCodeFromHash(wrapper.h || '');
+        const safeDemos = entry.demos || '';
+        meta.innerHTML = '';
+        meta.appendChild(document.createTextNode(`${safeDemos}`));
+        meta.appendChild(document.createElement('br'));
+        meta.appendChild(document.createTextNode(`Code: ${code}`));
+        meta.appendChild(document.createElement('br'));
+        meta.appendChild(document.createTextNode(`Generated ${generatedAt}`));
+        card.appendChild(cat); card.appendChild(id); card.appendChild(qrDiv); card.appendChild(meta);
+        area.appendChild(card);
+        try { new QRCode(qrDiv, { text, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M }); }
+        catch (e) { console.warn('QR for label failed', e); }
+        logAudit('LABEL_PRINTED', entry.id, '-', Date.now());
+        // Defer print to allow QR to render
+        setTimeout(() => {
+            window.print();
+            // Clean up after print
+            setTimeout(() => { area.style.display = 'none'; clearChildren(area); }, 500);
+        }, 200);
+    }
+
+    // ---------- Modes ----------
+    function openModesMenu() {
+        document.getElementById('mode-gloved').checked = document.body.classList.contains('gloved');
+        document.getElementById('mode-onehand').checked = document.body.classList.contains('one-hand');
+        document.getElementById('mode-panic').checked = document.body.classList.contains('panic');
+        document.getElementById('modes-modal').style.display = 'flex';
+    }
+    function closeModesMenu() { document.getElementById('modes-modal').style.display = 'none'; }
+    function toggleGloved() {
+        document.body.classList.toggle('gloved', document.getElementById('mode-gloved').checked);
+        localStorage.setItem('mit_mode_gloved', document.body.classList.contains('gloved'));
+    }
+    function toggleOneHand() {
+        document.body.classList.toggle('one-hand', document.getElementById('mode-onehand').checked);
+        localStorage.setItem('mit_mode_onehand', document.body.classList.contains('one-hand'));
+    }
+    function togglePanic() {
+        document.body.classList.toggle('panic', document.getElementById('mode-panic').checked);
+        localStorage.setItem('mit_mode_panic', document.body.classList.contains('panic'));
+    }
+    function oneHandPrimary() {
+        // In question mode, no-op (YES/NO already big). Otherwise launch TST.
+        if (document.getElementById('question-screen').classList.contains('active')) return;
+        if (document.getElementById('result-screen').classList.contains('active')) {
+            nextPatient();
+            return;
+        }
+        initiateTriage('TST');
+    }
+    function loadModePrefs() {
+        if (localStorage.getItem('mit_mode_gloved') === 'true') document.body.classList.add('gloved');
+        if (localStorage.getItem('mit_mode_onehand') === 'true') document.body.classList.add('one-hand');
+        if (localStorage.getItem('mit_mode_panic') === 'true') document.body.classList.add('panic');
+    }
+    loadModePrefs();
+
+    // ---------- Service Worker update UX ----------
+    let _swReg = null;
+    let _swUpdateDismissed = false;
+    function showSwUpdateBanner() {
+        if (_swUpdateDismissed) return;
+        const b = document.getElementById('sw-update-banner');
+        if (b) b.classList.add('show');
+        announce('A new MITT version is ready. Reload to update.', false);
+    }
+    function dismissSwUpdate() {
+        _swUpdateDismissed = true;
+        document.getElementById('sw-update-banner').classList.remove('show');
+    }
+    function applySwUpdate() {
+        try {
+            if (_swReg && _swReg.waiting) _swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        } catch(e){}
+        document.getElementById('sw-update-banner').classList.remove('show');
+        // Reload after the new SW takes control
+        setTimeout(() => { window.location.reload(); }, 200);
+    }
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(reg => {
+            if (!reg) return;
+            _swReg = reg;
+            if (reg.waiting) showSwUpdateBanner();
+            reg.addEventListener('updatefound', () => {
+                const sw = reg.installing;
+                if (!sw) return;
+                sw.addEventListener('statechange', () => {
+                    if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                        showSwUpdateBanner();
+                    }
+                });
+            });
+            // Poll for updates every 30 minutes while the app is open
+            setInterval(() => { try { reg.update(); } catch(e){} }, 30 * 60 * 1000);
+        }).catch(() => {});
+        let _swReloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (_swReloaded) return; _swReloaded = true; window.location.reload();
+        });
+    }
+
+    // ---------- Refresh log periodically so reassess pills stay live ----------
+    function refreshLog() { try { showLog(); } catch(e){} }
+    setInterval(() => {
+        if (document.getElementById('log-screen').classList.contains('active')) refreshLog();
+        if (document.getElementById('result-screen').classList.contains('active') && currentLogIndex > -1) {
+            try { updateReassessPill(incidentLog[currentLogIndex]); } catch(e){}
+        }
+    }, 30 * 1000);
 
 </script>
 </body>
