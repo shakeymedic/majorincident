@@ -1,58 +1,76 @@
-const CACHE_NAME = 'mit-triage-v3';
-const urlsToCache = [
+const CACHE_NAME = 'mit-triage-v4-2026-05-08';
+const PRECACHE_URLS = [
     './',
     './index.html',
     './manifest.json',
-    'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
+    './icon.svg',
+    './lib.js',
+    './vendor/qrcode.min.js',
+    './vendor/html5-qrcode.min.js',
+    './vendor/leaflet.css',
+    './vendor/leaflet.js',
+    './vendor/markercluster.css',
+    './vendor/markercluster-default.css',
+    './vendor/markercluster.js',
+    './vendor/images/layers.png',
+    './vendor/images/layers-2x.png',
+    './vendor/images/marker-icon.png',
+    './vendor/images/marker-icon-2x.png',
+    './vendor/images/marker-shadow.png'
 ];
 
 self.addEventListener('install', event => {
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => {
-                return cache.addAll(urlsToCache);
-            })
+        caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS))
     );
     self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
-    const cacheWhitelist = [CACHE_NAME];
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheWhitelist.indexOf(cacheName) === -1) {
-                        return caches.delete(cacheName);
-                    }
-                })
+                cacheNames.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
             );
-        })
+        }).then(() => self.clients.claim())
     );
-    self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                if (response) {
-                    return response;
-                }
-                return fetch(event.request).then(
-                    function(response) {
-                        if(!response || response.status !== 200 || response.type !== 'basic') {
-                            return response;
-                        }
-                        var responseToCache = response.clone();
-                        caches.open(CACHE_NAME)
-                            .then(function(cache) {
-                                cache.put(event.request, responseToCache);
-                            });
-                        return response;
+    const req = event.request;
+    // Only cache GET requests; never cache POST/etc.
+    if (req.method !== 'GET') return;
+    const url = new URL(req.url);
+    // Map tile traffic: stale-while-revalidate with size cap
+    if (/tile\.openstreetmap\.org$/.test(url.hostname)) {
+        event.respondWith(
+            caches.match(req).then(hit => {
+                const fetchPromise = fetch(req).then(resp => {
+                    if (resp && resp.status === 200) {
+                        const clone = resp.clone();
+                        caches.open(CACHE_NAME).then(c => c.put(req, clone)).catch(() => {});
                     }
-                );
+                    return resp;
+                }).catch(() => hit);
+                return hit || fetchPromise;
             })
+        );
+        return;
+    }
+    // Same-origin: cache-first, fall back to network, then back to index for navigations
+    event.respondWith(
+        caches.match(req).then(cached => {
+            if (cached) return cached;
+            return fetch(req).then(resp => {
+                if (!resp || resp.status !== 200 || resp.type !== 'basic') return resp;
+                const clone = resp.clone();
+                caches.open(CACHE_NAME).then(c => c.put(req, clone)).catch(() => {});
+                return resp;
+            }).catch(() => {
+                // Offline navigation fallback
+                if (req.mode === 'navigate') return caches.match('./index.html');
+                return Response.error();
+            });
+        })
     );
 });

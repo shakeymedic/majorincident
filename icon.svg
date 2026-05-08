@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="MITT">
+  <rect width="192" height="192" rx="28" fill="#005EB8"/>
+  <path d="M96 36 L96 156 M36 96 L156 96" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
+  <text x="96" y="178" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="22" text-anchor="middle" fill="#FFFFFF">MITT</text>
+</svg>

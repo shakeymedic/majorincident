@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run unit tests
+        run: node tests/lib.test.js
+      - name: Sanity-check that index.html parses as JS
+        run: |
+          node -e "
+            const fs = require('fs');
+            const html = fs.readFileSync('index.html','utf8');
+            const m = html.match(/<script>([\s\S]*?)<\/script>/g);
+            if (!m) { console.error('No inline script found'); process.exit(1); }
+            for (const block of m) {
+              const inner = block.replace(/^<script>/, '').replace(/<\/script>\$/, '');
+              if (inner.trim().length === 0) continue;
+              try { new Function(inner); }
+              catch (e) { console.error('JS parse error:', e.message); process.exit(1); }
+            }
+            console.log('Inline JS parses cleanly');
+          "
