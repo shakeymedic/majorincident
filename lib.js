@@ -51,7 +51,7 @@
         if (entry.action) short.a = entry.action;
         if (entry.reason) short.r = entry.reason;
         if (entry.triager) short.tr = entry.triager;
-        if (entry.location && entry.location.lat) short.l = { lt: entry.location.lat, lg: entry.location.lng };
+        if (entry.location && entry.location.lat) short.l = { lt: entry.location.lat, lg: entry.location.lng, ac: entry.location.acc };
         if (entry.sector) short.s = entry.sector;
         if (entry.demos) short.d = entry.demos;
         if (entry.allergies) short.al = entry.allergies;
@@ -64,6 +64,10 @@
         if (Array.isArray(entry.injuries) && entry.injuries.length) short.inj = entry.injuries;
         if (entry.lastReassessed) short.lr = entry.lastReassessed;
         if (entry.reassessOutcome) short.ro = entry.reassessOutcome;
+        if (entry.handoverState) short.hs = entry.handoverState;
+        if (entry.handoverAt) short.ha = entry.handoverAt;
+        if (entry.handoverTo) short.ht = entry.handoverTo;
+        if (entry.lastDeteriorationAt) short.ld = entry.lastDeteriorationAt;
         const wrapper = {
             t: 'MIT_P',
             v: QR_SCHEMA_VERSION,
@@ -89,7 +93,7 @@
             action: short.a || '',
             reason: short.r || '',
             triager: short.tr || 'Unknown',
-            location: short.l ? { lat: short.l.lt, lng: short.l.lg, acc: 0 } : null,
+            location: short.l ? { lat: short.l.lt, lng: short.l.lg, acc: short.l.ac || 0 } : null,
             sector: short.s || '',
             demos: short.d || '',
             allergies: short.al || '',
@@ -102,6 +106,10 @@
             injuries: Array.isArray(short.inj) ? short.inj : [],
             lastReassessed: short.lr || null,
             reassessOutcome: short.ro || '',
+            handoverState: short.hs || '',
+            handoverAt: short.ha || null,
+            handoverTo: short.ht || '',
+            lastDeteriorationAt: short.ld || null,
         };
     }
 
@@ -315,6 +323,222 @@
         try { return JSON.stringify(wrapper).length <= BULK_QR_SOFT_LIMIT; } catch (_) { return false; }
     }
 
+    // ---------- Full all-patient offline transfer ----------
+    const ALL_TRANSFER_SCHEMA_VERSION = 1;
+    const ALL_QR_CHUNK_SOFT_LIMIT = 1200;
+    const ALL_PATIENT_FIELD_ORDER = [
+        'id','time','timestamp','tool','category','action','reason','triager','location','sector',
+        'demos','allergies','notes','highRisk','interventions','evacuated','evacDest','evacVehicle',
+        'injuries','lastReassessed','reassessOutcome','lastDeteriorationAt','handoverState','handoverAt','handoverTo','_rev'
+    ];
+
+    function jsonClone(value) {
+        if (value === undefined) return undefined;
+        try { return JSON.parse(JSON.stringify(value)); } catch (_) { return null; }
+    }
+
+    function normaliseLocation(location) {
+        if (!location || typeof location !== 'object') return null;
+        const out = {};
+        if (location.lat !== undefined && location.lat !== null && location.lat !== '') out.lat = location.lat;
+        if (location.lng !== undefined && location.lng !== null && location.lng !== '') out.lng = location.lng;
+        if (location.acc !== undefined && location.acc !== null && location.acc !== '') out.acc = location.acc;
+        return Object.keys(out).length ? out : null;
+    }
+
+    function clonePatientRecord(entry) {
+        const src = entry || {};
+        const out = {};
+        ALL_PATIENT_FIELD_ORDER.forEach(k => {
+            if (k === 'location') {
+                const loc = normaliseLocation(src.location);
+                if (loc) out.location = loc;
+            } else if (Object.prototype.hasOwnProperty.call(src, k) && src[k] !== undefined) {
+                out[k] = jsonClone(src[k]);
+            }
+        });
+        // Preserve any future/offline fields added by the app without requiring a schema change.
+        Object.keys(src).sort().forEach(k => {
+            if (!Object.prototype.hasOwnProperty.call(out, k) && src[k] !== undefined && typeof src[k] !== 'function') {
+                out[k] = jsonClone(src[k]);
+            }
+        });
+        if (!out.id && src.i) out.id = src.i;
+        if (!out.category && src.c) out.category = src.c;
+        return out;
+    }
+
+    function buildAllPatientsPayload(entries, opts, ctx) {
+        opts = opts || {};
+        ctx = ctx || {};
+        const now = ctx.now || Date.now();
+        const ttlMs = opts.ttlMs || QR_DEFAULT_TTL_MS;
+        const patients = (entries || []).map(clonePatientRecord);
+        const audit = Array.isArray(opts.auditLog) ? opts.auditLog.map(jsonClone).filter(Boolean) : [];
+        const wrapper = {
+            t: 'MIT_ALL',
+            v: ALL_TRANSFER_SCHEMA_VERSION,
+            sv: QR_SCHEMA_VERSION,
+            g: now,
+            x: now + ttlMs,
+            transferId: opts.transferId || fnv1a(`${now}|${ctx.sender || ''}|${patients.length}|${canonicalJSON(patients)}`),
+            sndr: ctx.sender || '',
+            app: ctx.appVersion || '',
+            n: patients.length,
+            patientFields: ALL_PATIENT_FIELD_ORDER.slice(),
+            patients,
+            audit,
+            incident: jsonClone(opts.incident || {}) || {},
+        };
+        const canonical = canonicalJSON(wrapper);
+        wrapper.h = fnv1a(canonical);
+        return wrapper;
+    }
+
+    function validateAllPatientsWrapper(wrapper, ctx) {
+        ctx = ctx || {};
+        if (!wrapper || typeof wrapper !== 'object') return { ok: false, reason: 'Invalid payload' };
+        if (wrapper.t !== 'MIT_ALL') return { ok: false, reason: 'Not an all-patient transfer' };
+        const meta = {
+            schemaVersion: wrapper.v || 1,
+            patientSchemaVersion: wrapper.sv || 1,
+            generatedAt: wrapper.g || null,
+            expiresAt: wrapper.x || null,
+            transferId: wrapper.transferId || '',
+            sender: wrapper.sndr || '',
+            app: wrapper.app || '',
+            count: wrapper.n || 0,
+            auditCount: Array.isArray(wrapper.audit) ? wrapper.audit.length : 0,
+            integrityOk: null,
+        };
+        if (wrapper.h) {
+            const copy = Object.assign({}, wrapper);
+            const givenHash = copy.h;
+            delete copy.h;
+            meta.integrityOk = (fnv1a(canonicalJSON(copy)) === givenHash);
+            if (!meta.integrityOk) return { ok: false, reason: 'All-patient payload integrity check failed', meta };
+        }
+        const now = ctx.now || Date.now();
+        if (meta.expiresAt && now > meta.expiresAt) return { ok: false, reason: 'All-patient transfer expired', meta };
+        if (meta.generatedAt && meta.generatedAt > now + QR_MAX_FUTURE_SKEW_MS) return { ok: false, reason: 'All-patient transfer generated in the future', meta };
+        if (!Array.isArray(wrapper.patients)) return { ok: false, reason: 'No patients in transfer', meta };
+        const data = wrapper.patients.map(clonePatientRecord).filter(d => d.id && ['P1','P2','P3','DEAD'].includes(d.category));
+        if (data.length !== wrapper.patients.length) return { ok: false, reason: 'One or more patients are missing ID or valid category', meta, data };
+        return { ok: true, data, audit: Array.isArray(wrapper.audit) ? wrapper.audit.map(jsonClone).filter(Boolean) : [], incident: wrapper.incident || {}, meta };
+    }
+
+    function buildAllPatientsChunks(payload, opts) {
+        opts = opts || {};
+        const maxChars = Math.max(400, opts.maxChars || ALL_QR_CHUNK_SOFT_LIMIT);
+        const body = (typeof payload === 'string') ? payload : JSON.stringify(payload);
+        const transferId = (payload && payload.transferId) || fnv1a(body);
+        const payloadHash = fnv1a(body);
+        const generatedAt = (payload && payload.g) || Date.now();
+        const expiresAt = (payload && payload.x) || (generatedAt + QR_DEFAULT_TTL_MS);
+        const sender = (payload && payload.sndr) || '';
+        const app = (payload && payload.app) || '';
+        const overheadSample = { t:'MIT_ALL_CHUNK', v:1, transferId, totalChunks:999, chunkIndex:999, g:generatedAt, x:expiresAt, sndr:sender, app, payloadHash, chunkHash:'12345678', data:'' };
+        const overhead = JSON.stringify(overheadSample).length + 32;
+        const sliceSize = Math.max(100, maxChars - overhead);
+        const total = Math.max(1, Math.ceil(body.length / sliceSize));
+        const chunks = [];
+        for (let i = 0; i < total; i++) {
+            const data = body.slice(i * sliceSize, (i + 1) * sliceSize);
+            const chunk = { t:'MIT_ALL_CHUNK', v:1, transferId, totalChunks:total, chunkIndex:i, g:generatedAt, x:expiresAt, sndr:sender, app, payloadHash, chunkHash:fnv1a(data), data };
+            chunk.h = fnv1a(canonicalJSON(chunk));
+            chunks.push(chunk);
+        }
+        return chunks;
+    }
+
+    function validateAllPatientChunk(chunk, ctx) {
+        ctx = ctx || {};
+        if (!chunk || typeof chunk !== 'object') return { ok:false, reason:'Invalid chunk' };
+        if (chunk.t !== 'MIT_ALL_CHUNK') return { ok:false, reason:'Not an all-patient chunk' };
+        const meta = {
+            transferId: chunk.transferId || '', totalChunks: chunk.totalChunks || 0, chunkIndex: chunk.chunkIndex,
+            generatedAt: chunk.g || null, expiresAt: chunk.x || null, sender: chunk.sndr || '', app: chunk.app || '',
+            payloadHash: chunk.payloadHash || '', chunkHash: chunk.chunkHash || '', integrityOk: null
+        };
+        if (!meta.transferId) return { ok:false, reason:'Chunk missing transfer ID', meta };
+        if (!Number.isInteger(meta.totalChunks) || meta.totalChunks < 1) return { ok:false, reason:'Chunk total invalid', meta };
+        if (!Number.isInteger(meta.chunkIndex) || meta.chunkIndex < 0 || meta.chunkIndex >= meta.totalChunks) return { ok:false, reason:'Chunk number invalid', meta };
+        if (typeof chunk.data !== 'string') return { ok:false, reason:'Chunk data missing', meta };
+        if (chunk.chunkHash && fnv1a(chunk.data) !== chunk.chunkHash) return { ok:false, reason:'Chunk checksum failed', meta };
+        if (chunk.h) {
+            const copy = Object.assign({}, chunk); const givenHash = copy.h; delete copy.h;
+            meta.integrityOk = (fnv1a(canonicalJSON(copy)) === givenHash);
+            if (!meta.integrityOk) return { ok:false, reason:'Chunk wrapper integrity check failed', meta };
+        }
+        const now = ctx.now || Date.now();
+        if (meta.expiresAt && now > meta.expiresAt) return { ok:false, reason:'All-patient chunk expired', meta };
+        if (meta.generatedAt && meta.generatedAt > now + QR_MAX_FUTURE_SKEW_MS) return { ok:false, reason:'All-patient chunk generated in the future', meta };
+        return { ok:true, chunk, meta };
+    }
+
+    function reassembleAllPatientChunks(chunks, ctx) {
+        ctx = ctx || {};
+        const seen = new Map();
+        let firstMeta = null;
+        for (const c of chunks || []) {
+            const r = validateAllPatientChunk(c, ctx);
+            if (!r.ok) return { ok:false, reason:r.reason, meta:r.meta || firstMeta };
+            const m = r.meta;
+            if (!firstMeta) firstMeta = m;
+            if (m.transferId !== firstMeta.transferId || m.totalChunks !== firstMeta.totalChunks || m.payloadHash !== firstMeta.payloadHash) {
+                return { ok:false, reason:'Chunk belongs to a different transfer', meta:m };
+            }
+            if (!seen.has(m.chunkIndex)) seen.set(m.chunkIndex, c);
+        }
+        const total = firstMeta ? firstMeta.totalChunks : 0;
+        if (!firstMeta) return { ok:false, reason:'No chunks scanned', received:0, total:0 };
+        if (seen.size < total) {
+            const missing = []; for (let i=0;i<total;i++) if (!seen.has(i)) missing.push(i);
+            return { ok:false, incomplete:true, reason:`Need ${total - seen.size} more chunk(s)`, received:seen.size, total, missing, meta:firstMeta };
+        }
+        let body = '';
+        for (let i=0; i<total; i++) body += seen.get(i).data;
+        if (fnv1a(body) !== firstMeta.payloadHash) return { ok:false, reason:'Overall transfer checksum failed', received:seen.size, total, meta:firstMeta };
+        let payload;
+        try { payload = JSON.parse(body); } catch (_) { return { ok:false, reason:'Reassembled payload is not valid JSON', received:seen.size, total, meta:firstMeta }; }
+        const valid = validateAllPatientsWrapper(payload, ctx);
+        if (!valid.ok) return Object.assign({ received:seen.size, total }, valid);
+        valid.received = seen.size; valid.total = total;
+        return valid;
+    }
+
+    function buildAllPatientsTransfer(entries, opts, ctx) {
+        opts = opts || {}; ctx = ctx || {};
+        const payload = buildAllPatientsPayload(entries, opts, ctx);
+        const text = JSON.stringify(payload);
+        const maxChars = opts.maxChars || ALL_QR_CHUNK_SOFT_LIMIT;
+        if (text.length <= maxChars) return { mode:'single', payload, text, chunks:[], transferId:payload.transferId, totalChunks:1, byteLength:text.length };
+        const chunks = buildAllPatientsChunks(payload, { maxChars });
+        return { mode:'chunked', payload, text, chunks, transferId:payload.transferId, totalChunks:chunks.length, byteLength:text.length };
+    }
+
+    function mergeAllPatientRecords(existingList, incomingList, meta) {
+        const records = (existingList || []).map(clonePatientRecord);
+        let imported = 0, merged = 0;
+        const nearDuplicates = [];
+        for (const incoming of (incomingList || [])) {
+            const idx = records.findIndex(e => e.id === incoming.id);
+            const recordMeta = Object.assign({}, meta || {}, { recordVersion: incoming._rev || (meta && meta.recordVersion) || 0 });
+            if (idx > -1) {
+                records[idx] = mergePatientRecords(records[idx], incoming, recordMeta);
+                merged++;
+            } else {
+                const cands = findDuplicateCandidates(incoming, records, { threshold: 0.7 });
+                if (cands.length) nearDuplicates.push({ incoming, candidates: cands });
+                const entry = clonePatientRecord(incoming);
+                entry._rev = (incoming._rev || 0) + 1;
+                records.push(entry);
+                imported++;
+            }
+        }
+        return { records, imported, merged, nearDuplicates };
+    }
+
     // ---------- Patient identity / duplicate matching ----------
     // Returns a 0..1 similarity score for two records using ID, demographics,
     // sector, category, time-of-triage and GPS proximity. Never returns 1.0
@@ -504,12 +728,15 @@
 
     const api = {
         QR_SCHEMA_VERSION, QR_DEFAULT_TTL_MS, QR_MAX_FUTURE_SKEW_MS,
-        BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, REASSESS_INTERVALS, CATEGORY_RANK,
+        BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
         escapeHTML, fnv1a, canonicalJSON, buildPatientPayload, decompressData,
         validatePatientWrapper, mergePatientRecords, buildAckPayload,
         tstNext, mittNext,
         classifyBodymapPoint, buildInjuryMark, injuriesToText, sanitiseInjuries,
         buildBulkPayload, validateBulkWrapper, bulkPayloadFits,
+        clonePatientRecord, buildAllPatientsPayload, validateAllPatientsWrapper,
+        buildAllPatientsChunks, validateAllPatientChunk, reassembleAllPatientChunks,
+        buildAllPatientsTransfer, mergeAllPatientRecords,
         similarityScore, findDuplicateCandidates,
         nextReassessmentDue, reassessmentStatus, applyReassessment,
         categoryWorsened, buildPatientTimeline, shortCodeFromHash,

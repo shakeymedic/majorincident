@@ -8,7 +8,7 @@ A mobile-first, offline-first **progressive web app** for documenting major-inci
 
 - Run **TST (Ten-Second Triage)** and **MITT** triage flows on a phone or tablet.
 - Record interventions, demographics, allergies, notes, sector, evacuation status.
-- **Hand over patient data** to another responder via QR code or NFC.
+- **Hand over one patient or all patients** to another responder via offline QR codes, transfer file, OS share sheet, or Web NFC where supported.
 - Produce a **METHANE** report and export the audit/casualty register as CSV.
 - Operate with **no internet connection** once the page has loaded.
 
@@ -53,7 +53,7 @@ Generated when a sender taps **QR Handover**. Encoded as JSON:
   "g": 1715200000000,            // generatedAt (epoch ms)
   "x": 1715228800000,            // expiresAt   (default: 8 hours from generation)
   "sndr": "Medic 1",
-  "app": "0.4.0",
+  "app": "0.6.0",
   "h": "1f2a3b4c",               // FNV-1a integrity hash over canonicalised payload
   "d": {
     "i": "TST-001", "c": "P1", "a": "Immediate", "r": "Catastrophic Bleeding",
@@ -79,6 +79,93 @@ Receiver flow: every scanned patient QR opens a **preview/accept** modal showing
 | `MIT_USER` (JSON `{t, v, name, role, g, app}`) | Identity card for bulk handover. Legacy `MIT_USER\|name\|role` pipe format still parsed. |
 | `MIT_ACK` (JSON `{t, v, pid, rcv, g, app}`) | Acknowledgement returned by the receiver after accept; sender can scan to log handover-accepted. |
 | `MIT_PT\|...` (legacy) | Old pipe-delimited patient export still accepted via the same preview/accept flow. |
+
+## All-patient offline handover (v0.6.0)
+
+A prominent **Sender: Transfer all patients** button is available from the home screen and patient log. The receiver has a separate **Receiver: Receive all patients** path, plus **Import transfer file**.
+
+Before sending, MITT shows an incident-use preflight summary:
+
+- patient count and P1/P2/P3/DEAD counts;
+- sectors included;
+- whether GPS/position/location data and triager identities are present;
+- interventions, structured injuries, notes, allergies, demographics, reassessment, deterioration and handover state coverage;
+- transfer method options and fallback plan.
+
+### `MIT_ALL` payload
+
+All-patient transfer uses a typed JSON wrapper with the full local log, not a compressed summary:
+
+```json
+{
+  "t": "MIT_ALL",
+  "v": 1,
+  "sv": 2,
+  "g": 1715200000000,
+  "x": 1715228800000,
+  "transferId": "abcdef12",
+  "sndr": "Incident Commander",
+  "app": "0.6.0",
+  "n": 42,
+  "patientFields": ["id", "time", "timestamp", "tool", "category", "action", "reason", "triager", "location", "sector", "demos", "allergies", "notes", "highRisk", "interventions", "evacuated", "evacDest", "evacVehicle", "injuries", "lastReassessed", "reassessOutcome", "lastDeteriorationAt", "handoverState", "handoverAt", "handoverTo", "_rev"],
+  "patients": [],
+  "audit": [],
+  "incident": {},
+  "h": "1f2a3b4c"
+}
+```
+
+The receiver validates expiry and the full-payload integrity hash before preview/import. Existing local records are never deleted. Exact ID matches are merged with the existing safe merge helper so local interventions are retained; likely duplicates with different IDs are warned about and kept separate unless an operator deliberately merges through the existing duplicate flow.
+
+### Multi-QR chunk protocol
+
+If the all-patient JSON does not fit in one dependable QR, MITT emits numbered `MIT_ALL_CHUNK` QR codes:
+
+```json
+{
+  "t": "MIT_ALL_CHUNK",
+  "v": 1,
+  "transferId": "abcdef12",
+  "totalChunks": 8,
+  "chunkIndex": 0,
+  "g": 1715200000000,
+  "x": 1715228800000,
+  "sndr": "Incident Commander",
+  "app": "0.6.0",
+  "payloadHash": "1f2a3b4c",
+  "chunkHash": "9a8b7c6d",
+  "data": "...string slice...",
+  "h": "11223344"
+}
+```
+
+Operational behaviour:
+
+- Sender sees a large QR, chunk `n / total`, transfer ID, overall checksum and manual **Previous / Next** controls. There is no auto-advance.
+- Receiver may scan chunks out of order. Duplicate chunks are recognised and ignored.
+- Receiver progress shows scanned/missing chunk numbers and only opens the final preview once all chunks validate and the reassembled payload checksum matches.
+- The receive flow can be resumed while the app remains open by continuing to scan missing chunk numbers; **Cancel** deliberately clears the in-progress chunk store.
+
+### Offline alternatives and platform limitations
+
+- **Transfer file:** export/import a `.json` file containing the same `MIT_ALL` payload. This is the most robust fallback when cameras struggle.
+- **Web Share API:** where available, MITT can hand the transfer file to the OS share sheet for AirDrop, Nearby Share, USB/file managers, or other local options. Internet is not required by MITT, though chosen share targets may have their own policies.
+- **Web NFC:** MITT can write the transfer text on supported Android Chrome over HTTPS for small payloads/tags. iPhone Safari and most desktop browsers do not expose Web NFC. Large casualty logs should use QR chunks or the transfer file.
+- **Bluetooth:** browsers do not provide reliable direct phone-to-phone Bluetooth file transfer for this use case, so MITT does not present fake Bluetooth support.
+
+All all-patient transfer actions add audit events where feasible: preflight, transfer generated, chunk shown, chunk scanned/duplicate/rejected/complete, file export/import, share attempt/result, NFC attempt/result, accept/decline/import.
+
+## Manual two-phone incident handover QA checklist
+
+1. On phone A, load MITT once online, then enable airplane mode and confirm the app still opens.
+2. Create at least three patients: one P1 with GPS/sector/triager, intervention and body-map injury; one P2 with reassessment/deterioration; one P3 with demographics/allergies/notes.
+3. Open **Sender: Transfer all patients** from the home screen or patient log and verify the preflight summary counts, sectors, GPS/position inclusion and triager identity inclusion.
+4. Start QR transfer. If multiple chunks appear, scan them on phone B from **Receiver: Receive all patients** out of order; scan one chunk twice and verify the duplicate message; leave one chunk missing and verify the missing number is displayed.
+5. Scan the final missing chunk and verify the "all chunks received and verified" message plus final preview before import.
+6. Accept the transfer on phone B and verify no local patients were deleted, exact matches merged safely, likely duplicates were warned about, and positions/GPS, triagers, interventions, injuries, notes, allergies/demographics, reassessment and handover state persisted.
+7. Repeat using **Export transfer file** on phone A and **Import transfer file** on phone B while offline.
+8. On supported Android Chrome/HTTPS only, try Web NFC with a very small test log; confirm unsupported or oversize devices show clear QR/file fallback guidance.
+9. Export the audit trail and confirm all-patient transfer events are present.
 
 ## Privacy posture
 
@@ -106,6 +193,14 @@ CI runs the same tests on every push (see `.github/workflows/test.yml`).
 - Camera/geolocation/NFC require HTTPS in production browsers.
 
 ## Contributing / change log
+
+### v0.6.0 — all-patient offline handover
+
+- Prominent home/log controls for **Sender: Transfer all patients** and **Receiver: Receive all patients**.
+- Full `MIT_ALL` payload includes every stored patient field, audit context and schema/app metadata.
+- Multi-QR `MIT_ALL_CHUNK` batching with manual navigation, progress, duplicate chunk handling, missing chunk display, chunk and overall integrity checks, and receiver preview before import.
+- Offline transfer file export/import and Web Share fallback for local device transfer; Web NFC exposed honestly only where supported and small enough; browser Bluetooth peer-to-peer is documented as unsupported.
+- Non-destructive all-patient merge path with duplicate warnings and audit events for transfer lifecycle actions.
 
 ### v0.5.0 — second enhancement pass
 
@@ -135,7 +230,7 @@ CI runs the same tests on every push (see `.github/workflows/test.yml`).
 
 ## Limitations / deferred
 
-- Bulk handover beyond ~30 patients per QR will exceed safe capacity; CSV export is offered as fallback. Multi-QR chunking is *not* implemented yet — each chunk would need its own ACK and resequencing UI.
+- Very large casualty logs can require many QR chunks; use the transfer-file fallback if camera scanning becomes operationally slow.
 - Voice transcription uses on-device Web Speech APIs where supported (most Chromium-based mobile browsers + Safari iOS 14.5+). On unsupported browsers the user is told to type instead.
 - Print labels rely on the OS print dialog (`window.print()`); AirPrint and most label printers work, but exotic networked label printers may need a dedicated driver.
 - Reassessment intervals are hard-coded defaults (P1=10m, P2=30m, P3=60m). Per-incident overrides are not yet exposed.

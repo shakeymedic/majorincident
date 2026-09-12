@@ -278,6 +278,111 @@ group('bulk handover', () => {
     });
 });
 
+
+group('all-patient offline transfer', () => {
+    const now = 1700000000000;
+    const ctx = { now, sender: 'Incident Commander', appVersion: '0.6.0' };
+    const sample = [
+        {
+            id: 'TST-001', time: '12:34', timestamp: now - 60000, tool: 'TST', category: 'P1',
+            action: 'Immediate', reason: 'Catastrophic Bleeding', triager: 'Medic A', sector: 'Warm Zone',
+            location: { lat: '53.480800', lng: '-2.242600', acc: 8 }, demos: '35M', allergies: 'Penicillin',
+            notes: 'Right leg bleed', highRisk: true,
+            interventions: { Tourniquet: { time: '12:35', ts: now - 30000, by: 'Medic A' } },
+            injuries: [{ region: 'Legs', side: 'Right', x: 0.4, y: 0.8, label: 'Bleed', severity: 'severe', ts: now - 25000 }],
+            evacuated: true, evacDest: 'ED Resus', evacVehicle: 'AMB-1',
+            lastReassessed: now - 10000, reassessOutcome: 'unchanged', lastDeteriorationAt: now - 5000,
+            handoverState: 'pending', handoverAt: now - 4000, handoverTo: 'CCS Lead', _rev: 7,
+            customFutureField: { kept: true },
+        },
+        { id: 'TST-002', category: 'P3', triager: 'Medic B', sector: 'Cold Zone', notes: 'Walking wounded', _rev: 1 },
+    ];
+
+    test('builds a full typed payload with all clinical fields and audit metadata', () => {
+        const auditLog = [{ action: 'TRIAGE_COMPLETE', patientId: 'TST-001', details: 'P1', sysTime: now - 60000 }];
+        const w = lib.buildAllPatientsPayload(sample, { ttlMs: 60000, auditLog, incident: { name: 'Exercise', currentSector: 'Warm Zone' } }, ctx);
+        assert.strictEqual(w.t, 'MIT_ALL');
+        assert.strictEqual(w.v, lib.ALL_TRANSFER_SCHEMA_VERSION);
+        assert.strictEqual(w.sv, lib.QR_SCHEMA_VERSION);
+        assert.strictEqual(w.n, 2);
+        assert.strictEqual(w.patients[0].location.acc, 8);
+        assert.strictEqual(w.patients[0].triager, 'Medic A');
+        assert.strictEqual(w.patients[0].sector, 'Warm Zone');
+        assert.strictEqual(w.patients[0].evacDest, 'ED Resus');
+        assert.strictEqual(w.patients[0].evacVehicle, 'AMB-1');
+        assert.strictEqual(w.patients[0].handoverState, 'pending');
+        assert.strictEqual(w.patients[0].lastDeteriorationAt, now - 5000);
+        assert.deepStrictEqual(w.patients[0].customFutureField, { kept: true });
+        assert.strictEqual(w.audit.length, 1);
+        assert.match(w.h, /^[0-9a-f]{8}$/);
+        const r = lib.validateAllPatientsWrapper(w, { now });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.data[0].interventions.Tourniquet.by, 'Medic A');
+        assert.strictEqual(r.data[0].injuries[0].label, 'Bleed');
+    });
+
+    test('uses a single QR when payload fits and chunks when it does not', () => {
+        const single = lib.buildAllPatientsTransfer(sample, { ttlMs: 60000, maxChars: 100000 }, ctx);
+        assert.strictEqual(single.mode, 'single');
+        assert.strictEqual(single.totalChunks, 1);
+        const big = Array.from({ length: 18 }, (_, i) => Object.assign({}, sample[0], { id: 'BIG-' + i, notes: 'Detailed note '.repeat(50) }));
+        const chunked = lib.buildAllPatientsTransfer(big, { ttlMs: 60000, maxChars: 900 }, ctx);
+        assert.strictEqual(chunked.mode, 'chunked');
+        assert.ok(chunked.totalChunks > 1);
+        assert.strictEqual(chunked.chunks.length, chunked.totalChunks);
+    });
+
+    test('reassembles out-of-order chunks and ignores duplicate chunks', () => {
+        const transfer = lib.buildAllPatientsTransfer(sample, { ttlMs: 60000, maxChars: 700 }, ctx);
+        const chunks = transfer.chunks.length ? transfer.chunks : lib.buildAllPatientsChunks(transfer.payload, { maxChars: 700 });
+        assert.ok(chunks.length >= 2);
+        const mixed = [chunks[1], chunks[0], chunks[1]].concat(chunks.slice(2).reverse());
+        const r = lib.reassembleAllPatientChunks(mixed, { now });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.data.length, sample.length);
+        assert.strictEqual(r.meta.transferId, transfer.transferId);
+    });
+
+    test('reports missing chunk numbers before import can proceed', () => {
+        const transfer = lib.buildAllPatientsTransfer(sample, { ttlMs: 60000, maxChars: 700 }, ctx);
+        const chunks = transfer.chunks.length ? transfer.chunks : lib.buildAllPatientsChunks(transfer.payload, { maxChars: 700 });
+        assert.ok(chunks.length >= 2);
+        const r = lib.reassembleAllPatientChunks([chunks[0]], { now });
+        assert.strictEqual(r.ok, false);
+        assert.strictEqual(r.incomplete, true);
+        assert.deepStrictEqual(r.missing, chunks.slice(1).map(c => c.chunkIndex));
+    });
+
+    test('rejects tampered chunk checksum and wrapper integrity failures', () => {
+        const transfer = lib.buildAllPatientsTransfer(sample, { ttlMs: 60000, maxChars: 700 }, ctx);
+        const chunk = Object.assign({}, transfer.chunks[0], { data: transfer.chunks[0].data + 'x' });
+        const r = lib.validateAllPatientChunk(chunk, { now });
+        assert.strictEqual(r.ok, false);
+        assert.match(r.reason, /checksum|integrity/i);
+        const wrapper = lib.buildAllPatientsPayload(sample, { ttlMs: 60000 }, ctx);
+        wrapper.patients[0].category = 'P3';
+        const wv = lib.validateAllPatientsWrapper(wrapper, { now });
+        assert.strictEqual(wv.ok, false);
+        assert.match(wv.reason, /integrity/i);
+    });
+
+    test('mergeAllPatientRecords safely merges exact IDs and keeps near duplicates separate', () => {
+        const local = [{ id: 'TST-001', category: 'P2', triager: 'Local', demos: '35M', sector: 'Warm Zone', timestamp: now - 60000, interventions: { Oxygen: { ts: now - 50000 } }, _rev: 5 }];
+        const incoming = [
+            { id: 'TST-001', category: 'P1', notes: 'Remote reassessment', interventions: { Tourniquet: { ts: now - 30000 } }, _rev: 6 },
+            { id: 'NEW-ALIAS', category: 'P2', demos: '35M', sector: 'Warm Zone', timestamp: now - 60000, location: { lat: '53.480800', lng: '-2.242600' }, _rev: 1 },
+        ];
+        const out = lib.mergeAllPatientRecords(local, incoming, { sender: 'Remote', recordVersion: 6 });
+        assert.strictEqual(out.imported, 1);
+        assert.strictEqual(out.merged, 1);
+        const merged = out.records.find(r => r.id === 'TST-001');
+        assert.ok(merged.interventions.Oxygen, 'local intervention kept');
+        assert.ok(merged.interventions.Tourniquet, 'incoming intervention added');
+        assert.ok(out.records.find(r => r.id === 'NEW-ALIAS'), 'near duplicate kept as separate record');
+        assert.ok(out.nearDuplicates.length >= 1, 'near duplicate warning produced');
+    });
+});
+
 group('duplicate matching', () => {
     test('exact ID returns 1.0', () => {
         assert.strictEqual(lib.similarityScore({ id: 'A' }, { id: 'A' }), 1);

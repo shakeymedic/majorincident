@@ -600,6 +600,22 @@
     }
     .handover-step h3 { margin: 0 0 0.5rem 0; color: var(--nhs-blue); }
     body.night-mode .handover-step h3 { color: var(--nhs-yellow); }
+    .all-transfer-card {
+        border: 3px solid var(--nhs-blue);
+        background: linear-gradient(180deg, rgba(0,94,184,0.08), rgba(0,94,184,0.02));
+        padding: 1rem;
+        border-radius: 12px;
+        margin-bottom: 1rem;
+    }
+    body.night-mode .all-transfer-card { background: rgba(74,159,255,0.14); border-color: #4a9fff; }
+    .btn-transfer-all { background: var(--nhs-blue); font-size: 1.22rem; padding: 1.5rem; border: 3px solid var(--nhs-dark-blue); }
+    .chunk-progress { width: 100%; height: 14px; background: rgba(0,0,0,0.12); border-radius: 999px; overflow: hidden; margin: 10px 0; }
+    .chunk-progress > div { height: 100%; width: 0%; background: var(--nhs-green); transition: width 0.2s ease; }
+    .chunk-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(36px, 1fr)); gap:6px; margin: 10px 0; }
+    .chunk-dot { border:1px solid #bbb; border-radius: 6px; padding:6px 2px; text-align:center; font-size:0.75rem; }
+    .chunk-dot.done { background: var(--nhs-green); color:white; border-color: var(--nhs-green); font-weight:bold; }
+    .transfer-methods { display:grid; grid-template-columns:1fr; gap:10px; }
+    .transfer-methods .btn { margin-bottom:0; }
 
     /* Body-map injury controls */
     .injury-form {
@@ -795,6 +811,79 @@
     </div>
 </div>
 
+<div id="all-preflight-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="all-preflight-title">
+    <div class="modal-box" style="max-width:640px; max-height:90vh; overflow-y:auto;">
+        <h3 id="all-preflight-title" style="margin-top:0;">Sender: transfer all patients</h3>
+        <p class="qr-meta">Preflight check before showing QR codes. This includes the full local casualty log and audit context stored on this device.</p>
+        <div id="all-preflight-summary" class="home-secondary" style="margin-bottom:1rem;"></div>
+        <div class="home-secondary" style="border-left:5px solid var(--nhs-green);">
+            <strong>Fallback plan if scanning is difficult</strong>
+            <ol style="margin:0.5rem 0 0; padding-left:1.25rem;">
+                <li>Use the numbered QR chunks first; do not auto-advance.</li>
+                <li>If camera scanning fails, export the transfer file and move it by AirDrop, Nearby Share, USB, secure local storage, or email later when appropriate.</li>
+                <li>Web NFC is optional and only for supported Android Chrome / small payloads or tags.</li>
+            </ol>
+        </div>
+        <div class="transfer-methods" style="margin-top:1rem;">
+            <button class="btn btn-transfer-all" onclick="startAllPatientsQrTransfer()">Start QR transfer</button>
+            <button class="btn btn-secondary" onclick="exportAllPatientsFile()">Export transfer file</button>
+            <button class="btn btn-secondary" onclick="shareAllPatientsFile()">Share locally</button>
+            <button class="btn btn-secondary" onclick="openNearbyTransferPanel()">Nearby options / limitations</button>
+            <button class="btn btn-secondary" onclick="closeAllPreflightModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="all-transfer-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="all-transfer-title">
+    <div class="modal-box" style="display:flex; flex-direction:column; align-items:center; max-width:640px; max-height:92vh; overflow-y:auto;">
+        <h3 id="all-transfer-title" style="margin-top:0;">Transfer all patients</h3>
+        <p class="qr-meta" id="all-transfer-meta"></p>
+        <div id="all-transfer-qrcode"></div>
+        <p id="all-transfer-desc" style="text-align:center;">All clinical fields are included. No internet required.</p>
+        <div class="chunk-progress" aria-hidden="true"><div id="all-transfer-bar"></div></div>
+        <p class="qr-meta" id="all-transfer-progress"></p>
+        <div style="display:flex; gap:10px; width:100%;">
+            <button class="btn btn-secondary" style="flex:1; margin-bottom:0;" onclick="allTransferPrevChunk()">← Previous</button>
+            <button class="btn btn-secondary" style="flex:1; margin-bottom:0;" onclick="allTransferNextChunk()">Next →</button>
+        </div>
+        <div class="transfer-methods" style="width:100%; margin-top:10px;">
+            <button class="btn btn-secondary" onclick="exportAllPatientsFile()">Export transfer file</button>
+            <button class="btn btn-secondary" onclick="shareAllPatientsFile()">Share locally (AirDrop / Nearby Share)</button>
+            <button class="btn btn-nfc" onclick="writeAllPatientsNfc()">Write to NFC tag/device</button>
+            <button class="btn btn-secondary" onclick="openNearbyTransferPanel()">Nearby transfer options</button>
+            <button class="btn btn-secondary" onclick="closeAllTransferModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="all-receive-progress-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="all-receive-progress-title">
+    <div class="modal-box" style="max-width:560px;">
+        <h3 id="all-receive-progress-title" style="margin-top:0;">Receiving all-patient transfer</h3>
+        <p id="all-receive-progress-meta" class="qr-meta"></p>
+        <div class="chunk-progress"><div id="all-receive-bar"></div></div>
+        <div id="all-receive-grid" class="chunk-grid"></div>
+        <p id="all-receive-message">Scan each QR chunk. Duplicate chunks are ignored.</p>
+        <div style="display:flex; gap:10px; margin-top:1rem;">
+            <button class="btn btn-primary" style="flex:1;" onclick="receiveAllPatients(true)">Scan next chunk</button>
+            <button class="btn btn-secondary" style="flex:1;" onclick="cancelAllReceive()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="nearby-transfer-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="nearby-transfer-title">
+    <div class="modal-box" style="max-width:560px;">
+        <h3 id="nearby-transfer-title" style="margin-top:0;">Nearby offline transfer</h3>
+        <p><strong>Reliable baseline:</strong> QR codes work offline on supported cameras. Large incidents are split into numbered chunks.</p>
+        <p><strong>NFC:</strong> Web NFC can write/read NDEF text on supported Android Chrome over HTTPS. iPhone Safari and most desktop browsers do not expose Web NFC.</p>
+        <p><strong>Bluetooth:</strong> Browser Bluetooth does not provide general phone-to-phone file transfer, so MITT does not claim Bluetooth peer-to-peer support.</p>
+        <p><strong>File/share fallback:</strong> Export or share a local JSON transfer file using the operating system share sheet, AirDrop, Nearby Share, USB, or local file picker. No internet is required.</p>
+        <button class="btn btn-primary" onclick="exportAllPatientsFile()">Export transfer file</button>
+        <button class="btn btn-secondary" onclick="closeNearbyTransferPanel()">Close</button>
+    </div>
+</div>
+
+<input type="file" id="all-transfer-file-input" accept="application/json,.json" style="display:none" onchange="handleAllTransferFileSelected(event)">
+
 <div id="manual-id-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="manual-id-title">
     <div class="modal-box">
         <h3 id="manual-id-title">Enter Patient ID</h3>
@@ -852,6 +941,7 @@
         <div id="qrcode"></div>
         <p id="qr-desc">Scan to transfer data. Increase brightness for best results.</p>
         <p class="qr-meta" id="qr-expiry"></p>
+        <button class="btn btn-secondary" style="width:100%; padding:0.8rem; font-size:0.95rem;" onclick="copyCurrentQrText()">Copy QR text</button>
         <div style="display:flex; gap:10px; width:100%;">
             <button class="btn btn-secondary" style="flex:1; margin-bottom:0;" onclick="toggleQrFullscreen()" id="btn-qr-full">⛶ Full Screen</button>
             <button class="btn btn-secondary" style="flex:1; margin-bottom:0;" onclick="closeQR()">Close</button>
@@ -1018,6 +1108,20 @@
                 <span style="font-size:0.9rem; font-weight:normal;">Secondary Clinical Triage</span>
             </button>
 
+            <div class="all-transfer-card home-secondary">
+                <button class="btn btn-transfer-all" onclick="openAllPatientsTransfer()">
+                    Sender: Transfer all patients<br><span style="font-size:0.9rem; font-weight:normal;">Full offline QR batch / file / NFC where supported</span>
+                </button>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="btn btn-secondary" style="flex:1; margin-bottom:0; background-color: var(--nhs-dark-blue); font-size:1rem;" onclick="receiveAllPatients()">
+                        Receiver: Receive all patients<br><span style="font-size:0.8rem; font-weight:normal;">Scan QR chunks</span>
+                    </button>
+                    <button class="btn btn-secondary" style="flex:1; margin-bottom:0; font-size:1rem;" onclick="openAllTransferFilePicker()">
+                        Import transfer file<br><span style="font-size:0.8rem; font-weight:normal;">Offline JSON</span>
+                    </button>
+                </div>
+            </div>
+
             <div style="display:flex; gap:10px; margin-bottom:1rem; flex-wrap: wrap;">
                 <button class="btn btn-secondary" style="flex:1; background-color: var(--nhs-dark-blue); font-size:1rem;" onclick="scanPatientQR()">
                     Receive Patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan QR Data</span>
@@ -1031,7 +1135,7 @@
                     My ID<br><span style="font-size:0.8rem; font-weight:normal;">Scan for bulk handover</span>
                 </button>
                 <button class="btn btn-secondary home-secondary" style="flex:1; font-size:1rem; background-color: var(--nhs-dark-blue);" onclick="openBulkHandover()">
-                    📦 Bulk Handover<br><span style="font-size:0.8rem; font-weight:normal;">Sector → another lead</span>
+                    📦 Sector Handover<br><span style="font-size:0.8rem; font-weight:normal;">Sector → another lead</span>
                 </button>
             </div>
 
@@ -1283,7 +1387,8 @@
                 <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('AUDIT')">Forensic Audit Trail (CSV)</button>
             </div>
             <div class="log-actions" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-                <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem; background:var(--nhs-dark-blue); color:white;" onclick="openBulkHandover()">📦 Bulk Sector Handover</button>
+                <button class="btn btn-transfer-all" style="flex:2; padding:1rem; font-size:1rem;" onclick="openAllPatientsTransfer()">Transfer all patients</button>
+                <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem; background:var(--nhs-dark-blue); color:white;" onclick="openBulkHandover()">Sector Handover</button>
                 <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem; background:#666;" onclick="refreshLog()" title="Refresh due/overdue indicators">↻ Refresh</button>
             </div>
             <div id="alert-strip" style="margin-bottom:10px;"></div>
@@ -1322,8 +1427,8 @@
 
 <script>
     // ---------- App version / build hash ----------
-    const APP_VERSION = '0.5.0';
-    const APP_BUILD = '2026-05-08-2';
+    const APP_VERSION = '0.6.0';
+    const APP_BUILD = '2026-09-12-all-patient-transfer';
     const QR_SCHEMA_VERSION = 2;
     const QR_DEFAULT_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours; configurable
     const QR_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;  // tolerate small clock skew
@@ -1519,6 +1624,10 @@
                 case 'timeline-modal': closeTimelineModal(); break;
                 case 'dup-warn-modal': dupResolve('cancel'); break;
                 case 'bulk-receive-modal': declineBulkPreview(); break;
+                case 'all-preflight-modal': closeAllPreflightModal(); break;
+                case 'all-transfer-modal': closeAllTransferModal(); break;
+                case 'all-receive-progress-modal': cancelAllReceive(); break;
+                case 'nearby-transfer-modal': closeNearbyTransferPanel(); break;
                 case 'modes-modal': closeModesMenu(); break;
                 default: m.style.display = 'none';
             }
@@ -2471,6 +2580,12 @@
         scanMode = 'PATIENT';
         startScanner();
     }
+    function receiveAllPatients(continueExisting) {
+        scanMode = 'ALL_PATIENTS';
+        if (!continueExisting) _allChunkStore = { transferId: null, totalChunks: 0, chunks: {} };
+        showToast(continueExisting ? 'Scan the next all-patient QR chunk.' : 'Receiver mode: scan the sender’s all-patient QR or first chunk.');
+        startScanner();
+    }
 
     function scanHandover() {
         scanMode = 'HANDOVER';
@@ -2485,6 +2600,17 @@
         const level = (text.length < 600) ? QRCode.CorrectLevel.M : QRCode.CorrectLevel.L;
         return new QRCode(target, { text, width: size, height: size, correctLevel: level });
     }
+    function copyCurrentQrText() {
+        try {
+            const title = document.getElementById('qr-title').textContent || 'QR';
+            const text = document.getElementById('qr-modal').dataset.qrText || '';
+            if (!text) { showToast('No QR text available'); return; }
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => showToast(`${title} text copied`)).catch(() => showToast('Copy failed; use camera or file fallback'));
+            else showToast('Clipboard not supported. Use camera or file fallback.');
+        } catch(e) { showToast('Copy failed'); }
+    }
+    function _setCurrentQrText(text) { try { document.getElementById('qr-modal').dataset.qrText = text || ''; } catch(e){} }
+
     function _summariseEntry(entry) {
         const intCount = entry.interventions ? Object.keys(entry.interventions).length : 0;
         const flags = [];
@@ -2516,6 +2642,7 @@
         const ttlMs = QR_DEFAULT_TTL_MS;
         const wrapper = buildPatientPayload(entry, { ttlMs });
         const text = JSON.stringify(wrapper);
+        _setCurrentQrText(text);
         if (text.length > 2200) {
             showToast('Data too large for QR — consider summarising notes', { alert: true });
             return;
@@ -2562,6 +2689,7 @@
     function generateMyIdentityQR() {
         const wrapper = { t: 'MIT_USER', v: 2, name: triagerName || '', role: userRole || '', g: Date.now(), app: APP_VERSION };
         const text = JSON.stringify(wrapper);
+        _setCurrentQrText(text);
         const target = document.getElementById('qrcode');
         try { _renderQR(target, text, 280); }
         catch(e) { showToast('QR generation failed', { alert: true }); return; }
@@ -2617,6 +2745,16 @@
 
     function startScanner() {
         document.getElementById('scanner-modal').style.display = 'flex';
+        if (scanMode === 'ALL_PATIENTS') {
+            setText('scan-title', 'Receive all patients');
+            setText('scan-instruction', 'Scan one all-patient QR chunk at a time. Chunks may be scanned out of order; duplicates are ignored. Use Paste for manual fallback.');
+        } else if (scanMode === 'HANDOVER') {
+            setText('scan-title', 'Scan colleague identity');
+            setText('scan-instruction', 'Position the identity QR in the box. Hold steady. Tap Cancel to close.');
+        } else {
+            setText('scan-title', 'Scan');
+            setText('scan-instruction', 'Position code in box. Hold steady. Tap Cancel to close.');
+        }
         // Always do a clean teardown first so cancel/re-open never loops
         _safeCleanupScanner().then(() => initScannerInstance()).catch(err => {
             console.warn('Cleanup failed; continuing', err);
@@ -2749,6 +2887,14 @@
             }
             if (parsed.t === 'MIT_BULK') {
                 handleBulkWrapper(parsed);
+                return;
+            }
+            if (parsed.t === 'MIT_ALL') {
+                handleAllPatientsWrapper(parsed);
+                return;
+            }
+            if (parsed.t === 'MIT_ALL_CHUNK') {
+                handleAllPatientChunk(parsed);
                 return;
             }
         }
@@ -3049,6 +3195,7 @@
     function showAckQR(patientId, receiverName) {
         const ack = MITTLib.buildAckPayload(patientId, receiverName || triagerName || '', { appVersion: APP_VERSION });
         const text = JSON.stringify(ack);
+        _setCurrentQrText(text);
         const target = document.getElementById('qrcode');
         try { _renderQR(target, text, 240); } catch(e) { return; }
         setText('qr-title', `Acknowledged ${patientId}`);
@@ -3568,6 +3715,249 @@
     }
     function closeTimelineModal() { document.getElementById('timeline-modal').style.display = 'none'; }
 
+    // ---------- All-patient offline transfer ----------
+    let _allTransfer = null;
+    let _allTransferChunkIndex = 0;
+    let _allTransferShownChunks = new Set();
+    let _allChunkStore = { transferId: null, totalChunks: 0, chunks: {} };
+
+    function _allPatientsTransferContext() {
+        return { sender: triagerName || '', appVersion: APP_VERSION };
+    }
+    function _allPatientsTransferOptions() {
+        return {
+            ttlMs: QR_DEFAULT_TTL_MS,
+            auditLog: auditLog || [],
+            incident: { currentSector, generatedBy: triagerName || '', generatedRole: userRole || '', appVersion: APP_VERSION }
+        };
+    }
+    function _getAllPatientRecordsForTransfer() {
+        // Deliberately transfer every stored log record, not only currently-on-scene or latest-by-ID.
+        return (incidentLog || []).map(e => MITTLib.clonePatientRecord(e));
+    }
+    function _summariseAllTransferRecords(records) {
+        const counts = { P1:0, P2:0, P3:0, DEAD:0 };
+        const sectors = new Set();
+        let gps = 0, position = 0, triagers = 0, interventions = 0, injuries = 0;
+        (records || []).forEach(r => {
+            if (counts[r.category] !== undefined) counts[r.category]++;
+            if (r.sector) sectors.add(r.sector);
+            if (r.location && (r.location.lat || r.location.lng)) gps++;
+            if (r.location || r.sector || r.evacDest || r.evacVehicle) position++;
+            if (r.triager) triagers++;
+            if (r.interventions && Object.keys(r.interventions).length) interventions++;
+            if (Array.isArray(r.injuries) && r.injuries.length) injuries++;
+        });
+        return { counts, sectors: Array.from(sectors).sort(), gps, position, triagers, interventions, injuries };
+    }
+    function openAllPatientsTransfer() {
+        const records = _getAllPatientRecordsForTransfer();
+        if (!records.length) { showToast('No patients to transfer.'); return; }
+        _allTransfer = MITTLib.buildAllPatientsTransfer(records, _allPatientsTransferOptions(), _allPatientsTransferContext());
+        _allTransferChunkIndex = 0;
+        _allTransferShownChunks = new Set();
+        const sum = _summariseAllTransferRecords(records);
+        const method = _allTransfer.mode === 'single' ? '1 QR code' : `${_allTransfer.totalChunks} numbered QR chunks`;
+        const summary = document.getElementById('all-preflight-summary');
+        if (summary) {
+            summary.innerHTML = '';
+            const rows = [
+                ['Patients', String(records.length)],
+                ['Categories', `P1 ${sum.counts.P1} • P2 ${sum.counts.P2} • P3 ${sum.counts.P3} • DEAD ${sum.counts.DEAD}`],
+                ['Sectors included', sum.sectors.length ? sum.sectors.join(', ') : 'No sector recorded'],
+                ['GPS / position data', `${sum.gps} with GPS coordinates • ${sum.position} with position, sector, destination or vehicle data`],
+                ['Triager identities', `${sum.triagers} record${sum.triagers === 1 ? '' : 's'} include triager identity`],
+                ['Clinical detail', `${sum.interventions} with interventions • ${sum.injuries} with structured injuries • notes/allergies/demographics/reassessment/handover state included where stored`],
+                ['QR transfer', `${method} • manual Next/Previous only • no internet required`],
+                ['Integrity', `Each chunk has a checksum; full transfer checksum ${_allTransfer.mode === 'single' ? _allTransfer.payload.h : _allTransfer.chunks[0].payloadHash}`],
+            ];
+            rows.forEach(([k,v]) => { const div=document.createElement('div'); div.style.margin='0.5rem 0'; div.innerHTML=`<strong>${MITTLib.escapeHTML(k)}:</strong> ${MITTLib.escapeHTML(v)}`; summary.appendChild(div); });
+        }
+        document.getElementById('all-preflight-modal').style.display = 'flex';
+        logAudit('ALL_HANDOVER_PREFLIGHT', '-', `${records.length} records • ${method}`, Date.now());
+    }
+    function closeAllPreflightModal() { document.getElementById('all-preflight-modal').style.display = 'none'; }
+    function startAllPatientsQrTransfer() {
+        if (!_allTransfer) openAllPatientsTransfer();
+        if (!_allTransfer) return;
+        closeAllPreflightModal();
+        renderAllTransferChunk();
+        document.getElementById('all-transfer-modal').style.display = 'flex';
+        logAudit('ALL_HANDOVER_GENERATED', '-', `${_allTransfer.payload.n} records • ${_allTransfer.mode} • ${_allTransfer.totalChunks} QR(s)`, Date.now());
+    }
+    function renderAllTransferChunk() {
+        if (!_allTransfer) return;
+        const target = document.getElementById('all-transfer-qrcode');
+        const chunks = _allTransfer.mode === 'single' ? [_allTransfer.payload] : _allTransfer.chunks;
+        const payload = chunks[_allTransferChunkIndex];
+        const text = JSON.stringify(payload);
+        try { _renderQR(target, text, Math.min(360, Math.max(280, Math.floor(window.innerWidth * 0.78)))); }
+        catch(e) { console.error(e); showToast('QR generation failed. Use transfer file instead.', { alert: true }); return; }
+        const n = _allTransfer.payload.n || 0;
+        const total = chunks.length;
+        const idx = _allTransferChunkIndex + 1;
+        setText('all-transfer-title', total === 1 ? 'Transfer all patients' : `Transfer all patients — QR ${idx} of ${total}`);
+        setText('all-transfer-meta', `${n} stored patient record${n === 1 ? '' : 's'} • ${_allTransfer.byteLength} characters • Transfer ${_allTransfer.transferId}`);
+        setText('all-transfer-desc', total === 1 ? 'Receiver: scan this QR from Receive all patients, then preview before importing.' : 'Receiver: scan every numbered QR. Sender: use Next/Previous manually; do not auto-advance. Duplicate scans are ignored.');
+        setText('all-transfer-progress', total === 1 ? 'Single QR • Full dataset included' : `Chunk ${idx} / ${total} • Overall checksum ${_allTransfer.chunks[0].payloadHash} • Resume by returning to this chunk number`);
+        if (!_allTransferShownChunks.has(idx)) { _allTransferShownChunks.add(idx); logAudit('ALL_HANDOVER_CHUNK_SHOWN', '-', `Transfer ${_allTransfer.transferId} chunk ${idx}/${total}`, Date.now()); }
+        const bar = document.getElementById('all-transfer-bar');
+        if (bar) bar.style.width = `${Math.round(idx / total * 100)}%`;
+    }
+    function allTransferNextChunk() {
+        if (!_allTransfer) return;
+        const total = _allTransfer.mode === 'single' ? 1 : _allTransfer.chunks.length;
+        _allTransferChunkIndex = Math.min(total - 1, _allTransferChunkIndex + 1);
+        renderAllTransferChunk();
+    }
+    function allTransferPrevChunk() {
+        if (!_allTransfer) return;
+        _allTransferChunkIndex = Math.max(0, _allTransferChunkIndex - 1);
+        renderAllTransferChunk();
+    }
+    function closeAllTransferModal() { document.getElementById('all-transfer-modal').style.display = 'none'; }
+    function openNearbyTransferPanel() { document.getElementById('nearby-transfer-modal').style.display = 'flex'; }
+    function closeNearbyTransferPanel() { document.getElementById('nearby-transfer-modal').style.display = 'none'; }
+    function _currentAllTransferPayloadText() {
+        if (!_allTransfer) {
+            const records = _getAllPatientRecordsForTransfer();
+            if (!records.length) { showToast('No patients to transfer.', { alert: true }); return ''; }
+            _allTransfer = MITTLib.buildAllPatientsTransfer(records, _allPatientsTransferOptions(), _allPatientsTransferContext());
+            _allTransferShownChunks = new Set();
+        }
+        return _allTransfer.text;
+    }
+    function _downloadTextFile(filename, text, type) {
+        const blob = new Blob([text], { type: type || 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    function exportAllPatientsFile() {
+        const text = _currentAllTransferPayloadText();
+        if (!text) return;
+        const id = (_allTransfer && _allTransfer.transferId) || 'transfer';
+        _downloadTextFile(`mitt_all_patients_${id}.json`, text, 'application/json');
+        showToast('Transfer file exported.');
+        logAudit('ALL_HANDOVER_FILE_EXPORTED', '-', `Transfer ${id}`, Date.now());
+    }
+    async function shareAllPatientsFile() {
+        const text = _currentAllTransferPayloadText();
+        if (!text) return;
+        const id = (_allTransfer && _allTransfer.transferId) || 'transfer';
+        const file = new File([text], `mitt_all_patients_${id}.json`, { type: 'application/json' });
+        logAudit('ALL_HANDOVER_SHARE_ATTEMPT', '-', `Transfer ${id}`, Date.now());
+        if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+            try { await navigator.share({ files: [file], title: 'MITT all-patient transfer', text: 'Offline MITT transfer file' }); logAudit('ALL_HANDOVER_SHARED', '-', `Transfer ${id}`, Date.now()); }
+            catch(e) { if (e && e.name !== 'AbortError') { showToast('Share failed. Use Export transfer file.', { alert: true }); logAudit('ALL_HANDOVER_SHARE_FAILED', '-', String(e && e.message || e), Date.now()); } }
+        } else {
+            logAudit('ALL_HANDOVER_SHARE_UNSUPPORTED', '-', `Transfer ${id}`, Date.now());
+            showToast('Share sheet not supported here. Exporting file instead.');
+            exportAllPatientsFile();
+        }
+    }
+    async function writeAllPatientsNfc() {
+        const text = _currentAllTransferPayloadText();
+        if (!text) return;
+        const id = (_allTransfer && _allTransfer.transferId) || 'transfer';
+        logAudit('ALL_HANDOVER_NFC_ATTEMPT', '-', `Transfer ${id}`, Date.now());
+        if (!('NDEFReader' in window)) { showToast('Web NFC not supported. Use QR or transfer file.', { alert: true }); logAudit('ALL_HANDOVER_NFC_UNSUPPORTED', '-', `Transfer ${id}`, Date.now()); return; }
+        if (text.length > 1800) { showToast('Dataset too large for typical NFC tags. Use QR chunks or transfer file.', { alert: true }); logAudit('ALL_HANDOVER_NFC_TOO_LARGE', '-', `${text.length} chars`, Date.now()); return; }
+        try { const ndef = new NDEFReader(); await ndef.write(text); showToast('NFC write ready. Tap a tag/device.'); logAudit('ALL_HANDOVER_NFC_WRITTEN', '-', `Transfer ${id}`, Date.now()); }
+        catch(error) { console.error(error); showToast('NFC write failed. Use QR or transfer file.', { alert: true }); logAudit('ALL_HANDOVER_NFC_FAILED', '-', String(error && error.message || error), Date.now()); }
+    }
+    function openAllTransferFilePicker() { document.getElementById('all-transfer-file-input').click(); }
+    function handleAllTransferFileSelected(event) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = '';
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const parsed = JSON.parse(String(reader.result || ''));
+                if (parsed.t === 'MIT_ALL') { logAudit('ALL_HANDOVER_FILE_IMPORTED', '-', `Transfer ${parsed.transferId || '-'} from ${file.name}`, Date.now()); handleAllPatientsWrapper(parsed); }
+                else showToast('Not a MITT all-patient transfer file', { alert: true });
+            } catch(e) { showToast('Could not read transfer file', { alert: true }); }
+        };
+        reader.readAsText(file);
+    }
+    function handleAllPatientChunk(chunk) {
+        const r = MITTLib.validateAllPatientChunk(chunk);
+        if (!r.ok) { showToast(r.reason || 'Invalid chunk', { alert: true }); logAudit('ALL_HANDOVER_CHUNK_REJECTED', '-', r.reason || 'invalid', Date.now()); return; }
+        const m = r.meta;
+        if (!_allChunkStore.transferId || _allChunkStore.transferId !== m.transferId) {
+            _allChunkStore = { transferId: m.transferId, totalChunks: m.totalChunks, chunks: {} };
+        }
+        const duplicate = !!_allChunkStore.chunks[m.chunkIndex];
+        _allChunkStore.chunks[m.chunkIndex] = chunk;
+        logAudit(duplicate ? 'ALL_HANDOVER_CHUNK_DUPLICATE' : 'ALL_HANDOVER_CHUNK_SCANNED', '-', `Transfer ${m.transferId} chunk ${m.chunkIndex + 1}/${m.totalChunks}`, Date.now());
+        const result = MITTLib.reassembleAllPatientChunks(Object.values(_allChunkStore.chunks));
+        if (result.ok) {
+            document.getElementById('all-receive-progress-modal').style.display = 'none';
+            showToast('All chunks received and verified. Review before import.');
+            logAudit('ALL_HANDOVER_CHUNKS_COMPLETE', '-', `Transfer ${m.transferId} • ${m.totalChunks}/${m.totalChunks}`, Date.now());
+            handleAllPatientsWrapper(resultToAllWrapper(result));
+            _allChunkStore = { transferId: null, totalChunks: 0, chunks: {} };
+            return;
+        }
+        renderAllReceiveProgress(duplicate ? 'Duplicate chunk already scanned — ignored.' : `Chunk ${m.chunkIndex + 1} received.`);
+    }
+    function resultToAllWrapper(result) {
+        return { t:'MIT_ALL', v: result.meta.schemaVersion, sv: result.meta.patientSchemaVersion, g: result.meta.generatedAt, x: result.meta.expiresAt, transferId: result.meta.transferId, sndr: result.meta.sender, app: result.meta.app, n: result.data.length, patients: result.data, audit: result.audit || [], incident: result.incident || {} };
+    }
+    function renderAllReceiveProgress(message) {
+        const total = _allChunkStore.totalChunks || 0;
+        const received = Object.keys(_allChunkStore.chunks || {}).length;
+        setText('all-receive-progress-meta', `Transfer ${_allChunkStore.transferId || '-'} • ${received}/${total} chunks`);
+        const missing = [];
+        for (let i=0; i<total; i++) if (!_allChunkStore.chunks[i]) missing.push(i + 1);
+        const missingText = missing.length ? ` Missing: ${missing.join(', ')}.` : '';
+        setText('all-receive-message', `${message || ''} ${received < total ? 'Continue scanning remaining chunks.' : 'Validating…'}${missingText}`);
+        const bar = document.getElementById('all-receive-bar'); if (bar) bar.style.width = total ? `${Math.round(received / total * 100)}%` : '0%';
+        const grid = document.getElementById('all-receive-grid'); clearChildren(grid);
+        for (let i=0; i<total; i++) { const d=document.createElement('div'); d.className='chunk-dot' + (_allChunkStore.chunks[i] ? ' done' : ''); d.textContent=String(i+1); grid.appendChild(d); }
+        document.getElementById('all-receive-progress-modal').style.display = 'flex';
+    }
+    function cancelAllReceive() {
+        const id = _allChunkStore.transferId || '-';
+        _allChunkStore = { transferId: null, totalChunks: 0, chunks: {} };
+        document.getElementById('all-receive-progress-modal').style.display = 'none';
+        logAudit('ALL_HANDOVER_RECEIVE_CANCELLED', '-', `Transfer ${id}`, Date.now());
+        showToast('All-patient receive cancelled.');
+    }
+    let _pendingAllImport = null;
+    function handleAllPatientsWrapper(wrapper) {
+        const result = MITTLib.validateAllPatientsWrapper(wrapper);
+        const pseudo = { ok: result.ok, data: result.data || [], meta: result.meta || {}, reason: result.reason, audit: result.audit || [] };
+        const meta = document.getElementById('bulk-receive-meta');
+        const warn = document.getElementById('bulk-receive-warn');
+        const list = document.getElementById('bulk-receive-list');
+        clearChildren(list); warn.style.display = 'none'; warn.textContent = '';
+        const acceptBtn = document.getElementById('btn-bulk-accept'); acceptBtn.disabled = false;
+        document.getElementById('bulk-receive-title').textContent = 'All-patient transfer — Review before import';
+        if (!pseudo.ok) {
+            meta.textContent = ''; warn.style.display = 'block'; warn.textContent = `Cannot import: ${pseudo.reason}`; acceptBtn.disabled = true; _pendingBulkImport = null;
+            logAudit('ALL_HANDOVER_REJECTED', '-', pseudo.reason || 'invalid', Date.now());
+        } else {
+            const mergePlan = MITTLib.mergeAllPatientRecords(incidentLog, pseudo.data, pseudo.meta);
+            meta.textContent = `From ${pseudo.meta.sender || 'Unknown'} • ${pseudo.data.length} patient record(s) • ${pseudo.meta.auditCount || 0} audit item(s) • Transfer ${pseudo.meta.transferId || '-'}`;
+            const summary = document.createElement('div'); summary.className = 'clinical-note'; summary.style.display='block';
+            summary.textContent = `Import preview: ${mergePlan.imported} new, ${mergePlan.merged} exact-ID merge(s), ${mergePlan.nearDuplicates.length} possible duplicate(s) kept separate unless IDs match.`;
+            list.appendChild(summary);
+            pseudo.data.forEach(d => {
+                const row = document.createElement('div'); row.style.padding='8px 0'; row.style.borderBottom='1px solid rgba(0,0,0,0.08)';
+                const parts = [`${d.id} — ${d.category}`, d.triager ? `Triager: ${d.triager}` : '', d.sector ? `Sector: ${d.sector}` : '', d.location ? `GPS: ${d.location.lat}, ${d.location.lng}${d.location.acc ? ' ±'+d.location.acc+'m' : ''}` : '', d.injuries && d.injuries.length ? `Injuries: ${d.injuries.length}` : '', d.interventions ? `Interventions: ${Object.keys(d.interventions).length}` : '', d.handoverState ? `Handover: ${d.handoverState}` : ''].filter(Boolean);
+                row.textContent = parts.join(' • ');
+                if (incidentLog.some(e => e.id === d.id)) { const tag=document.createElement('span'); tag.className='reassess-pill due-soon'; tag.style.marginLeft='6px'; tag.textContent='Will merge'; row.appendChild(tag); }
+                list.appendChild(row);
+            });
+            if (mergePlan.nearDuplicates.length) { warn.style.display='block'; warn.textContent = `Possible duplicates by demographics/sector/time/GPS: ${mergePlan.nearDuplicates.slice(0,5).map(x => x.incoming.id + ' resembles ' + x.candidates[0].candidate.id).join('; ')}. These will import as separate records unless IDs match.`; }
+            _pendingBulkImport = { result: { ok: true, data: pseudo.data, audit: pseudo.audit, meta: Object.assign({}, pseudo.meta, { isAllPatients: true }) } };
+        }
+        document.getElementById('bulk-receive-modal').style.display = 'flex';
+    }
+
     // ---------- Bulk handover ----------
     function openBulkHandover() {
         const candidates = incidentLog.filter(e => !e.evacuated);
@@ -3594,6 +3984,7 @@
                     return;
                 }
                 const text = JSON.stringify(wrapper);
+                _setCurrentQrText(text);
                 const target = document.getElementById('qrcode');
                 try { _renderQR(target, text, Math.min(360, Math.max(280, Math.floor(window.innerWidth * 0.78)))); }
                 catch(e) { showToast('QR generation failed', { alert: true }); return; }
@@ -3607,6 +3998,7 @@
     }
     let _pendingBulkImport = null;
     function handleBulkWrapper(wrapper) {
+        document.getElementById('bulk-receive-title').textContent = 'Bulk Sector Handover — Review';
         const result = MITTLib.validateBulkWrapper(wrapper);
         const meta = document.getElementById('bulk-receive-meta');
         const warn = document.getElementById('bulk-receive-warn');
@@ -3656,7 +4048,11 @@
         document.getElementById('bulk-receive-modal').style.display = 'flex';
     }
     function declineBulkPreview() {
-        if (_pendingBulkImport) logAudit('BULK_HANDOVER_DECLINED', '-', `Sector ${_pendingBulkImport.result.meta.sector || 'ALL'}`, Date.now());
+        if (_pendingBulkImport) {
+            const r = _pendingBulkImport.result || {};
+            if (r.meta && r.meta.isAllPatients) logAudit('ALL_HANDOVER_DECLINED', '-', `Transfer ${r.meta.transferId || '-'}`, Date.now());
+            else logAudit('BULK_HANDOVER_DECLINED', '-', `Sector ${(r.meta && r.meta.sector) || 'ALL'}`, Date.now());
+        }
         _pendingBulkImport = null;
         document.getElementById('bulk-receive-modal').style.display = 'none';
     }
@@ -3664,26 +4060,38 @@
         if (!_pendingBulkImport) { document.getElementById('bulk-receive-modal').style.display = 'none'; return; }
         const { result } = _pendingBulkImport;
         let imported = 0, merged = 0;
-        result.data.forEach(d => {
-            const idx = incidentLog.findIndex(e => e.id === d.id);
-            const meta = { schemaVersion: result.meta.schemaVersion, recordVersion: d._rev || 0, sender: result.meta.sender };
-            if (idx > -1) {
-                incidentLog[idx] = mergePatientRecords(incidentLog[idx], d, meta);
-                merged++;
-            } else {
-                const entry = Object.assign({}, d);
-                entry.notes = (entry.notes || '') + ` [Origin: ${result.meta.sender || 'Unknown'} (bulk)]`;
-                entry._rev = (d._rev || 0) + 1;
-                incidentLog.push(entry);
-                imported++;
+        if (result.meta && result.meta.isAllPatients) {
+            const mergedResult = MITTLib.mergeAllPatientRecords(incidentLog, result.data, result.meta);
+            incidentLog = mergedResult.records;
+            imported = mergedResult.imported;
+            merged = mergedResult.merged;
+            if (Array.isArray(result.audit) && result.audit.length) {
+                result.audit.forEach(a => auditLog.push(Object.assign({}, a, { importedAudit: true, importedAt: Date.now() })));
             }
-        });
-        logAudit('BULK_HANDOVER_ACCEPTED', '-', `Sector ${result.meta.sector || 'ALL'} • imported ${imported}, merged ${merged}`, Date.now());
+            logAudit('ALL_HANDOVER_ACCEPTED', '-', `Transfer ${result.meta.transferId || '-'} • imported ${imported}, merged ${merged}, audit ${result.audit ? result.audit.length : 0}`, Date.now());
+            logAudit('ALL_HANDOVER_IMPORTED', '-', `Transfer ${result.meta.transferId || '-'} • local records now ${incidentLog.length}`, Date.now());
+        } else {
+            result.data.forEach(d => {
+                const idx = incidentLog.findIndex(e => e.id === d.id);
+                const meta = { schemaVersion: result.meta.schemaVersion, recordVersion: d._rev || 0, sender: result.meta.sender };
+                if (idx > -1) {
+                    incidentLog[idx] = mergePatientRecords(incidentLog[idx], d, meta);
+                    merged++;
+                } else {
+                    const entry = Object.assign({}, d);
+                    entry.notes = (entry.notes || '') + ` [Origin: ${result.meta.sender || 'Unknown'} (bulk)]`;
+                    entry._rev = (d._rev || 0) + 1;
+                    incidentLog.push(entry);
+                    imported++;
+                }
+            });
+            logAudit('BULK_HANDOVER_ACCEPTED', '-', `Sector ${result.meta.sector || 'ALL'} • imported ${imported}, merged ${merged}`, Date.now());
+        }
         _pendingBulkImport = null;
         document.getElementById('bulk-receive-modal').style.display = 'none';
         saveState();
         updateDashboard();
-        showToast(`Bulk handover: ${imported} new, ${merged} merged.`);
+        showToast(`${(result.meta && result.meta.isAllPatients) ? 'All-patient transfer' : 'Bulk handover'}: ${imported} new, ${merged} merged.`);
     }
 
     // ---------- Printable wristband label ----------
