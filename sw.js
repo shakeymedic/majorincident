@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v6-2026-09-12-all-patient-transfer';
+const CACHE_NAME = 'mit-triage-v7-2026-09-12-gps-accuracy';
 const PRECACHE_URLS = [
     './',
     './index.html',

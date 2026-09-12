@@ -41,19 +41,19 @@ tests/lib.test.js Node test suite for pure helpers
 .github/workflows/test.yml  CI workflow
 ```
 
-## Patient QR schema (v2)
+## Patient QR schema (v3)
 
 Generated when a sender taps **QR Handover**. Encoded as JSON:
 
 ```json
 {
   "t": "MIT_P",
-  "v": 2,
+  "v": 3,
   "rv": 3,                       // recordVersion (incremented on each save)
   "g": 1715200000000,            // generatedAt (epoch ms)
   "x": 1715228800000,            // expiresAt   (default: 8 hours from generation)
   "sndr": "Medic 1",
-  "app": "0.6.0",
+  "app": "0.7.0",
   "h": "1f2a3b4c",               // FNV-1a integrity hash over canonicalised payload
   "d": {
     "i": "TST-001", "c": "P1", "a": "Immediate", "r": "Catastrophic Bleeding",
@@ -61,7 +61,10 @@ Generated when a sender taps **QR Handover**. Encoded as JSON:
     "s": "Inner Cordon", "d": "35M", "al": "Penicillin", "n": "Bleeding right leg",
     "hr": 1, "in": { "Tourniquet": { "time": "12:35", "ts": 1715200060000 } },
     "ev": 0, "ed": "Royal Infirmary", "evv": "AMB-404",
-    "l": { "lt": "53.4808", "lg": "-2.2426" }
+    "l": { "lt": "53.4808000", "lg": "-2.2426000", "ac": 8, "ts": 1715200000000, "so": "gps-watch", "cf": "gps-exact", "sc": "Inner Cordon" },
+    "il": { "lt": "53.4807900", "lg": "-2.2426100", "ac": 18, "ts": 1715199999000, "so": "gps-watch" },
+    "lh": [{ "lt": "53.4808000", "lg": "-2.2426000", "ac": 8, "at": 1715200000000, "usr": "Medic 1", "rs": "initial capture" }],
+    "lc": "gps-exact", "lm": "Bus stop", "fl": "Ground", "ar": "Bay 2"
   }
 }
 ```
@@ -70,7 +73,7 @@ Generated when a sender taps **QR Handover**. Encoded as JSON:
 - **Expiry:** Receivers reject QRs where `x < now()` and surface a clear error. Default TTL is 8 hours.
 - **Integrity:** `h` is an FNV-1a 32-bit hash over the canonical (key-sorted) payload without `h`. Tampering or corruption flags `integrityOk: false` on the preview screen.
 
-Receiver flow: every scanned patient QR opens a **preview/accept** modal showing category, ID, reason, action, interventions, high-risk flag, sender, generated time, expiry countdown and integrity status. Accept is required before merging into the local log.
+Receiver flow: every scanned patient QR opens a **preview/accept** modal showing category, ID, reason, action, interventions, high-risk flag, location/accuracy/history, sender, generated time, expiry countdown and integrity status. Accept is required before merging into the local log.
 
 ### Other QR types
 
@@ -79,6 +82,34 @@ Receiver flow: every scanned patient QR opens a **preview/accept** modal showing
 | `MIT_USER` (JSON `{t, v, name, role, g, app}`) | Identity card for bulk handover. Legacy `MIT_USER\|name\|role` pipe format still parsed. |
 | `MIT_ACK` (JSON `{t, v, pid, rcv, g, app}`) | Acknowledgement returned by the receiver after accept; sender can scan to log handover-accepted. |
 | `MIT_PT\|...` (legacy) | Old pipe-delimited patient export still accepted via the same preview/accept flow. |
+
+## Location accuracy workflow (v0.7.0)
+
+MITT now treats patient location as an operational field that can be confirmed and corrected, not as a hidden GPS overwrite. The browser geolocation watch runs with high accuracy, zero maximum age and a 12-second timeout. During acquisition the app keeps a short buffer of fixes and stores the best fix by lowest reported accuracy.
+
+Stored location metadata includes latitude, longitude, horizontal accuracy, altitude, altitude accuracy, heading, speed, timestamp, source, age, initial location, current location, and a full location history. Operational labels are stored alongside GPS: sector/zone, landmark or treatment area, floor/level, area/bay/room/entrance, and confidence (`gps-exact`, `gps-approximate`, `manual-corrected`, `sector-only`, `unknown`).
+
+The result screen shows live status such as `Getting fix ±45m` or `Good fix ±8m`. Accuracy poorer than 25m is highlighted and nudges the triager to confirm a sector/landmark or manually correct coordinates. GPS failure never blocks triage; users can continue with sector-only or unknown location.
+
+### Manual correction
+
+Open **Confirm / edit patient location** from the result screen or patient details. The mobile-first editor supports:
+
+- sector/zone, landmark/treatment area, floor/level and area/bay/room/entrance;
+- confidence selection: GPS exact, GPS approximate, manually corrected, sector only, or unknown;
+- editable latitude/longitude and accuracy radius;
+- **Use current GPS**, **Found here**, **Moved to sector/area**, **At CCS/loading area**, and **Loaded/evacuated** quick actions;
+- copyable latitude/longitude for map-free handover.
+
+Every location change appends to `locationHistory` with timestamp, triager/user, source, action/reason, coordinates/accuracy and operational labels. The patient timeline and audit log include location update events.
+
+### Offline map-free fallback
+
+The map is optional. If map imagery tiles are unavailable offline, MITT still displays the coordinate/accuracy card, age warning, operational labels, manual editor, and copyable/transferable lat/lon. Coordinates and location history are kept in IndexedDB and included in QR, transfer files, CSV and audit exports.
+
+### Coordinate-format limitation
+
+OS Grid Reference and What3Words are intentionally not included in this release. What3Words requires an online/proprietary service, and OS-grid conversion would add a new coordinate dependency; core incident location features must remain offline and low-risk.
 
 ## All-patient offline handover (v0.6.0)
 
@@ -100,14 +131,14 @@ All-patient transfer uses a typed JSON wrapper with the full local log, not a co
 {
   "t": "MIT_ALL",
   "v": 1,
-  "sv": 2,
+  "sv": 3,
   "g": 1715200000000,
   "x": 1715228800000,
   "transferId": "abcdef12",
   "sndr": "Incident Commander",
-  "app": "0.6.0",
+  "app": "0.7.0",
   "n": 42,
-  "patientFields": ["id", "time", "timestamp", "tool", "category", "action", "reason", "triager", "location", "sector", "demos", "allergies", "notes", "highRisk", "interventions", "evacuated", "evacDest", "evacVehicle", "injuries", "lastReassessed", "reassessOutcome", "lastDeteriorationAt", "handoverState", "handoverAt", "handoverTo", "_rev"],
+  "patientFields": ["id", "time", "timestamp", "tool", "category", "action", "reason", "triager", "location", "initialLocation", "currentLocation", "locationHistory", "locationConfidence", "sector", "landmark", "floor", "area", "demos", "allergies", "notes", "highRisk", "interventions", "evacuated", "evacDest", "evacVehicle", "injuries", "lastReassessed", "reassessOutcome", "lastDeteriorationAt", "handoverState", "handoverAt", "handoverTo", "_rev"],
   "patients": [],
   "audit": [],
   "incident": {},
@@ -131,7 +162,7 @@ If the all-patient JSON does not fit in one dependable QR, MITT emits numbered `
   "g": 1715200000000,
   "x": 1715228800000,
   "sndr": "Incident Commander",
-  "app": "0.6.0",
+  "app": "0.7.0",
   "payloadHash": "1f2a3b4c",
   "chunkHash": "9a8b7c6d",
   "data": "...string slice...",
@@ -159,13 +190,15 @@ All all-patient transfer actions add audit events where feasible: preflight, tra
 
 1. On phone A, load MITT once online, then enable airplane mode and confirm the app still opens.
 2. Create at least three patients: one P1 with GPS/sector/triager, intervention and body-map injury; one P2 with reassessment/deterioration; one P3 with demographics/allergies/notes.
-3. Open **Sender: Transfer all patients** from the home screen or patient log and verify the preflight summary counts, sectors, GPS/position inclusion and triager identity inclusion.
-4. Start QR transfer. If multiple chunks appear, scan them on phone B from **Receiver: Receive all patients** out of order; scan one chunk twice and verify the duplicate message; leave one chunk missing and verify the missing number is displayed.
-5. Scan the final missing chunk and verify the "all chunks received and verified" message plus final preview before import.
-6. Accept the transfer on phone B and verify no local patients were deleted, exact matches merged safely, likely duplicates were warned about, and positions/GPS, triagers, interventions, injuries, notes, allergies/demographics, reassessment and handover state persisted.
-7. Repeat using **Export transfer file** on phone A and **Import transfer file** on phone B while offline.
-8. On supported Android Chrome/HTTPS only, try Web NFC with a very small test log; confirm unsupported or oversize devices show clear QR/file fallback guidance.
-9. Export the audit trail and confirm all-patient transfer events are present.
+3. Confirm/edit each patient location: one accurate GPS fix, one poor GPS with manual sector/landmark correction, and one sector-only indoor casualty. Check the location-age warning and timeline entry.
+4. Open **Sender: Transfer all patients** from the home screen or patient log and verify the preflight summary counts, sectors, GPS/position inclusion, location labels/history and triager identity inclusion.
+5. Start QR transfer. If multiple chunks appear, scan them on phone B from **Receiver: Receive all patients** out of order; scan one chunk twice and verify the duplicate message; leave one chunk missing and verify the missing number is displayed.
+6. Scan the final missing chunk and verify the "all chunks received and verified" message plus final preview before import.
+7. Accept the transfer on phone B and verify no local patients were deleted, exact matches merged safely, likely duplicates were warned about, and positions/GPS metadata, location labels/history, triagers, interventions, injuries, notes, allergies/demographics, reassessment and handover state persisted.
+8. Disable network and open the map screen; verify the offline map message appears if tiles cannot load, while coordinate cards and manual location edits still work.
+9. Repeat using **Export transfer file** on phone A and **Import transfer file** on phone B while offline.
+10. On supported Android Chrome/HTTPS only, try Web NFC with a very small test log; confirm unsupported or oversize devices show clear QR/file fallback guidance.
+11. Export the audit trail and casualty register and confirm location-update and all-patient transfer events are present.
 
 ## Privacy posture
 
@@ -175,7 +208,7 @@ All all-patient transfer actions add audit events where feasible: preflight, tra
 
 ## Audit log
 
-Every clinically meaningful event records an audit entry: triage complete, intervention added/removed, evacuation, handover, ID change, QR generated, QR accepted/declined, expired QR rejected, duplicate merge, ACK generated, data wipe. Export via **Forensic Audit Trail (CSV)**.
+Every clinically meaningful event records an audit entry: triage complete, intervention added/removed, location update, evacuation, handover, ID change, QR generated, QR accepted/declined, expired QR rejected, duplicate merge, ACK generated, data wipe. Export via **Forensic Audit Trail (CSV)**.
 
 ## Running tests
 
@@ -190,9 +223,17 @@ CI runs the same tests on every push (see `.github/workflows/test.yml`).
 - The app is a **prototype** and has not been clinically certified. Do not deploy in live operations without local sign-off, training, and integration with primary triage tags.
 - QR transfers are **best-effort**: always also tag the patient physically.
 - The service worker aggressively caches; force-refresh after deployments to pick up updates.
-- Camera/geolocation/NFC require HTTPS in production browsers.
+- Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.7.0 — GPS/location accuracy
+
+- High-accuracy GPS watch with short best-fix selection by lowest accuracy, live acquisition status, poor-accuracy warning and graceful fallback when GPS fails.
+- Mobile-first patient location editor with operational labels, confidence, editable coordinates/accuracy, current-GPS use, quick movement actions and copyable lat/lon.
+- `initialLocation`, `currentLocation` and `locationHistory` preserved across patient QR, bulk QR, all-patient QR/chunks, transfer files, merges, CSV and audit exports.
+- Duplicate matching now considers coordinate proximity from current locations and operational label overlap when coordinates are absent.
+- Offline map fallback message documents that map tiles may be unavailable while stored coordinates remain usable.
 
 ### v0.6.0 — all-patient offline handover
 

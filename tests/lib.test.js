@@ -412,6 +412,90 @@ group('duplicate matching', () => {
     });
 });
 
+
+group('location accuracy helpers', () => {
+    test('selectBestLocationFix keeps the lowest-accuracy fix', () => {
+        const best = lib.selectBestLocationFix([
+            { latitude: 53.48, longitude: -2.24, accuracy: 45, timestamp: 1000, source: 'gps-watch' },
+            { latitude: 53.4801, longitude: -2.2401, accuracy: 8, timestamp: 2000, source: 'gps-watch' },
+            { latitude: 53.4802, longitude: -2.2402, accuracy: 25, timestamp: 3000, source: 'gps-watch' },
+        ]);
+        assert.strictEqual(best.acc, 8);
+        assert.strictEqual(best.lat, '53.4801000');
+        assert.strictEqual(best.source, 'gps-watch');
+    });
+    test('classifyLocationAccuracy flags poor accuracy', () => {
+        assert.strictEqual(lib.classifyLocationAccuracy(8).level, 'exact');
+        assert.strictEqual(lib.classifyLocationAccuracy(20).level, 'approximate');
+        assert.strictEqual(lib.classifyLocationAccuracy(40).warning, true);
+        assert.strictEqual(lib.classifyLocationAccuracy(80).level, 'very-poor');
+    });
+    test('normaliseLocation stores full GPS metadata and labels', () => {
+        const loc = lib.normaliseLocation({ latitude: 51.5, longitude: -0.12, accuracy: 12.34, altitude: 22, altitudeAccuracy: 5, heading: 180, speed: 1.2, timestamp: 1700000000000, source: 'gps-watch', sector: 'Warm', landmark: 'Gate A', floor: '1', area: 'Bay 2', confidence: 'gps-approximate' });
+        assert.strictEqual(loc.lat, '51.5000000');
+        assert.strictEqual(loc.lng, '-0.1200000');
+        assert.strictEqual(loc.acc, 12.3);
+        assert.strictEqual(loc.altitude, 22);
+        assert.strictEqual(loc.landmark, 'Gate A');
+        assert.strictEqual(loc.confidence, 'gps-approximate');
+    });
+    test('appendLocationHistory preserves initial and current locations', () => {
+        const first = lib.appendLocationHistory({ id:'A', triager:'Medic' }, { lat: 51, lng: -1, accuracy: 30, timestamp: 1000 }, { user:'Medic', reason:'initial capture', source:'gps-watch', confidence:'gps-approximate', sector:'Warm' });
+        const moved = lib.appendLocationHistory(first, { lat: 51.0001, lng: -1, accuracy: 10, timestamp: 2000 }, { user:'Medic', reason:'Moved to sector/area', source:'manual', confidence:'manual-corrected', sector:'CCS', area:'Bay 1' });
+        assert.strictEqual(moved.initialLocation.lat, '51.0000000');
+        assert.strictEqual(moved.currentLocation.lat, '51.0001000');
+        assert.strictEqual(moved.locationHistory.length, 2);
+        assert.strictEqual(moved.sector, 'CCS');
+        assert.strictEqual(moved.area, 'Bay 1');
+    });
+    test('mergeLocationHistory deduplicates and sorts by timestamp', () => {
+        const merged = lib.mergeLocationHistory([{ lat: 1, lng: 2, timestamp: 20, reason:'b' }], [{ lat: 1, lng: 2, timestamp: 10, reason:'a' }, { lat: 1, lng: 2, timestamp: 20, reason:'b' }]);
+        assert.strictEqual(merged.length, 2);
+        assert.strictEqual(merged[0].timestamp, 10);
+    });
+    test('formatLocationAge formats minutes and hours', () => {
+        assert.strictEqual(lib.formatLocationAge(1000, 1000 + 30 * 1000), 'just now');
+        assert.strictEqual(lib.formatLocationAge(1000, 1000 + 5 * 60 * 1000), '5 minutes ago');
+        assert.strictEqual(lib.formatLocationAge(1000, 1000 + 2 * 60 * 60 * 1000), '2 hours ago');
+    });
+    test('distanceMeters calculates proximity', () => {
+        const d = lib.distanceMeters({ lat: 53.480000, lng: -2.242600 }, { lat: 53.480010, lng: -2.242600 });
+        assert.ok(d > 0 && d < 2);
+    });
+    test('duplicate matching uses location labels when coordinates are absent', () => {
+        const a = { id:'A', demos:'35M', sector:'Warm', landmark:'Gate A', floor:'1', area:'Bay 2', category:'P2', timestamp:1000 };
+        const b = { id:'B', demos:'35M', sector:'Warm', landmark:'Gate A', floor:'1', area:'Bay 2', category:'P2', timestamp:1000 };
+        assert.ok(lib.similarityScore(a, b) > 0.85);
+    });
+    test('patient QR round-trip includes full location fields and history', () => {
+        const entry = lib.appendLocationHistory({ id:'LOC-1', category:'P2', triager:'Medic A', sector:'Warm', landmark:'Gate A', locationConfidence:'gps-exact' }, { lat: 51.5, lng: -0.12, accuracy: 8, altitude: 15, timestamp: 1700000000000, source:'gps-watch' }, { user:'Medic A', reason:'initial capture', source:'gps-watch', confidence:'gps-exact', sector:'Warm', landmark:'Gate A' });
+        const moved = lib.appendLocationHistory(entry, { lat: 51.5002, lng: -0.1202, accuracy: 5, timestamp: 1700000060000, source:'manual' }, { user:'Medic A', reason:'manual correction', source:'manual', confidence:'manual-corrected', sector:'CCS', area:'Bay 1' });
+        const w = lib.buildPatientPayload(moved, { ttlMs: 60000 }, { now: 1700000100000, sender:'Medic A' });
+        const r = lib.validatePatientWrapper(w, { now: 1700000100000 });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.data.currentLocation.acc, 5);
+        assert.strictEqual(r.data.initialLocation.acc, 8);
+        assert.strictEqual(r.data.locationHistory.length, 2);
+        assert.strictEqual(r.data.area, 'Bay 1');
+    });
+    test('all-patient payload round-trip preserves current/initial/history and labels', () => {
+        const patient = {
+            id:'LOC-2', category:'P1', triager:'Medic B', sector:'Warm', landmark:'Stairs', floor:'2', area:'Room 4', locationConfidence:'manual-corrected',
+            initialLocation:{ lat: 51.5, lng: -0.12, acc: 20, timestamp: 1000, source:'gps-watch' },
+            currentLocation:{ lat: 51.51, lng: -0.13, acc: 6, altitude: 30, timestamp: 2000, source:'manual' },
+            locationHistory:[{ lat: 51.5, lng: -0.12, acc: 20, at:1000, user:'Medic B', reason:'initial' }, { lat: 51.51, lng: -0.13, acc: 6, at:2000, user:'Medic B', reason:'manual correction' }],
+        };
+        const w = lib.buildAllPatientsPayload([patient], { ttlMs: 60000 }, { now: 3000, sender:'Lead' });
+        const r = lib.validateAllPatientsWrapper(w, { now: 3000 });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.data[0].currentLocation.acc, 6);
+        assert.strictEqual(r.data[0].initialLocation.acc, 20);
+        assert.strictEqual(r.data[0].locationHistory.length, 2);
+        assert.strictEqual(r.data[0].landmark, 'Stairs');
+    });
+});
+
+
 group('reassessment', () => {
     test('P1 due in 10 minutes from triage', () => {
         const e = { id: 'A', category: 'P1', timestamp: 1000 };

@@ -1,7 +1,7 @@
 // Pure helpers shared by the app and tests.
 // IMPORTANT: keep this file dependency-free and side-effect-free.
 (function (root) {
-    const QR_SCHEMA_VERSION = 2;
+    const QR_SCHEMA_VERSION = 3;
     const QR_DEFAULT_TTL_MS = 8 * 60 * 60 * 1000;
     const QR_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
@@ -51,7 +51,15 @@
         if (entry.action) short.a = entry.action;
         if (entry.reason) short.r = entry.reason;
         if (entry.triager) short.tr = entry.triager;
-        if (entry.location && entry.location.lat) short.l = { lt: entry.location.lat, lg: entry.location.lng, ac: entry.location.acc };
+        const currentLoc = normaliseLocation(entry.currentLocation || entry.location);
+        const initialLoc = normaliseLocation(entry.initialLocation || entry.location);
+        if (currentLoc) short.l = compactLocation(currentLoc);
+        if (initialLoc) short.il = compactLocation(initialLoc);
+        if (Array.isArray(entry.locationHistory) && entry.locationHistory.length) short.lh = entry.locationHistory.map(compactLocationHistoryItem).filter(Boolean);
+        if (entry.locationConfidence) short.lc = entry.locationConfidence;
+        if (entry.landmark) short.lm = entry.landmark;
+        if (entry.floor) short.fl = entry.floor;
+        if (entry.area) short.ar = entry.area;
         if (entry.sector) short.s = entry.sector;
         if (entry.demos) short.d = entry.demos;
         if (entry.allergies) short.al = entry.allergies;
@@ -93,7 +101,14 @@
             action: short.a || '',
             reason: short.r || '',
             triager: short.tr || 'Unknown',
-            location: short.l ? { lat: short.l.lt, lng: short.l.lg, acc: short.l.ac || 0 } : null,
+            location: short.l ? expandCompactLocation(short.l) : null,
+            initialLocation: short.il ? expandCompactLocation(short.il) : (short.l ? expandCompactLocation(short.l) : null),
+            currentLocation: short.l ? expandCompactLocation(short.l) : null,
+            locationHistory: Array.isArray(short.lh) ? short.lh.map(expandCompactLocationHistoryItem).filter(Boolean) : [],
+            locationConfidence: short.lc || '',
+            landmark: short.lm || '',
+            floor: short.fl || '',
+            area: short.ar || '',
             sector: short.s || '',
             demos: short.d || '',
             allergies: short.al || '',
@@ -159,9 +174,10 @@
             if (incoming.evacVehicle) out.evacVehicle = incoming.evacVehicle;
             if (incoming.evacuated) out.evacuated = true;
             if (incoming.highRisk) out.highRisk = true;
-            if (incoming.location) out.location = incoming.location;
             if (incoming.tool && !out.tool) out.tool = incoming.tool;
         }
+        // Always preserve incoming location history, even when the incoming clinical record is older.
+        mergeLocationFieldsInto(out, incoming, { preferIncoming: incomingNewer, user: meta && meta.sender, reason: incomingNewer ? 'import-merge' : 'import-history' });
         if (incoming.notes) {
             const tag = ` [Imported from ${meta && meta.sender ? meta.sender : (incoming.triager || 'Unknown')}: ${incoming.notes}]`;
             if (!(out.notes || '').includes(tag)) out.notes = (out.notes || '') + tag;
@@ -327,7 +343,7 @@
     const ALL_TRANSFER_SCHEMA_VERSION = 1;
     const ALL_QR_CHUNK_SOFT_LIMIT = 1200;
     const ALL_PATIENT_FIELD_ORDER = [
-        'id','time','timestamp','tool','category','action','reason','triager','location','sector',
+        'id','time','timestamp','tool','category','action','reason','triager','location','initialLocation','currentLocation','locationHistory','locationConfidence','sector','landmark','floor','area',
         'demos','allergies','notes','highRisk','interventions','evacuated','evacDest','evacVehicle',
         'injuries','lastReassessed','reassessOutcome','lastDeteriorationAt','handoverState','handoverAt','handoverTo','_rev'
     ];
@@ -337,22 +353,231 @@
         try { return JSON.parse(JSON.stringify(value)); } catch (_) { return null; }
     }
 
-    function normaliseLocation(location) {
+    function _numOrNull(v) {
+        if (v === undefined || v === null || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    }
+    function _roundCoord(v) {
+        const n = _numOrNull(v);
+        return n === null ? null : Math.round(n * 1e7) / 1e7;
+    }
+    function _roundMetric(v) {
+        const n = _numOrNull(v);
+        return n === null ? null : Math.round(n * 10) / 10;
+    }
+    function _stringOrEmpty(v, max) {
+        if (v === undefined || v === null) return '';
+        return String(v).trim().slice(0, max || 80);
+    }
+    function normaliseLocation(location, opts) {
+        opts = opts || {};
         if (!location || typeof location !== 'object') return null;
+        const lat = _roundCoord(location.lat !== undefined ? location.lat : location.latitude);
+        const lng = _roundCoord(location.lng !== undefined ? location.lng : (location.lon !== undefined ? location.lon : location.longitude));
         const out = {};
-        if (location.lat !== undefined && location.lat !== null && location.lat !== '') out.lat = location.lat;
-        if (location.lng !== undefined && location.lng !== null && location.lng !== '') out.lng = location.lng;
-        if (location.acc !== undefined && location.acc !== null && location.acc !== '') out.acc = location.acc;
+        if (lat !== null) out.lat = lat.toFixed(7);
+        if (lng !== null) out.lng = lng.toFixed(7);
+        const accuracy = _roundMetric(location.accuracy !== undefined ? location.accuracy : location.acc);
+        if (accuracy !== null) { out.accuracy = accuracy; out.acc = accuracy; }
+        const altitude = _roundMetric(location.altitude);
+        if (altitude !== null) out.altitude = altitude;
+        const altitudeAccuracy = _roundMetric(location.altitudeAccuracy);
+        if (altitudeAccuracy !== null) out.altitudeAccuracy = altitudeAccuracy;
+        const heading = _roundMetric(location.heading);
+        if (heading !== null) out.heading = heading;
+        const speed = _roundMetric(location.speed);
+        if (speed !== null) out.speed = speed;
+        const ts = _numOrNull(location.timestamp !== undefined ? location.timestamp : opts.timestamp);
+        if (ts !== null) out.timestamp = ts;
+        const source = _stringOrEmpty(location.source || opts.source || '', 40);
+        if (source) out.source = source;
+        const age = _roundMetric(location.age !== undefined ? location.age : (out.timestamp ? ((opts.now || Date.now()) - out.timestamp) : null));
+        if (age !== null && age >= 0) out.age = age;
+        const confidence = _stringOrEmpty(location.confidence || opts.confidence || '', 40);
+        if (confidence) out.confidence = confidence;
+        const sector = _stringOrEmpty(location.sector || opts.sector || '', 80);
+        if (sector) out.sector = sector;
+        const landmark = _stringOrEmpty(location.landmark || opts.landmark || '', 80);
+        if (landmark) out.landmark = landmark;
+        const floor = _stringOrEmpty(location.floor || opts.floor || '', 40);
+        if (floor) out.floor = floor;
+        const area = _stringOrEmpty(location.area || opts.area || '', 80);
+        if (area) out.area = area;
         return Object.keys(out).length ? out : null;
+    }
+    function compactLocation(loc) {
+        const n = normaliseLocation(loc);
+        if (!n) return null;
+        const out = {};
+        if (n.lat !== undefined) out.lt = n.lat;
+        if (n.lng !== undefined) out.lg = n.lng;
+        if (n.acc !== undefined) out.ac = n.acc;
+        if (n.altitude !== undefined) out.al = n.altitude;
+        if (n.altitudeAccuracy !== undefined) out.aa = n.altitudeAccuracy;
+        if (n.heading !== undefined) out.hd = n.heading;
+        if (n.speed !== undefined) out.sp = n.speed;
+        if (n.timestamp !== undefined) out.ts = n.timestamp;
+        if (n.source) out.so = n.source;
+        if (n.age !== undefined) out.ag = n.age;
+        if (n.confidence) out.cf = n.confidence;
+        if (n.sector) out.sc = n.sector;
+        if (n.landmark) out.lm = n.landmark;
+        if (n.floor) out.fl = n.floor;
+        if (n.area) out.ar = n.area;
+        return out;
+    }
+    function expandCompactLocation(c) {
+        if (!c || typeof c !== 'object') return null;
+        return normaliseLocation({
+            lat: c.lt !== undefined ? c.lt : c.lat,
+            lng: c.lg !== undefined ? c.lg : c.lng,
+            accuracy: c.ac !== undefined ? c.ac : c.accuracy,
+            altitude: c.al !== undefined ? c.al : c.altitude,
+            altitudeAccuracy: c.aa !== undefined ? c.aa : c.altitudeAccuracy,
+            heading: c.hd !== undefined ? c.hd : c.heading,
+            speed: c.sp !== undefined ? c.sp : c.speed,
+            timestamp: c.ts !== undefined ? c.ts : c.timestamp,
+            source: c.so !== undefined ? c.so : c.source,
+            age: c.ag !== undefined ? c.ag : c.age,
+            confidence: c.cf !== undefined ? c.cf : c.confidence,
+            sector: c.sc !== undefined ? c.sc : c.sector,
+            landmark: c.lm !== undefined ? c.lm : c.landmark,
+            floor: c.fl !== undefined ? c.fl : c.floor,
+            area: c.ar !== undefined ? c.ar : c.area,
+        });
+    }
+    function compactLocationHistoryItem(item) {
+        if (!item || typeof item !== 'object') return null;
+        const loc = compactLocation(item.location || item);
+        const out = loc || {};
+        if (item.at || item.timestamp) out.at = item.at || item.timestamp;
+        if (item.user || item.triager) out.usr = _stringOrEmpty(item.user || item.triager, 60);
+        if (item.reason || item.action) out.rs = _stringOrEmpty(item.reason || item.action, 80);
+        if (item.action) out.act = _stringOrEmpty(item.action, 80);
+        return Object.keys(out).length ? out : null;
+    }
+    function expandCompactLocationHistoryItem(item) {
+        if (!item || typeof item !== 'object') return null;
+        const loc = expandCompactLocation(item);
+        const out = Object.assign({}, loc || {});
+        if (item.at) out.at = item.at;
+        if (item.usr) out.user = item.usr;
+        if (item.rs) out.reason = item.rs;
+        if (item.act) out.action = item.act;
+        return out;
+    }
+    function selectBestLocationFix(fixes) {
+        if (!Array.isArray(fixes) || !fixes.length) return null;
+        let best = null;
+        for (const f of fixes) {
+            const n = normaliseLocation(f);
+            if (!n || n.lat === undefined || n.lng === undefined) continue;
+            if (!best) { best = n; continue; }
+            const ba = _numOrNull(best.acc);
+            const na = _numOrNull(n.acc);
+            if (ba === null || (na !== null && na < ba)) best = n;
+        }
+        return best;
+    }
+    function classifyLocationAccuracy(acc) {
+        const n = _numOrNull(acc);
+        if (n === null) return { level:'unknown', label:'Unknown', warning:true, className:'unknown' };
+        if (n <= 10) return { level:'exact', label:'GPS exact', warning:false, className:'good' };
+        if (n <= 25) return { level:'approximate', label:'GPS approximate', warning:false, className:'ok' };
+        if (n <= 50) return { level:'poor', label:'Poor GPS', warning:true, className:'warn' };
+        return { level:'very-poor', label:'Very poor GPS', warning:true, className:'bad' };
+    }
+    function formatLocationAge(timestamp, now) {
+        const ts = _numOrNull(timestamp);
+        if (ts === null) return 'unknown age';
+        const diff = Math.max(0, (now || Date.now()) - ts);
+        if (diff < 60 * 1000) return 'just now';
+        const mins = Math.round(diff / 60000);
+        if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+        const hrs = Math.round(mins / 60);
+        if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+        const days = Math.round(hrs / 24);
+        return `${days} day${days === 1 ? '' : 's'} ago`;
+    }
+    function locationHistoryKey(item) {
+        const loc = normaliseLocation(item.location || item) || {};
+        return [item.at || item.timestamp || loc.timestamp || '', loc.lat || '', loc.lng || '', loc.acc || '', item.reason || item.action || '', item.user || item.triager || ''].join('|');
+    }
+    function appendLocationHistory(entry, location, meta) {
+        meta = meta || {};
+        const out = Object.assign({}, entry || {});
+        const loc = normaliseLocation(location, { source: meta.source, confidence: meta.confidence, sector: meta.sector, landmark: meta.landmark, floor: meta.floor, area: meta.area });
+        if (!loc) return out;
+        const at = meta.at || loc.timestamp || Date.now();
+        const item = Object.assign({}, loc, {
+            at,
+            user: meta.user || out.triager || '',
+            source: loc.source || meta.source || '',
+            reason: meta.reason || meta.action || 'location-update',
+            action: meta.action || meta.reason || 'location-update',
+            confidence: meta.confidence || loc.confidence || out.locationConfidence || '',
+            sector: meta.sector !== undefined ? meta.sector : (loc.sector || out.sector || ''),
+            landmark: meta.landmark !== undefined ? meta.landmark : (loc.landmark || out.landmark || ''),
+            floor: meta.floor !== undefined ? meta.floor : (loc.floor || out.floor || ''),
+            area: meta.area !== undefined ? meta.area : (loc.area || out.area || ''),
+        });
+        out.locationHistory = mergeLocationHistory(out.locationHistory || [], [item]);
+        if (!out.initialLocation) out.initialLocation = normaliseLocation(item);
+        out.currentLocation = normaliseLocation(item);
+        out.location = out.currentLocation;
+        if (item.confidence) out.locationConfidence = item.confidence;
+        if (item.sector) out.sector = item.sector;
+        if (item.landmark) out.landmark = item.landmark;
+        if (item.floor) out.floor = item.floor;
+        if (item.area) out.area = item.area;
+        return out;
+    }
+    function mergeLocationHistory(a, b) {
+        const out = [];
+        const seen = new Set();
+        for (const item of ([]).concat(a || [], b || [])) {
+            const loc = normaliseLocation(item.location || item);
+            if (!loc && !item) continue;
+            const merged = Object.assign({}, loc || {}, item || {});
+            const k = locationHistoryKey(merged);
+            if (!seen.has(k)) { seen.add(k); out.push(merged); }
+        }
+        out.sort((x,y) => ((x.at || x.timestamp || 0) - (y.at || y.timestamp || 0)));
+        return out;
+    }
+    function mergeLocationFieldsInto(out, incoming, meta) {
+        meta = meta || {};
+        const incHist = Array.isArray(incoming.locationHistory) ? incoming.locationHistory : [];
+        out.locationHistory = mergeLocationHistory(out.locationHistory || [], incHist);
+        if (!out.initialLocation) out.initialLocation = normaliseLocation(incoming.initialLocation || incoming.location || incoming.currentLocation);
+        else if (incoming.initialLocation) out.locationHistory = mergeLocationHistory(out.locationHistory, [Object.assign({ reason:'incoming-initial-location' }, incoming.initialLocation)]);
+        const incCurrent = normaliseLocation(incoming.currentLocation || incoming.location);
+        if (incCurrent && meta.preferIncoming) {
+            const updated = appendLocationHistory(out, incCurrent, {
+                user: meta.user || incoming.triager || '', source: incCurrent.source || 'import', reason: meta.reason || 'import-location',
+                confidence: incoming.locationConfidence || incCurrent.confidence || '', sector: incoming.sector, landmark: incoming.landmark, floor: incoming.floor, area: incoming.area,
+            });
+            Object.assign(out, updated);
+        }
+        if (incoming.locationConfidence && (meta.preferIncoming || !out.locationConfidence)) out.locationConfidence = incoming.locationConfidence;
+        if (incoming.landmark && (meta.preferIncoming || !out.landmark)) out.landmark = incoming.landmark;
+        if (incoming.floor && (meta.preferIncoming || !out.floor)) out.floor = incoming.floor;
+        if (incoming.area && (meta.preferIncoming || !out.area)) out.area = incoming.area;
+        if (out.currentLocation) out.location = out.currentLocation;
+        return out;
     }
 
     function clonePatientRecord(entry) {
         const src = entry || {};
         const out = {};
         ALL_PATIENT_FIELD_ORDER.forEach(k => {
-            if (k === 'location') {
-                const loc = normaliseLocation(src.location);
-                if (loc) out.location = loc;
+            if (k === 'location' || k === 'initialLocation' || k === 'currentLocation') {
+                const loc = normaliseLocation(src[k]);
+                if (loc) out[k] = loc;
+            } else if (k === 'locationHistory') {
+                const hist = mergeLocationHistory([], src.locationHistory || []);
+                if (hist.length) out.locationHistory = hist;
             } else if (Object.prototype.hasOwnProperty.call(src, k) && src[k] !== undefined) {
                 out[k] = jsonClone(src[k]);
             }
@@ -363,6 +588,10 @@
                 out[k] = jsonClone(src[k]);
             }
         });
+        if (!out.currentLocation && out.location) out.currentLocation = normaliseLocation(out.location);
+        if (!out.location && out.currentLocation) out.location = normaliseLocation(out.currentLocation);
+        if (!out.initialLocation && out.currentLocation) out.initialLocation = normaliseLocation(out.currentLocation);
+        if (!Array.isArray(out.locationHistory)) out.locationHistory = [];
         if (!out.id && src.i) out.id = src.i;
         if (!out.category && src.c) out.category = src.c;
         return out;
@@ -543,7 +772,8 @@
     // Returns a 0..1 similarity score for two records using ID, demographics,
     // sector, category, time-of-triage and GPS proximity. Never returns 1.0
     // unless IDs match exactly; near-matches are surfaced for human review.
-    function _haversine(a, b) {
+    function distanceMeters(a, b) {
+        a = normaliseLocation(a); b = normaliseLocation(b);
         if (!a || !b || !a.lat || !b.lat) return null;
         const toRad = (d) => d * Math.PI / 180;
         const lat1 = parseFloat(a.lat), lng1 = parseFloat(a.lng);
@@ -568,10 +798,13 @@
             if (da && db && da === db) score += 0.30;
             else if (da && db && (da.includes(db) || db.includes(da))) score += 0.20;
         }
-        // Sector
-        if (a.sector || b.sector) {
-            used += 0.15;
-            if (a.sector && b.sector && a.sector === b.sector) score += 0.15;
+        // Operational location labels (sector/landmark/floor/area) when coordinates are absent or weak.
+        const labelA = [a.sector, a.landmark, a.floor, a.area].map(_normaliseDemos).filter(Boolean);
+        const labelB = [b.sector, b.landmark, b.floor, b.area].map(_normaliseDemos).filter(Boolean);
+        if (labelA.length || labelB.length) {
+            used += 0.20;
+            const overlap = labelA.filter(x => labelB.includes(x)).length;
+            if (overlap) score += Math.min(0.20, 0.10 + 0.05 * overlap);
         }
         // Category
         if (a.category && b.category) {
@@ -585,7 +818,7 @@
             if (dt < 10*60*1000) score += 0.15 * (1 - dt / (10*60*1000));
         }
         // GPS proximity (within 30m strong, 100m weak)
-        const dist = _haversine(a.location, b.location);
+        const dist = distanceMeters(a.currentLocation || a.location, b.currentLocation || b.location);
         if (dist !== null) {
             used += 0.30;
             if (dist < 30) score += 0.30;
@@ -674,6 +907,18 @@
         if (entry.lastReassessed) {
             events.push({ ts: entry.lastReassessed, kind: 'reassess', label: `Reassessed: ${entry.reassessOutcome || 'unchanged'}`, detail: '' });
         }
+        if (Array.isArray(entry.locationHistory)) {
+            for (const loc of entry.locationHistory) {
+                const parts = [];
+                if (loc.sector) parts.push(loc.sector);
+                if (loc.landmark) parts.push(loc.landmark);
+                if (loc.floor) parts.push(`Floor ${loc.floor}`);
+                if (loc.area) parts.push(loc.area);
+                if (loc.lat && loc.lng) parts.push(`${loc.lat}, ${loc.lng}${loc.acc ? ' ±' + loc.acc + 'm' : ''}`);
+                const conf = loc.confidence ? ` (${loc.confidence})` : '';
+                events.push({ ts: loc.at || loc.timestamp || 0, kind: 'location', label: `Location: ${loc.reason || loc.action || 'updated'}${conf}`, detail: parts.join(' • ') });
+            }
+        }
         if (Array.isArray(auditLog)) {
             for (const a of auditLog) {
                 if (!a || a.patientId !== entry.id) continue;
@@ -737,6 +982,8 @@
         clonePatientRecord, buildAllPatientsPayload, validateAllPatientsWrapper,
         buildAllPatientsChunks, validateAllPatientChunk, reassembleAllPatientChunks,
         buildAllPatientsTransfer, mergeAllPatientRecords,
+        normaliseLocation, compactLocation, expandCompactLocation, selectBestLocationFix, classifyLocationAccuracy,
+        formatLocationAge, appendLocationHistory, mergeLocationHistory, mergeLocationFieldsInto, distanceMeters,
         similarityScore, findDuplicateCandidates,
         nextReassessmentDue, reassessmentStatus, applyReassessment,
         categoryWorsened, buildPatientTimeline, shortCodeFromHash,

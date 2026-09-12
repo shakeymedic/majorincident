@@ -510,6 +510,22 @@
     }
 
     #patient-map { height: 50vh; width: 100%; border-radius: 8px; border: 2px solid #ccc; z-index: 1;}
+    .map-offline-note { display:none; background:#fff3cd; color:#664d03; border-left:6px solid #ffbf00; padding:0.8rem; border-radius:8px; margin:0.8rem 0; font-size:0.95rem; }
+    body.night-mode .map-offline-note { background:#3b3108; color:#ffe69c; }
+    .location-card { border:2px solid var(--nhs-blue); border-radius:12px; padding:1rem; margin:1rem 0; background:rgba(0,94,184,0.05); }
+    .location-card h3 { margin-top:0; color:var(--nhs-blue); }
+    body.night-mode .location-card { background:rgba(74,159,255,0.12); }
+    .location-status-card { border-radius:10px; padding:0.9rem; margin:0.8rem 0; border:2px solid #ccc; font-size:0.95rem; }
+    .location-status-card.good { border-color:var(--nhs-green); background:rgba(0,127,59,0.08); }
+    .location-status-card.ok { border-color:var(--nhs-blue); background:rgba(0,94,184,0.08); }
+    .location-status-card.warn, .location-status-card.bad { border-color:var(--nhs-red); background:rgba(218,41,28,0.08); }
+    .location-status-card.unknown { border-color:var(--nhs-grey); }
+    .location-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .location-grid .input-group { margin-bottom:0.7rem; }
+    .location-quick { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0.7rem 0; }
+    .location-quick .btn { margin-bottom:0; padding:0.85rem; font-size:0.95rem; }
+    .location-mini { font-size:0.85rem; color:var(--nhs-grey); margin-top:4px; line-height:1.35; }
+    @media (max-width: 520px) { .location-grid, .location-quick { grid-template-columns:1fr; } }
 
     /* SW update banner */
     #sw-update-banner {
@@ -588,6 +604,7 @@
     .timeline .tl-detail { font-size: 0.85rem; color: var(--nhs-grey); }
     .timeline li.kind-injury::before { background: var(--nhs-red); }
     .timeline li.kind-reassess::before { background: var(--nhs-green); }
+    .timeline li.kind-location::before { background: var(--nhs-blue); }
     .timeline li.kind-audit::before { background: var(--nhs-grey); }
 
     /* Step-by-step handover screen */
@@ -1191,8 +1208,10 @@
             <div id="action-box" class="clinical-note" style="font-size: 1.1rem; font-weight: bold; text-align: center; border-color: var(--nhs-red); color: var(--nhs-red);">
             </div>
             
-            <div style="text-align:center; font-size:0.9rem; margin-bottom:1rem;">
-                GPS: <span id="location-status-text">...</span>
+            <div id="result-location-summary" class="location-status-card unknown">
+                <strong>Location:</strong> <span id="location-status-text">Waiting for GPS / sector</span>
+                <div id="location-age-warning" class="location-mini"></div>
+                <button class="btn btn-secondary" style="margin:0.7rem 0 0 0; padding:0.85rem; font-size:0.95rem;" onclick="openLocationEditor()">Confirm / edit patient location</button>
             </div>
 
             <div style="display: flex; gap: 10px; margin-bottom: 15px;">
@@ -1255,12 +1274,61 @@
 
                 <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="openBodyMap()">👤 Mark Injury on Body Map</button>
                 
-                <div class="card">
-                    <div class="input-group">
-                        <label>Sector / Location</label>
-                        <input type="text" id="p-sector" placeholder="e.g. CCS, Inner Cordon" onblur="autoSave('Sector Update')">
+                <div class="location-card" id="location-editor">
+                    <h3>Patient Location</h3>
+                    <div id="location-editor-status" class="location-status-card unknown">Location not confirmed.</div>
+                    <div class="location-quick">
+                        <button class="btn btn-secondary" onclick="useCurrentGpsForPatient('Found at current location')">Use current GPS</button>
+                        <button class="btn btn-secondary" onclick="copyPatientCoordinates()">Copy lat/lon</button>
+                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('Found at current location')">Found here</button>
+                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('Moved to sector/area')">Moved to sector/area</button>
+                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('At CCS/loading area')">At CCS/loading area</button>
+                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('Loaded/evacuated/destination')">Loaded / evacuated</button>
                     </div>
+                    <div class="location-grid">
+                        <div class="input-group">
+                            <label>Sector / Zone</label>
+                            <input type="text" id="p-sector" placeholder="e.g. Warm Zone, CCS" onblur="autoSave('Location Update')">
+                        </div>
+                        <div class="input-group">
+                            <label>Treatment area / Landmark</label>
+                            <input type="text" id="p-landmark" placeholder="e.g. bus stop, triage sieve point" onblur="autoSave('Location Update')">
+                        </div>
+                        <div class="input-group">
+                            <label>Floor / Level</label>
+                            <input type="text" id="p-floor" placeholder="e.g. -1, ground, platform 2" onblur="autoSave('Location Update')">
+                        </div>
+                        <div class="input-group">
+                            <label>Area / Bay / Room / Entrance</label>
+                            <input type="text" id="p-area" placeholder="e.g. Bay 4, north entrance" onblur="autoSave('Location Update')">
+                        </div>
+                        <div class="input-group">
+                            <label>Confidence</label>
+                            <select id="p-location-confidence" onchange="autoSave('Location Confidence Update')">
+                                <option value="unknown">Unknown</option>
+                                <option value="gps-exact">GPS exact</option>
+                                <option value="gps-approximate">GPS approximate</option>
+                                <option value="manual-corrected">Manually corrected</option>
+                                <option value="sector-only">Sector only</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>Accuracy radius (m)</label>
+                            <input type="number" id="p-loc-acc" placeholder="e.g. 8" onblur="autoSave('Location Accuracy Update')">
+                        </div>
+                        <div class="input-group">
+                            <label>Latitude</label>
+                            <input type="number" step="0.000001" id="p-loc-lat" placeholder="Manual latitude" onblur="autoSave('Manual Coordinate Update')">
+                        </div>
+                        <div class="input-group">
+                            <label>Longitude</label>
+                            <input type="number" step="0.000001" id="p-loc-lng" placeholder="Manual longitude" onblur="autoSave('Manual Coordinate Update')">
+                        </div>
+                    </div>
+                    <p class="location-mini">Map imagery may be unavailable offline. Stored coordinates, accuracy, labels and history remain usable and are included in transfers.</p>
+                </div>
 
+                <div class="card">
                     <div class="input-group">
                         <label>Category Override</label>
                         <select id="p-cat-override" onchange="autoSave('Category Override')">
@@ -1328,6 +1396,7 @@
 
         <div id="map-screen" class="screen">
             <h2>Patient Locations</h2>
+            <div id="map-offline-note" class="map-offline-note">Map imagery may be unavailable offline. Stored coordinates, accuracy radius and location labels remain usable and transferable.</div>
             <div id="patient-map"></div>
             <div style="padding: 1rem 0; display: flex; gap: 10px;">
                 <button class="btn btn-secondary" style="flex: 1;" onclick="setCCSLocation()">📍 Set CCS Here</button>
@@ -1427,9 +1496,9 @@
 
 <script>
     // ---------- App version / build hash ----------
-    const APP_VERSION = '0.6.0';
-    const APP_BUILD = '2026-09-12-all-patient-transfer';
-    const QR_SCHEMA_VERSION = 2;
+    const APP_VERSION = '0.7.0';
+    const APP_BUILD = '2026-09-12-gps-accuracy';
+    const QR_SCHEMA_VERSION = 3;
     const QR_DEFAULT_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours; configurable
     const QR_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;  // tolerate small clock skew
     document.addEventListener('DOMContentLoaded', () => {
@@ -1556,6 +1625,9 @@
     
     let currentPosition = null; 
     let gpsAccuracy = null;
+    let gpsFixes = [];
+    let gpsAcquireStartedAt = null;
+    let gpsStatusText = 'GPS idle';
     let watchId = null;
     let html5QrcodeScanner = null;
     let scanMode = null; 
@@ -1720,31 +1792,180 @@
     }
 
     function initGPS() {
-        if ("geolocation" in navigator) {
+        gpsAcquireStartedAt = Date.now();
+        gpsFixes = [];
+        gpsStatusText = 'Getting fix...';
+        updateGPSIndicator(false, 'Getting fix...');
+        if (!("geolocation" in navigator)) {
+            gpsStatusText = 'GPS unavailable';
+            updateGPSIndicator(false, 'GPS unavailable');
+            return;
+        }
+        try {
             watchId = navigator.geolocation.watchPosition(
                 (position) => {
-                    gpsAccuracy = Math.round(position.coords.accuracy);
-                    currentPosition = {
-                        lat: position.coords.latitude.toFixed(6),
-                        lng: position.coords.longitude.toFixed(6),
-                        acc: gpsAccuracy
-                    };
-                    updateGPSIndicator(true);
+                    const fix = MITTLib.normaliseLocation({
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        altitude: position.coords.altitude,
+                        altitudeAccuracy: position.coords.altitudeAccuracy,
+                        heading: position.coords.heading,
+                        speed: position.coords.speed,
+                        timestamp: position.timestamp,
+                        source: 'gps-watch'
+                    });
+                    if (!fix) return;
+                    gpsFixes.push(fix);
+                    if (gpsFixes.length > 12) gpsFixes.shift();
+                    const best = MITTLib.selectBestLocationFix(gpsFixes) || fix;
+                    currentPosition = best;
+                    gpsAccuracy = best.acc || best.accuracy || null;
+                    const cls = MITTLib.classifyLocationAccuracy(gpsAccuracy);
+                    gpsStatusText = `${cls.warning ? 'Poor fix' : (cls.level === 'exact' ? 'Good fix' : 'Getting fix')} ±${Math.round(gpsAccuracy || 0)}m`;
+                    updateGPSIndicator(true, gpsStatusText);
+                    try { refreshCurrentPatientLocationStatus(); } catch(e) {}
                 },
-                (error) => { updateGPSIndicator(false); },
-                { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
+                (error) => {
+                    gpsStatusText = error && error.message ? `GPS unavailable: ${error.message}` : 'GPS unavailable';
+                    updateGPSIndicator(false, gpsStatusText);
+                    try { refreshCurrentPatientLocationStatus(); } catch(e) {}
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
             );
-        } else { document.getElementById('gps-indicator').innerText = "GPS Error"; }
+        } catch (e) {
+            gpsStatusText = 'GPS unavailable';
+            updateGPSIndicator(false, gpsStatusText);
+        }
     }
 
-    function updateGPSIndicator(isActive) {
+    function updateGPSIndicator(isActive, status) {
         const el = document.getElementById('gps-indicator');
+        if (!el) return;
         if (isActive) {
-            el.innerText = `GPS: ±${gpsAccuracy}m`;
-            el.className = "gps-status gps-active";
+            const cls = MITTLib.classifyLocationAccuracy(gpsAccuracy);
+            el.innerText = `GPS: ${status || ('±' + gpsAccuracy + 'm')}`;
+            el.className = "gps-status " + (cls.warning ? "gps-inactive" : "gps-active");
         } else {
-            el.innerText = "GPS: No Signal";
+            el.innerText = `GPS: ${status || 'No Signal'}`;
             el.className = "gps-status gps-inactive";
+        }
+    }
+
+    function locationForEntry(entry) {
+        return (entry && (entry.currentLocation || entry.location)) || null;
+    }
+    function locationLabel(entry) {
+        if (!entry) return 'Unknown';
+        const loc = locationForEntry(entry);
+        const parts = [];
+        if (entry.sector) parts.push(entry.sector);
+        if (entry.landmark) parts.push(entry.landmark);
+        if (entry.floor) parts.push(`Floor ${entry.floor}`);
+        if (entry.area) parts.push(entry.area);
+        if (loc && loc.lat && loc.lng) parts.push(`${loc.lat}, ${loc.lng}${loc.acc ? ' ±' + loc.acc + 'm' : ''}`);
+        const conf = entry.locationConfidence || (loc && loc.confidence) || (loc ? (MITTLib.classifyLocationAccuracy(loc.acc).level === 'exact' ? 'gps-exact' : 'gps-approximate') : 'unknown');
+        return `${parts.join(' • ') || 'No coordinates or operational label'} (${conf.replace(/-/g, ' ')})`;
+    }
+    function refreshCurrentPatientLocationStatus() {
+        if (currentLogIndex < 0) return;
+        const entry = incidentLog[currentLogIndex];
+        const loc = locationForEntry(entry);
+        const card = document.getElementById('result-location-summary');
+        const locText = document.getElementById('location-status-text');
+        const age = document.getElementById('location-age-warning');
+        const editorStatus = document.getElementById('location-editor-status');
+        const cls = MITTLib.classifyLocationAccuracy(loc && (loc.acc || loc.accuracy));
+        if (card) card.className = 'location-status-card ' + cls.className;
+        const text = locationLabel(entry);
+        if (locText) locText.textContent = text;
+        const ageText = loc && loc.timestamp ? `Recorded ${MITTLib.formatLocationAge(loc.timestamp)}.` : 'No GPS timestamp stored.';
+        const warning = cls.warning ? ' Accuracy is poor — confirm sector/landmark or manually correct coordinates.' : '';
+        if (age) age.textContent = `${ageText}${warning}`;
+        if (editorStatus) editorStatus.textContent = `${text}. ${ageText}${warning}`;
+    }
+    function openLocationEditor() {
+        const c = document.getElementById('details-container');
+        if (c && !c.classList.contains('show')) toggleDetails();
+        setTimeout(() => { const el = document.getElementById('location-editor'); if (el) el.scrollIntoView({ behavior:'smooth', block:'start' }); }, 50);
+    }
+    function readLocationForm(entry, reason) {
+        const lat = document.getElementById('p-loc-lat') ? document.getElementById('p-loc-lat').value : '';
+        const lng = document.getElementById('p-loc-lng') ? document.getElementById('p-loc-lng').value : '';
+        const acc = document.getElementById('p-loc-acc') ? document.getElementById('p-loc-acc').value : '';
+        const sector = document.getElementById('p-sector') ? document.getElementById('p-sector').value.trim() : '';
+        const landmark = document.getElementById('p-landmark') ? document.getElementById('p-landmark').value.trim() : '';
+        const floor = document.getElementById('p-floor') ? document.getElementById('p-floor').value.trim() : '';
+        const area = document.getElementById('p-area') ? document.getElementById('p-area').value.trim() : '';
+        const confidence = document.getElementById('p-location-confidence') ? document.getElementById('p-location-confidence').value : 'unknown';
+        const hasCoords = lat !== '' && lng !== '';
+        const base = hasCoords ? { lat, lng, accuracy: acc, timestamp: Date.now(), source: reason && reason.includes('Manual') ? 'manual' : 'operator' } : (entry.currentLocation || entry.location || {});
+        return MITTLib.normaliseLocation(Object.assign({}, base, { accuracy: acc || base.acc || base.accuracy, confidence, sector, landmark, floor, area }), { source: base.source || 'operator', confidence, sector, landmark, floor, area });
+    }
+    function applyLocationFormToEntry(entry, reason) {
+        const before = JSON.stringify({ loc: entry.currentLocation || entry.location || null, sector: entry.sector || '', landmark: entry.landmark || '', floor: entry.floor || '', area: entry.area || '', confidence: entry.locationConfidence || '' });
+        const confidenceEl = document.getElementById('p-location-confidence');
+        entry.sector = document.getElementById('p-sector') ? document.getElementById('p-sector').value.trim() : (entry.sector || '');
+        entry.landmark = document.getElementById('p-landmark') ? document.getElementById('p-landmark').value.trim() : (entry.landmark || '');
+        entry.floor = document.getElementById('p-floor') ? document.getElementById('p-floor').value.trim() : (entry.floor || '');
+        entry.area = document.getElementById('p-area') ? document.getElementById('p-area').value.trim() : (entry.area || '');
+        entry.locationConfidence = confidenceEl ? confidenceEl.value : (entry.locationConfidence || 'unknown');
+        const loc = readLocationForm(entry, reason);
+        if (loc && loc.lat && loc.lng) {
+            const updated = MITTLib.appendLocationHistory(entry, loc, { user: triagerName, reason, source: loc.source || 'manual', confidence: entry.locationConfidence, sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area });
+            Object.assign(entry, updated);
+        } else if (entry.sector || entry.landmark || entry.floor || entry.area || entry.locationConfidence) {
+            const updated = MITTLib.appendLocationHistory(entry, { timestamp: Date.now(), source: 'operator-label', confidence: entry.locationConfidence, sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area }, { user: triagerName, reason, source: 'operator-label', confidence: entry.locationConfidence, sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area });
+            Object.assign(entry, updated);
+        }
+        const after = JSON.stringify({ loc: entry.currentLocation || entry.location || null, sector: entry.sector || '', landmark: entry.landmark || '', floor: entry.floor || '', area: entry.area || '', confidence: entry.locationConfidence || '' });
+        if (before !== after) logAudit('LOCATION_UPDATE', entry.id, `${reason}: ${locationLabel(entry)}`, getClinicalTimestamp());
+        refreshCurrentPatientLocationStatus();
+    }
+    function useCurrentGpsForPatient(reason) {
+        if (currentLogIndex < 0) return;
+        if (!currentPosition) { showToast('No GPS fix yet — enter sector/landmark manually.', { alert:true }); return; }
+        const entry = incidentLog[currentLogIndex];
+        const cls = MITTLib.classifyLocationAccuracy(currentPosition.acc);
+        entry.locationConfidence = cls.warning ? 'gps-approximate' : 'gps-exact';
+        const updated = MITTLib.appendLocationHistory(entry, currentPosition, { user: triagerName, reason: reason || 'Use current GPS', source: 'gps-watch', confidence: entry.locationConfidence, sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area });
+        Object.assign(entry, updated);
+        entry._rev = (entry._rev || 0) + 1;
+        saveState();
+        renderResultScreen(entry);
+        openLocationEditor();
+        if (cls.warning) showToast('GPS accuracy is poor — confirm sector/landmark or correct coordinates.', { alert:true });
+        else showToast('Patient location updated from GPS.');
+    }
+    function applyLocationQuickAction(action) {
+        if (currentLogIndex < 0) return;
+        const entry = incidentLog[currentLogIndex];
+        if (action === 'At CCS/loading area') {
+            const sectorEl = document.getElementById('p-sector');
+            const areaEl = document.getElementById('p-area');
+            if (sectorEl && !sectorEl.value) sectorEl.value = 'CCS / Loading area';
+            if (areaEl && !areaEl.value) areaEl.value = 'Loading area';
+        }
+        if (action === 'Loaded/evacuated/destination') {
+            entry.evacuated = true;
+            if (!entry.evacDest) entry.evacDest = document.getElementById('p-evac-dest').value || 'Destination pending';
+        }
+        applyLocationFormToEntry(entry, action);
+        entry._rev = (entry._rev || 0) + 1;
+        saveState();
+        renderResultScreen(entry);
+        openLocationEditor();
+        showToast(action + ' recorded.');
+    }
+    function copyPatientCoordinates() {
+        if (currentLogIndex < 0) return;
+        const loc = locationForEntry(incidentLog[currentLogIndex]);
+        if (!loc || !loc.lat || !loc.lng) { showToast('No coordinates to copy.'); return; }
+        const text = `${loc.lat}, ${loc.lng}${loc.acc ? ' ±' + loc.acc + 'm' : ''}`;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => showToast('Coordinates copied.')).catch(() => showToast(text));
+        } else {
+            showToast(text);
         }
     }
 
@@ -2194,7 +2415,14 @@
                 reason: reason,
                 triager: triagerName,
                 location: currentPosition, 
+                initialLocation: currentPosition ? MITTLib.normaliseLocation(currentPosition, { source: 'gps-watch', sector: currentSector }) : null,
+                currentLocation: currentPosition ? MITTLib.normaliseLocation(currentPosition, { source: 'gps-watch', sector: currentSector }) : null,
+                locationHistory: [],
+                locationConfidence: currentPosition ? (MITTLib.classifyLocationAccuracy(currentPosition.acc).warning ? 'gps-approximate' : 'gps-exact') : (currentSector ? 'sector-only' : 'unknown'),
                 sector: currentSector, 
+                landmark: '',
+                floor: '',
+                area: '',
                 demos: "", 
                 allergies: "", 
                 notes: "", 
@@ -2205,6 +2433,13 @@
                 evacVehicle: ""
         };
 
+        if (entry.currentLocation) {
+            const locStamped = MITTLib.appendLocationHistory(entry, entry.currentLocation, { user: triagerName, source: 'gps-watch', reason: 'initial capture', confidence: entry.locationConfidence, sector: entry.sector });
+            Object.assign(entry, locStamped);
+        } else if (entry.sector) {
+            const locStamped = MITTLib.appendLocationHistory(entry, { timestamp, source: 'sector-label', confidence: 'sector-only', sector: entry.sector }, { user: triagerName, reason: 'initial sector label', source: 'sector-label', confidence: 'sector-only', sector: entry.sector });
+            Object.assign(entry, locStamped);
+        }
         incidentLog.push(entry);
         currentLogIndex = incidentLog.length - 1; 
         
@@ -2264,22 +2499,21 @@
             promptBox.style.display = 'none';
         }
         
-        const locText = document.getElementById('location-status-text');
-        let displayLoc = currentSector ? `Sec: ${currentSector}` : "";
-        if(currentPosition) {
-            displayLoc += (displayLoc ? " | " : "") + `${currentPosition.lat}, ${currentPosition.lng}`;
-            locText.style.color = "var(--nhs-green)";
-        } else {
-            if(!displayLoc) { displayLoc = "No GPS / Sector"; locText.style.color = "var(--nhs-red)"; }
-            else { locText.style.color = "var(--nhs-blue)"; }
-        }
-        locText.textContent = displayLoc;
+        refreshCurrentPatientLocationStatus();
         
         document.getElementById('p-cat-override').value = entry.category;
         document.getElementById('p-demos').value = entry.demos;
         document.getElementById('p-allergies').value = entry.allergies;
         document.getElementById('p-notes').value = entry.notes;
-        document.getElementById('p-sector').value = entry.sector;
+        document.getElementById('p-sector').value = entry.sector || '';
+        if (document.getElementById('p-landmark')) document.getElementById('p-landmark').value = entry.landmark || '';
+        if (document.getElementById('p-floor')) document.getElementById('p-floor').value = entry.floor || '';
+        if (document.getElementById('p-area')) document.getElementById('p-area').value = entry.area || '';
+        const loc = locationForEntry(entry);
+        if (document.getElementById('p-loc-lat')) document.getElementById('p-loc-lat').value = loc && loc.lat ? loc.lat : '';
+        if (document.getElementById('p-loc-lng')) document.getElementById('p-loc-lng').value = loc && loc.lng ? loc.lng : '';
+        if (document.getElementById('p-loc-acc')) document.getElementById('p-loc-acc').value = loc && loc.acc ? loc.acc : '';
+        if (document.getElementById('p-location-confidence')) document.getElementById('p-location-confidence').value = entry.locationConfidence || (loc ? 'gps-approximate' : 'unknown');
         document.getElementById('risk-check').checked = entry.highRisk;
         document.getElementById('p-evac-vehicle').value = entry.evacVehicle || "";
         document.getElementById('p-evac-dest').value = entry.evacDest || "";
@@ -3009,6 +3243,8 @@
                 appendRow(content, 'High Risk', hr);
             }
             if (d.sector) appendRow(content, 'Sector', d.sector);
+            if (d.landmark || d.floor || d.area || d.locationConfidence || d.currentLocation || d.location) appendRow(content, 'Location', locationLabel(d));
+            if (Array.isArray(d.locationHistory) && d.locationHistory.length) appendRow(content, 'Location history', `${d.locationHistory.length} update${d.locationHistory.length === 1 ? '' : 's'}`);
             if (d.evacuated || d.evacDest || d.evacVehicle) {
                 const status = (d.evacuated ? 'EVACUATED' : 'On Scene') + (d.evacDest ? ` → ${d.evacDest}` : '') + (d.evacVehicle ? ` (${d.evacVehicle})` : '');
                 appendRow(content, 'Evacuation', status);
@@ -3246,7 +3482,11 @@
             entry.highRisk = document.getElementById('risk-check').checked;
             entry.evacVehicle = document.getElementById('p-evac-vehicle').value;
             entry.evacDest = document.getElementById('p-evac-dest').value;
-            entry.sector = document.getElementById('p-sector').value;
+            if (/Location|Coordinate|Sector|Confidence|Accuracy/i.test(reason)) {
+                applyLocationFormToEntry(entry, reason);
+            } else if (document.getElementById('p-sector')) {
+                entry.sector = document.getElementById('p-sector').value;
+            }
             entry._rev = (entry._rev || 0) + 1;
             
             const tag = document.getElementById('result-tag');
@@ -3452,8 +3692,13 @@
 
             const tdLoc = document.createElement('td'); tdLoc.style.fontSize = '0.75rem';
             let locText = '';
+            const rowLoc = locationForEntry(row);
             if (row.sector) locText += `[${row.sector}] `;
-            if (row.location) locText += `${row.location.lat}, ${row.location.lng}`;
+            if (row.landmark) locText += `${row.landmark} `;
+            if (row.floor) locText += `L${row.floor} `;
+            if (row.area) locText += `${row.area} `;
+            if (rowLoc && rowLoc.lat && rowLoc.lng) locText += `${rowLoc.lat}, ${rowLoc.lng}${rowLoc.acc ? ' ±'+rowLoc.acc+'m' : ''}`;
+            if (rowLoc && rowLoc.timestamp) locText += ` (${MITTLib.formatLocationAge(rowLoc.timestamp)})`;
             tdLoc.textContent = locText || '-';
             tr.appendChild(tdLoc);
 
@@ -3521,7 +3766,7 @@
             showToast("Awaiting GPS lock to set CCS.");
             return;
         }
-        cachedCcsLocation = { lat: currentPosition.lat, lng: currentPosition.lng };
+        cachedCcsLocation = MITTLib.normaliseLocation(currentPosition);
         saveState();
         showToast("CCS Location Saved to Map.");
         showMap(); 
@@ -3531,10 +3776,11 @@
         showScreen('map-screen');
         if (!patientMap) {
             patientMap = L.map('patient-map').setView([54.0, -2.0], 6);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '© OpenStreetMap'
             }).addTo(patientMap);
+            tileLayer.on('tileerror', () => { const n = document.getElementById('map-offline-note'); if (n) n.style.display = 'block'; });
             
             mapMarkerCluster = L.markerClusterGroup({
                 maxClusterRadius: 40,
@@ -3555,9 +3801,10 @@
         let bounds = [];
 
         Object.values(unique).forEach(patient => {
-            if (patient.location && patient.location.lat && patient.location.lng) {
-                const lat = parseFloat(patient.location.lat);
-                const lng = parseFloat(patient.location.lng);
+            const patientLoc = locationForEntry(patient);
+            if (patientLoc && patientLoc.lat && patientLoc.lng) {
+                const lat = parseFloat(patientLoc.lat);
+                const lng = parseFloat(patientLoc.lng);
                 
                 let markerColor = '#005EB8'; 
                 if (patient.category === 'P1') markerColor = '#DA291C'; 
@@ -3570,7 +3817,7 @@
 
                 const marker = L.marker([lat, lng], { icon: customIcon });
 
-                marker.bindPopup(`<b>${escapeHTML(patient.id)}</b><br>Category: ${escapeHTML(patient.category)}<br>${escapeHTML(patient.notes || '')}`);
+                marker.bindPopup(`<b>${escapeHTML(patient.id)}</b><br>Category: ${escapeHTML(patient.category)}<br>${escapeHTML(locationLabel(patient))}<br>${escapeHTML(patient.notes || '')}`);
                 mapMarkerCluster.addLayer(marker);
                 bounds.push([lat, lng]);
             }
@@ -3609,7 +3856,7 @@
                 csv += `METHANE REPORT (Latest)\n`;
                 csv += `M,${escapeCSV(m.m)}\nE,${escapeCSV(m.e)}\nT,${escapeCSV(m.t)}\nH,${escapeCSV(m.h)}\nA,${escapeCSV(m.a)}\nN,${escapeCSV(m.n)}\nE,${escapeCSV(m.e_svc)}\n\n`;
             }
-            csv += "LogID,Date,Time,Tool,Triager,Sector,Lat,Lng,GPS_Accuracy,Category,Reason,Action,Age_Gender,Allergies,Clinical_Notes,Interventions,High_Risk_Flag,Evacuation_Status,Dest,Vehicle\n";
+            csv += "LogID,Date,Time,Tool,Triager,Sector,Landmark,Floor,Area,Location_Confidence,Lat,Lng,GPS_Accuracy,Altitude,Altitude_Accuracy,Heading,Speed,Location_Timestamp,Location_Age,Location_History_Count,Category,Reason,Action,Age_Gender,Allergies,Clinical_Notes,Interventions,High_Risk_Flag,Evacuation_Status,Dest,Vehicle\n";
             
             const unique = {};
             incidentLog.forEach(e => {
@@ -3620,9 +3867,17 @@
             
             Object.values(unique).forEach(r => {
                 const dateStr = new Date(r.timestamp).toLocaleDateString();
-                const lat = r.location ? r.location.lat : "";
-                const lng = r.location ? r.location.lng : "";
-                const acc = r.location ? r.location.acc : "";
+                const loc = locationForEntry(r) || {};
+                const lat = loc.lat || "";
+                const lng = loc.lng || "";
+                const acc = loc.acc || loc.accuracy || "";
+                const alt = loc.altitude || "";
+                const altAcc = loc.altitudeAccuracy || "";
+                const heading = loc.heading || "";
+                const speed = loc.speed || "";
+                const locTs = loc.timestamp ? new Date(loc.timestamp).toISOString() : "";
+                const locAge = loc.timestamp ? MITTLib.formatLocationAge(loc.timestamp) : "";
+                const histCount = Array.isArray(r.locationHistory) ? r.locationHistory.length : 0;
                 const sec = r.sector || "";
                 
                 let intStr = "";
@@ -3633,17 +3888,19 @@
                 const highRiskStr = r.highRisk ? "YES" : "NO";
                 const evacStr = r.evacuated ? "EVACUATED" : "ON SCENE";
 
-                csv += `${escapeCSV(r.id)},${escapeCSV(dateStr)},${escapeCSV(r.time)},${escapeCSV(r.tool)},${escapeCSV(r.triager)},${escapeCSV(sec)},${lat},${lng},${acc},${escapeCSV(r.category)},${escapeCSV(r.reason)},${escapeCSV(r.action)},${escapeCSV(r.demos)},${escapeCSV(r.allergies)},${escapeCSV(r.notes)},${escapeCSV(intStr)},${highRiskStr},${evacStr},${escapeCSV(r.evacDest)},${escapeCSV(r.evacVehicle)}\n`;
+                csv += `${escapeCSV(r.id)},${escapeCSV(dateStr)},${escapeCSV(r.time)},${escapeCSV(r.tool)},${escapeCSV(r.triager)},${escapeCSV(sec)},${escapeCSV(r.landmark)},${escapeCSV(r.floor)},${escapeCSV(r.area)},${escapeCSV(r.locationConfidence)},${lat},${lng},${acc},${alt},${altAcc},${heading},${speed},${escapeCSV(locTs)},${escapeCSV(locAge)},${histCount},${escapeCSV(r.category)},${escapeCSV(r.reason)},${escapeCSV(r.action)},${escapeCSV(r.demos)},${escapeCSV(r.allergies)},${escapeCSV(r.notes)},${escapeCSV(intStr)},${highRiskStr},${evacStr},${escapeCSV(r.evacDest)},${escapeCSV(r.evacVehicle)}\n`;
             });
         } else {
-            csv += "System_Time,Clinical_Time,User,Action_Type,Patient_ID,Details,Sector,Lat,Lng\n";
+            csv += "System_Time,Clinical_Time,User,Action_Type,Patient_ID,Details,Sector,Lat,Lng,GPS_Accuracy,Location_Confidence\n";
             auditLog.forEach(a => {
                 const sysDate = new Date(a.sysTime).toLocaleString();
                 const clinDate = new Date(a.clinTime).toLocaleString();
                 const lat = a.gps ? a.gps.lat : "";
                 const lng = a.gps ? a.gps.lng : "";
+                const acc = a.gps ? (a.gps.acc || a.gps.accuracy || '') : "";
+                const conf = a.gps ? (a.gps.confidence || '') : "";
                 
-                csv += `${escapeCSV(sysDate)},${escapeCSV(clinDate)},${escapeCSV(a.user)},${escapeCSV(a.action)},${escapeCSV(a.patientId)},${escapeCSV(a.details)},${escapeCSV(a.sector)},${lat},${lng}\n`;
+                csv += `${escapeCSV(sysDate)},${escapeCSV(clinDate)},${escapeCSV(a.user)},${escapeCSV(a.action)},${escapeCSV(a.patientId)},${escapeCSV(a.details)},${escapeCSV(a.sector)},${lat},${lng},${acc},${escapeCSV(conf)}\n`;
             });
         }
         
@@ -3743,7 +4000,7 @@
             if (counts[r.category] !== undefined) counts[r.category]++;
             if (r.sector) sectors.add(r.sector);
             if (r.location && (r.location.lat || r.location.lng)) gps++;
-            if (r.location || r.sector || r.evacDest || r.evacVehicle) position++;
+            if (r.location || r.currentLocation || r.initialLocation || r.sector || r.landmark || r.floor || r.area || r.evacDest || r.evacVehicle) position++;
             if (r.triager) triagers++;
             if (r.interventions && Object.keys(r.interventions).length) interventions++;
             if (Array.isArray(r.injuries) && r.injuries.length) injuries++;
@@ -3947,7 +4204,7 @@
             list.appendChild(summary);
             pseudo.data.forEach(d => {
                 const row = document.createElement('div'); row.style.padding='8px 0'; row.style.borderBottom='1px solid rgba(0,0,0,0.08)';
-                const parts = [`${d.id} — ${d.category}`, d.triager ? `Triager: ${d.triager}` : '', d.sector ? `Sector: ${d.sector}` : '', d.location ? `GPS: ${d.location.lat}, ${d.location.lng}${d.location.acc ? ' ±'+d.location.acc+'m' : ''}` : '', d.injuries && d.injuries.length ? `Injuries: ${d.injuries.length}` : '', d.interventions ? `Interventions: ${Object.keys(d.interventions).length}` : '', d.handoverState ? `Handover: ${d.handoverState}` : ''].filter(Boolean);
+                const parts = [`${d.id} — ${d.category}`, d.triager ? `Triager: ${d.triager}` : '', d.sector ? `Sector: ${d.sector}` : '', (d.currentLocation || d.location) ? `GPS: ${(d.currentLocation || d.location).lat}, ${(d.currentLocation || d.location).lng}${(d.currentLocation || d.location).acc ? ' ±'+(d.currentLocation || d.location).acc+'m' : ''}` : '', d.injuries && d.injuries.length ? `Injuries: ${d.injuries.length}` : '', d.interventions ? `Interventions: ${Object.keys(d.interventions).length}` : '', d.handoverState ? `Handover: ${d.handoverState}` : ''].filter(Boolean);
                 row.textContent = parts.join(' • ');
                 if (incidentLog.some(e => e.id === d.id)) { const tag=document.createElement('span'); tag.className='reassess-pill due-soon'; tag.style.marginLeft='6px'; tag.textContent='Will merge'; row.appendChild(tag); }
                 list.appendChild(row);
@@ -4025,7 +4282,7 @@
                 row.style.borderBottom = '1px solid rgba(0,0,0,0.08)';
                 const strong = document.createElement('strong'); strong.textContent = d.id;
                 row.appendChild(strong);
-                row.appendChild(document.createTextNode(` — ${d.category}${d.reason ? ' • ' + d.reason : ''}${d.demos ? ' • ' + d.demos : ''}`));
+                row.appendChild(document.createTextNode(` — ${d.category}${d.reason ? ' • ' + d.reason : ''}${d.demos ? ' • ' + d.demos : ''}${(d.sector || d.landmark || d.currentLocation || d.location) ? ' • ' + locationLabel(d) : ''}`));
                 // Duplicate hint
                 if (incidentLog.some(e => e.id === d.id)) {
                     const dupTag = document.createElement('span');
