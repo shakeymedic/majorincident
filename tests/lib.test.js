@@ -74,17 +74,24 @@ group('validatePatientWrapper', () => {
         assert.strictEqual(r.data.id, 'TST-001');
         assert.strictEqual(r.data.category, 'P1');
     });
-    test('rejects expired payloads', () => {
+    test('old payloads are accepted with a prominent warning (never blocked)', () => {
         const w = lib.buildPatientPayload(sample, { ttlMs: 60000 }, ctx);
         const r = lib.validatePatientWrapper(w, { now: ctx.now + 120000 });
-        assert.strictEqual(r.ok, false);
-        assert.match(r.reason, /expired/i);
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.meta.expired, true);
+        assert.match(r.meta.warnings.join(' '), /freshness window/i);
     });
-    test('rejects future-clock payloads', () => {
+    test('clock-skewed payloads are accepted with a warning', () => {
         const w = lib.buildPatientPayload(sample, { ttlMs: 60000 }, { now: ctx.now + 600000 });
         const r = lib.validatePatientWrapper(w, { now: ctx.now });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.meta.clockSkew, true);
+        assert.match(r.meta.warnings.join(' '), /clock/i);
+    });
+    test('rejects a payload with no category (never defaults to P3)', () => {
+        const r = lib.validatePatientWrapper({ t: 'MIT_P', v: 3, rv: 1, g: ctx.now, x: ctx.now + 1000, d: { i: 'Z-1' } }, { now: ctx.now });
         assert.strictEqual(r.ok, false);
-        assert.match(r.reason, /future/i);
+        assert.match(r.reason, /category/i);
     });
     test('rejects tampered integrity', () => {
         const w = lib.buildPatientPayload(sample, { ttlMs: 60000 }, ctx);
@@ -174,17 +181,31 @@ group('triage flows', () => {
     test('TST: bleeding yes -> P1', () => {
         assert.strictEqual(lib.tstNext('bleeding', true).category, 'P1');
     });
-    test('TST: not breathing -> DEAD', () => {
-        assert.strictEqual(lib.tstNext('breathing', false).category, 'DEAD');
+    test('TST: not breathing -> Not Breathing (silver), never DEAD', () => {
+        assert.strictEqual(lib.tstNext('breathing', false).category, 'NOT_BREATHING');
+    });
+    test('TST: not talking but breathing -> P1', () => {
+        assert.strictEqual(lib.tstNext('breathing', true).category, 'P1');
+    });
+    test('TST: talking, penetrating injury -> P1; none -> P2', () => {
+        assert.strictEqual(lib.tstNext('penetrating', true).category, 'P1');
+        assert.strictEqual(lib.tstNext('penetrating', false).category, 'P2');
+    });
+    test('MITT: not breathing -> DEAD', () => {
+        assert.strictEqual(lib.mittNext('breathing', false).category, 'DEAD');
+    });
+    test('MITT: aged 2 or under -> P1; breathing rate outside 12-23 -> P1', () => {
+        assert.strictEqual(lib.mittNext('age', false).category, 'P1');
+        assert.strictEqual(lib.mittNext('rr', false).category, 'P1');
     });
     test('MITT: cat_bleed yes -> P1', () => {
         assert.strictEqual(lib.mittNext('cat_bleed', true).category, 'P1');
     });
-    test('MITT: hr no (>=100) -> P1', () => {
-        assert.strictEqual(lib.mittNext('hr', false).category, 'P1');
+    test('MITT card wording: "Heart rate 100 or more?" YES -> P1', () => {
+        assert.strictEqual(lib.mittNext('hr', true).category, 'P1');
     });
-    test('MITT: hr yes (<100) -> P2', () => {
-        assert.strictEqual(lib.mittNext('hr', true).category, 'P2');
+    test('MITT card wording: "Heart rate 100 or more?" NO -> P2', () => {
+        assert.strictEqual(lib.mittNext('hr', false).category, 'P2');
     });
     test('MITT: voice no -> P1', () => {
         assert.strictEqual(lib.mittNext('voice', false).category, 'P1');
@@ -262,11 +283,11 @@ group('bulk handover', () => {
         assert.strictEqual(r.data[0].id, 'TST-001');
         assert.strictEqual(r.meta.sector, 'CCS');
     });
-    test('rejects expired bulk', () => {
+    test('old bulk payload accepted with warning', () => {
         const w = lib.buildBulkPayload(entries, { ttlMs: 60000 }, ctx);
         const r = lib.validateBulkWrapper(w, { now: ctx.now + 120000 });
-        assert.strictEqual(r.ok, false);
-        assert.match(r.reason, /expired/i);
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.meta.expired, true);
     });
     test('bulkPayloadFits flags oversize payloads', () => {
         const big = Array.from({ length: 60 }, (_, i) => ({
@@ -565,5 +586,236 @@ group('shortCodeFromHash', () => {
     });
 });
 
-console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
-process.exit(failed === 0 ? 0 : 1);
+
+// ---------------------------------------------------------------------------
+// Regression tests for the September 2026 safety review
+// ---------------------------------------------------------------------------
+group('review: identifiers', () => {
+    test('nextAutoId never reuses an existing ID', () => {
+        const r = lib.nextAutoId('K7QX', 'TST', 1, ['K7QX-TST-001', 'K7QX-TST-002']);
+        assert.strictEqual(r.id, 'K7QX-TST-003');
+        assert.strictEqual(r.counter, 3);
+    });
+    test('makeUid and makeDeviceCode produce distinct values', () => {
+        assert.notStrictEqual(lib.makeUid(), lib.makeUid());
+        assert.match(lib.makeDeviceCode(), /^[0-9A-HJKMNP-TV-Z]{4}$/);
+    });
+});
+
+group('review: ASCII-safe QR text', () => {
+    test('toAsciiJSON escapes all non-ASCII yet round-trips identically', () => {
+        const obj = { n: '💥 Blast — Zoë lost £20' };
+        const txt = lib.toAsciiJSON(obj);
+        assert.ok(/^[\x00-\x7e]*$/.test(txt), 'pure ASCII');
+        assert.deepStrictEqual(JSON.parse(txt), obj);
+    });
+    test('patient QR with emoji keeps a valid integrity hash after ASCII transport', () => {
+        const w = lib.buildPatientPayload({ id: 'A', category: 'P1', notes: '💥 Blast 🧱 Crush', demos: 'Zoë' }, {}, { now: 1700000000000 });
+        const r = lib.validatePatientWrapper(JSON.parse(lib.toAsciiJSON(w)), { now: 1700000000000 });
+        assert.strictEqual(r.ok, true);
+        assert.strictEqual(r.meta.integrityOk, true);
+        assert.strictEqual(r.data.notes, '💥 Blast 🧱 Crush');
+    });
+    test('single-patient QR caps location history so it stays scannable', () => {
+        let e = { id: 'L', category: 'P2' };
+        for (let i = 0; i < 30; i++) e = lib.appendLocationHistory(e, { lat: 51.5 + i * 1e-4, lng: -0.1, accuracy: 8, timestamp: 1000 + i }, { user: 'M', reason: 'move ' + i });
+        const w = lib.buildPatientPayload(e, {}, { now: 5000 });
+        assert.strictEqual(w.d.lh.length, lib.PATIENT_QR_LOCATION_HISTORY_MAX);
+        assert.strictEqual(w.d.lhn, 30);
+        assert.ok(JSON.stringify(w).length < lib.PATIENT_QR_MAX_CHARS);
+    });
+});
+
+group('review: merge safety', () => {
+    test('a MORE urgent incoming category always propagates, whatever the edit counts', () => {
+        const local = { id: 'A', uid: 'u1', category: 'P2', _rev: 50 };
+        const out = lib.mergePatientRecordsDetailed(local, { id: 'A', uid: 'u1', category: 'P1', _rev: 2 }, { recordVersion: 2 });
+        assert.strictEqual(out.record.category, 'P1');
+        assert.ok(out.changes.some(c => c.field === 'category'));
+    });
+    test('a LESS urgent incoming category is never applied automatically', () => {
+        const out = lib.mergePatientRecordsDetailed({ id: 'X', category: 'P1', _rev: 1 }, { id: 'X', category: 'P3' }, { recordVersion: 99 });
+        assert.strictEqual(out.record.category, 'P1');
+        assert.strictEqual(out.conflicts[0].field, 'category');
+        assert.ok(out.record.importConflicts.length === 1);
+    });
+    test('operator resolution can accept a downgrade explicitly', () => {
+        const out = lib.mergePatientRecordsDetailed({ id: 'X', category: 'P1' }, { id: 'X', category: 'P3' }, { resolutions: { category: 'incoming' } });
+        assert.strictEqual(out.record.category, 'P3');
+        assert.strictEqual(out.conflicts.length, 0);
+    });
+    test('Dead / Not Breathing changes always need a clinician', () => {
+        const out = lib.mergePatientRecordsDetailed({ id: 'X', category: 'NOT_BREATHING' }, { id: 'X', category: 'DEAD' }, {});
+        assert.strictEqual(out.record.category, 'NOT_BREATHING');
+        assert.strictEqual(out.conflicts.length, 1);
+    });
+    test('notes do not grow on repeated A->B->A round trips', () => {
+        let A = { id: 'P', uid: 'u', category: 'P1', notes: 'Bleeding R leg' };
+        let B = Object.assign({}, A, { notes: A.notes + ' [Origin: A]' });
+        const lens = [];
+        for (let i = 0; i < 6; i++) {
+            A = lib.mergePatientRecords(A, B, { sender: 'B' });
+            B = lib.mergePatientRecords(B, A, { sender: 'A' });
+            lens.push(A.notes.length);
+        }
+        assert.strictEqual(lens[5], lens[1], 'notes length stable: ' + lens.join(','));
+    });
+    test('allergies are unioned, never dropped', () => {
+        const out = lib.mergePatientRecords({ id: 'A', category: 'P2', allergies: 'Penicillin' }, { id: 'A', allergies: 'Latex' }, {});
+        assert.match(out.allergies, /Penicillin/);
+        assert.match(out.allergies, /Latex/);
+    });
+    test('sender handover state is never imported into the receiver record', () => {
+        const out = lib.mergePatientRecords({ id: 'A', category: 'P2', handoverState: 'received' }, { id: 'A', category: 'P2', handoverState: 'pending' }, {});
+        assert.strictEqual(out.handoverState, 'received');
+    });
+    test('same ID but different uid is a collision: imported separately under a new ID', () => {
+        const local = [{ id: 'TST-001', uid: 'aaa', category: 'P3', demos: '70F' }];
+        const res = lib.mergeAllPatientRecords(local, [{ id: 'TST-001', uid: 'bbb', deviceId: 'Q9ZX', category: 'P1', demos: '20M' }], { sender: 'Other' });
+        assert.strictEqual(res.merged, 0);
+        assert.strictEqual(res.imported, 1);
+        assert.strictEqual(res.collisions.length, 1);
+        assert.strictEqual(res.records.find(r => r.uid === 'aaa').category, 'P3', 'local patient untouched');
+        assert.strictEqual(res.records.find(r => r.uid === 'bbb').id, 'TST-001~Q9ZX');
+    });
+    test('matching by uid survives an ID edit on one device', () => {
+        const res = lib.mergeAllPatientRecords([{ id: 'NEW-NAME', uid: 'u1', category: 'P2' }], [{ id: 'TST-001', uid: 'u1', category: 'P1' }], {});
+        assert.strictEqual(res.merged, 1);
+        assert.strictEqual(res.records.length, 1);
+        assert.strictEqual(res.records[0].category, 'P1');
+    });
+});
+
+group('review: duplicate warnings', () => {
+    test('two different casualties sharing only sector/category/time are NOT flagged', () => {
+        const a = { id: 'A-1', category: 'P2', sector: 'Inner Cordon', timestamp: 1000000 };
+        const b = { id: 'B-7', category: 'P2', sector: 'Inner Cordon', timestamp: 1000000 - 120000 };
+        assert.ok(lib.similarityScore(a, b) < 0.65);
+    });
+    test('matching demographics still flag a likely duplicate', () => {
+        const a = { id: 'A-1', category: 'P2', sector: 'Inner Cordon', demos: '35M', timestamp: 1000000 };
+        const b = { id: 'B-7', category: 'P2', sector: 'Inner Cordon', demos: '35M', timestamp: 1000000 };
+        assert.ok(lib.similarityScore(a, b) >= 0.65);
+    });
+});
+
+group('review: GPS freshness', () => {
+    test('stale fixes are ignored even if more accurate', () => {
+        const now = 10 * 60 * 1000 + 5000;
+        const best = lib.selectBestLocationFix([
+            { lat: 51.5, lng: -0.1, accuracy: 3, timestamp: 1000 },
+            { lat: 51.502, lng: -0.1, accuracy: 15, timestamp: now - 1000 },
+        ], { now, maxAgeMs: 30000 });
+        assert.strictEqual(best.lat, '51.5020000');
+    });
+    test('returns null when every fix is stale', () => {
+        assert.strictEqual(lib.selectBestLocationFix([{ lat: 1, lng: 1, accuracy: 5, timestamp: 0 }], { now: 999999, maxAgeMs: 30000 }), null);
+    });
+});
+
+group('review: categories and reassessment', () => {
+    test('Not Breathing is due for healthcare reassessment immediately', () => {
+        const s = lib.reassessmentStatus({ id: 'A', category: 'NOT_BREATHING', timestamp: 1000 }, 1000);
+        assert.strictEqual(s.state, 'overdue');
+        assert.strictEqual(s.hcp, true);
+    });
+    test('P1 -> P1 Hold and P1 -> Not Breathing count as worsening; Not Breathing -> P1 does not', () => {
+        assert.strictEqual(lib.categoryWorsened('P1', 'P1_HOLD'), true);
+        assert.strictEqual(lib.categoryWorsened('P1', 'NOT_BREATHING'), true);
+        assert.strictEqual(lib.categoryWorsened('NOT_BREATHING', 'P1'), false);
+    });
+    test('legacy TST "DEAD" is migrated to Not Breathing with an audit event', () => {
+        const m = lib.migrateLegacyRecords([{ id: 'TST-001', tool: 'TST', category: 'DEAD', reason: 'Apnoeic', timestamp: 5 }]);
+        assert.strictEqual(m.records[0].category, 'NOT_BREATHING');
+        assert.ok(m.records[0].uid);
+        assert.ok(m.events.some(e => e.action === 'CATEGORY_MIGRATED'));
+    });
+    test('legacy duplicate IDs are reported, not hidden', () => {
+        const m = lib.migrateLegacyRecords([{ id: 'X', category: 'P1' }, { id: 'X', category: 'P3' }]);
+        assert.strictEqual(m.records.length, 2);
+        assert.ok(m.events.some(e => e.action === 'DUPLICATE_ID_FOUND'));
+    });
+});
+
+group('review: tamper-evident audit', () => {
+    test('SHA-256 matches known test vectors', () => {
+        assert.strictEqual(lib.sha256Hex('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+        assert.strictEqual(lib.sha256Hex(''), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+        assert.strictEqual(lib.sha256Hex('£'), require('crypto').createHash('sha256').update('£').digest('hex'));
+    });
+    test('an intact chain verifies; edits, deletions and reordering are detected', () => {
+        let chain = [];
+        for (let i = 0; i < 5; i++) chain.push(lib.sealAuditEntry({ action: 'X' + i, details: 'd' + i, sysTime: i }, chain[chain.length - 1] || null));
+        assert.strictEqual(lib.verifyAuditChain(chain).ok, true);
+        const edited = chain.map(e => Object.assign({}, e)); edited[2].details = 'changed';
+        assert.strictEqual(lib.verifyAuditChain(edited).ok, false);
+        assert.strictEqual(lib.verifyAuditChain(edited).brokenAt, 2);
+        assert.strictEqual(lib.verifyAuditChain(chain.filter((_, i) => i !== 1)).ok, false);
+        assert.strictEqual(lib.verifyAuditChain([chain[0], chain[2], chain[1]]).ok, false);
+    });
+    test('imported audit is de-duplicated on repeated imports', () => {
+        const a = [lib.sealAuditEntry({ deviceId: 'D1', action: 'A' }, null)];
+        const first = lib.mergeImportedAudit([], a, 't1');
+        const second = lib.mergeImportedAudit(first.list, a, 't2');
+        assert.strictEqual(second.list.length, 1);
+        assert.strictEqual(second.added, 0);
+    });
+    test('csvCell neutralises spreadsheet formulas', () => {
+        assert.strictEqual(lib.csvCell('=HYPERLINK("x")'), `"'=HYPERLINK(""x"")"`);
+        assert.strictEqual(lib.csvCell('plain'), '"plain"');
+    });
+    test('isoWithOffset includes a UTC offset', () => {
+        assert.match(lib.isoWithOffset(1700000000000), /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}[+-]\d\d:\d\d$/);
+    });
+});
+
+group('review: acknowledgements', () => {
+    test('ACK carries record version and payload hash and has integrity', () => {
+        const ack = lib.buildAckPayload('A', 'Recv', { uid: 'u', payloadHash: 'abcd1234', recordVersion: 4, now: 1 });
+        assert.strictEqual(ack.ph, 'abcd1234');
+        assert.strictEqual(lib.verifyAckIntegrity(ack), true);
+        ack.pid = 'B';
+        assert.strictEqual(lib.verifyAckIntegrity(ack), false);
+    });
+    test('transfer ACK builds with integrity', () => {
+        const t = lib.buildTransferAckPayload('tid', 'ph', 3, 'Recv', { now: 1 });
+        assert.strictEqual(t.t, 'MIT_TACK');
+        assert.strictEqual(lib.verifyAckIntegrity(t), true);
+    });
+});
+
+(async () => {
+    console.log('\nreview: compressed multi-part transfer (async)');
+    async function atest(name, fn) {
+        try { await fn(); console.log('  ✓ ' + name); passed++; }
+        catch (e) { console.error('  ✗ ' + name); console.error('    ' + (e && e.stack ? e.stack : e)); failed++; }
+    }
+    const now = 1700000000000;
+    const many = Array.from({ length: 60 }, (_, i) => ({ id: 'DEV-TST-' + String(i).padStart(3, '0'), uid: 'u' + i, category: ['P1', 'P2', 'P3'][i % 3], notes: 'Blast injury 💥, lacerations to legs, Zoë', sector: 'Inner Cordon', triager: 'Medic ' + (i % 4), timestamp: now - i * 1000 }));
+    await atest('compression cuts QR count and round-trips out of order', async () => {
+        const plain = lib.buildAllPatientsTransfer(many, {}, { now, sender: 'A' });
+        const z = await lib.buildAllPatientsTransferAsync(many, {}, { now, sender: 'A' });
+        assert.strictEqual(z.enc, 'z1');
+        assert.ok(z.totalChunks * 3 < plain.totalChunks, `compressed ${z.totalChunks} vs plain ${plain.totalChunks}`);
+        const chunks = z.chunks.slice().reverse().concat([z.chunks[0]]);
+        chunks.forEach(c => assert.ok(lib.toAsciiJSON(c).length <= lib.ALL_QR_CHUNK_SOFT_LIMIT + 5, 'chunk within QR size'));
+        const r = await lib.reassembleAllPatientChunksAsync(chunks.map(c => JSON.parse(lib.toAsciiJSON(c))), { now });
+        assert.strictEqual(r.ok, true, r.reason);
+        assert.strictEqual(r.data.length, 60);
+        assert.strictEqual(r.data[0].notes, many[0].notes);
+    });
+    await atest('uncompressed chunks stay within the QR size even with many escaped quotes', async () => {
+        const t = lib.buildAllPatientsTransfer(many, { maxChars: 1400 }, { now });
+        t.chunks.forEach(c => assert.ok(lib.toAsciiJSON(c).length <= 1400, 'len ' + lib.toAsciiJSON(c).length));
+        assert.strictEqual(lib.reassembleAllPatientChunks(t.chunks, { now }).ok, true);
+    });
+    await atest('single compressed QR decodes', async () => {
+        const z = await lib.buildAllPatientsTransferAsync(many.slice(0, 2), {}, { now });
+        assert.strictEqual(z.mode, 'single');
+        const txt = await lib.decodeTransportText(z.qrText);
+        assert.strictEqual(lib.validateAllPatientsWrapper(JSON.parse(txt), { now }).ok, true);
+    });
+    console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
+    process.exit(failed === 0 ? 0 : 1);
+})();
+
