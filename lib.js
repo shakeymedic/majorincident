@@ -4,6 +4,149 @@
     const QR_SCHEMA_VERSION = 3;
     const QR_DEFAULT_TTL_MS = 8 * 60 * 60 * 1000;
     const QR_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+    // Single-patient QR text above this size switches to the multi-part (chunked) transfer.
+    const PATIENT_QR_MAX_CHARS = 1200; // after compression; keeps a single code at or below ~QR version 25
+    // Number of location-history items carried inside a single-patient QR (full history travels in transfer files / multi-part QR).
+    const PATIENT_QR_LOCATION_HISTORY_MAX = 5;
+
+    // ---------- Triage categories ----------
+    // NHS England casualty labelling (2023): P1/P2/P3; "Not breathing" is TST only (silver);
+    // "Dead" is MITT only (black). "P1 Hold" (NARU / NHSE B0128) is a senior clinical decision.
+    const CATEGORIES = ['P1', 'P2', 'P3', 'NOT_BREATHING', 'DEAD', 'P1_HOLD'];
+    const CATEGORY_INFO = {
+        P1:            { short: 'P1', label: 'IMMEDIATE', colour: '#DA291C', text: '#FFFFFF' },
+        P2:            { short: 'P2', label: 'URGENT', colour: '#FAE100', text: '#000000' },
+        P3:            { short: 'P3', label: 'DELAYED', colour: '#007F3B', text: '#FFFFFF' },
+        NOT_BREATHING: { short: 'Not Breathing', label: 'BREATHING NOT DETECTED', colour: '#A7A9AC', text: '#000000' },
+        DEAD:          { short: 'DEAD', label: 'DECEASED', colour: '#000000', text: '#FFFFFF' },
+        P1_HOLD:       { short: 'P1 Hold', label: 'P1 HOLD', colour: '#00AEEF', text: '#FFFFFF' },
+    };
+    function isValidCategory(c) { return CATEGORIES.indexOf(c) > -1; }
+    function categoryShort(c) { return (CATEGORY_INFO[c] && CATEGORY_INFO[c].short) || String(c || ''); }
+    function categoryLabel(c) { return (CATEGORY_INFO[c] && CATEGORY_INFO[c].label) || String(c || ''); }
+
+    // ---------- ASCII-safe JSON ----------
+    // QR payloads are always pure ASCII: every non-ASCII character is written as a \uXXXX
+    // escape. JSON.parse restores the identical string, so hashes still match, and no QR
+    // library or scanner can mangle UTF-8 (accents, £, emoji from the quick-injury buttons).
+    function toAsciiJSON(value) {
+        return JSON.stringify(value).replace(/[\u007f-￿]/g, c => '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4));
+    }
+
+    // ---------- Identifiers ----------
+    const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    function randomBytes(n) {
+        const out = new Uint8Array(n);
+        const c = (typeof crypto !== 'undefined' && crypto && typeof crypto.getRandomValues === 'function') ? crypto : null;
+        if (c) c.getRandomValues(out);
+        else for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+        return out;
+    }
+    // Globally unique record identity. The human-facing patient ID can be edited or collide
+    // between devices; the uid never changes and is what imports match on.
+    function makeUid() {
+        return Array.from(randomBytes(12)).map(b => ('0' + b.toString(16)).slice(-2)).join('');
+    }
+    // Short device code used as the default patient-ID prefix so two devices never both issue "TST-001".
+    function makeDeviceCode() {
+        return Array.from(randomBytes(4)).map(b => CROCKFORD[b % 32]).join('');
+    }
+    function _pad3(n) { n = String(n); while (n.length < 3) n = '0' + n; return n; }
+    // Next unused automatic ID. Skips any ID already present so a patient can never be hidden by a reused ID.
+    function nextAutoId(prefix, tool, counter, existingIds) {
+        const taken = new Set(existingIds || []);
+        let n = Math.max(1, parseInt(counter, 10) || 1);
+        const base = [prefix, tool].filter(Boolean).join('-');
+        let id = `${base}-${_pad3(n)}`;
+        while (taken.has(id)) { n++; id = `${base}-${_pad3(n)}`; }
+        return { id, counter: n };
+    }
+
+    // ---------- Incoming data sanitising ----------
+    function _str(v, max) {
+        if (v === undefined || v === null) return '';
+        if (typeof v === 'object') return '';
+        return String(v).slice(0, max || 200);
+    }
+    function _num(v) {
+        if (v === undefined || v === null || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+    }
+    function sanitiseInterventions(obj) {
+        const out = {};
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
+        Object.keys(obj).slice(0, 60).forEach(k => {
+            const key = _str(k, 60).trim();
+            if (!key) return;
+            const v = obj[k] && typeof obj[k] === 'object' ? obj[k] : {};
+            const item = { time: _str(v.time, 16), ts: _num(v.ts) };
+            if (v.by) item.by = _str(v.by, 80);
+            out[key] = item;
+        });
+        return out;
+    }
+    function sanitiseTriageHistory(list) {
+        if (!Array.isArray(list)) return [];
+        return list.slice(-50).filter(x => x && typeof x === 'object').map(x => ({
+            ts: _num(x.ts), category: _str(x.category, 20), reason: _str(x.reason, 120), action: _str(x.action, 200),
+            tool: _str(x.tool, 16), by: _str(x.by, 80), kind: _str(x.kind, 30),
+        }));
+    }
+    function sanitiseFieldTimes(obj) {
+        const out = {};
+        if (!obj || typeof obj !== 'object') return out;
+        Object.keys(obj).slice(0, 40).forEach(k => { const n = _num(obj[k]); if (n !== null) out[_str(k, 40)] = n; });
+        return out;
+    }
+    // Type-check every field of a record received from another device. Never trust a QR/file.
+    function sanitisePatientRecord(rec) {
+        if (!rec || typeof rec !== 'object') return null;
+        const out = {
+            id: _str(rec.id, 80).trim(),
+            uid: _str(rec.uid, 64),
+            time: _str(rec.time, 16),
+            timestamp: _num(rec.timestamp),
+            createdAt: _num(rec.createdAt),
+            createdBy: _str(rec.createdBy, 80),
+            deviceId: _str(rec.deviceId, 16),
+            tool: _str(rec.tool, 16),
+            category: isValidCategory(rec.category) ? rec.category : '',
+            action: _str(rec.action, 200),
+            reason: _str(rec.reason, 120),
+            triager: _str(rec.triager, 80),
+            locationConfidence: _str(rec.locationConfidence, 40),
+            sector: _str(rec.sector, 80), landmark: _str(rec.landmark, 80), floor: _str(rec.floor, 40), area: _str(rec.area, 80),
+            demos: _str(rec.demos, 120),
+            allergies: _str(rec.allergies, 300),
+            notes: _str(rec.notes, 4000),
+            highRisk: !!rec.highRisk,
+            interventions: sanitiseInterventions(rec.interventions),
+            evacuated: !!rec.evacuated,
+            evacDest: _str(rec.evacDest, 120),
+            evacVehicle: _str(rec.evacVehicle, 120),
+            hospitalId: _str(rec.hospitalId, 60),
+            tod: _str(rec.tod, 16),
+            injuries: sanitiseInjuries(rec.injuries),
+            lastReassessed: _num(rec.lastReassessed),
+            reassessOutcome: _str(rec.reassessOutcome, 20),
+            lastDeteriorationAt: _num(rec.lastDeteriorationAt),
+            handoverState: _str(rec.handoverState, 20),
+            handoverAt: _num(rec.handoverAt),
+            handoverTo: _str(rec.handoverTo, 80),
+            triageHistory: sanitiseTriageHistory(rec.triageHistory),
+            fts: sanitiseFieldTimes(rec.fts),
+            updatedAt: _num(rec.updatedAt),
+            _rev: _num(rec._rev) || 0,
+        };
+        const cur = normaliseLocation(rec.currentLocation || rec.location);
+        const init = normaliseLocation(rec.initialLocation || rec.location || rec.currentLocation);
+        out.currentLocation = cur; out.location = cur; out.initialLocation = init;
+        out.locationHistory = Array.isArray(rec.locationHistory) ? mergeLocationHistory([], rec.locationHistory.filter(x => x && typeof x === 'object').slice(-200)) : [];
+        const lhn = _num(rec.locationHistoryTotal);
+        if (lhn !== null) out.locationHistoryTotal = lhn;
+        return out;
+    }
 
     function escapeHTML(str) {
         if (str === null || str === undefined) return '';
@@ -55,7 +198,21 @@
         const initialLoc = normaliseLocation(entry.initialLocation || entry.location);
         if (currentLoc) short.l = compactLocation(currentLoc);
         if (initialLoc) short.il = compactLocation(initialLoc);
-        if (Array.isArray(entry.locationHistory) && entry.locationHistory.length) short.lh = entry.locationHistory.map(compactLocationHistoryItem).filter(Boolean);
+        if (Array.isArray(entry.locationHistory) && entry.locationHistory.length) {
+            // Keep the QR small enough to scan: most recent items only, plus the true total.
+            const hist = entry.locationHistory;
+            short.lh = hist.slice(-PATIENT_QR_LOCATION_HISTORY_MAX).map(compactLocationHistoryItem).filter(Boolean);
+            if (hist.length > PATIENT_QR_LOCATION_HISTORY_MAX) short.lhn = hist.length;
+        }
+        if (entry.uid) short.u = entry.uid;
+        if (entry.createdAt) short.ca = entry.createdAt;
+        if (entry.createdBy) short.cb = entry.createdBy;
+        if (entry.deviceId) short.dv = entry.deviceId;
+        if (entry.updatedAt) short.up = entry.updatedAt;
+        if (entry.fts && Object.keys(entry.fts).length) short.ft = entry.fts;
+        if (Array.isArray(entry.triageHistory) && entry.triageHistory.length) short.th = entry.triageHistory.slice(-5);
+        if (entry.hospitalId) short.hid = entry.hospitalId;
+        if (entry.tod) short.tod = entry.tod;
         if (entry.locationConfidence) short.lc = entry.locationConfidence;
         if (entry.landmark) short.lm = entry.landmark;
         if (entry.floor) short.fl = entry.floor;
@@ -92,12 +249,23 @@
     }
 
     function decompressData(short) {
-        return {
+        const raw = {
             id: short.i || '',
+            uid: short.u || '',
+            createdAt: short.ca || null,
+            createdBy: short.cb || '',
+            deviceId: short.dv || '',
+            updatedAt: short.up || null,
+            fts: short.ft || {},
+            triageHistory: short.th || [],
+            hospitalId: short.hid || '',
+            tod: short.tod || '',
+            locationHistoryTotal: short.lhn || undefined,
             time: short.tm || '',
-            timestamp: short.ts || Date.now(),
+            timestamp: short.ts || null,
             tool: short.tl || '',
-            category: short.c || 'P3',
+            // Never default a missing category (previously defaulted to P3 — the least urgent).
+            category: short.c || '',
             action: short.a || '',
             reason: short.r || '',
             triager: short.tr || 'Unknown',
@@ -126,6 +294,23 @@
             handoverTo: short.ht || '',
             lastDeteriorationAt: short.ld || null,
         };
+        return sanitisePatientRecord(raw);
+    }
+
+    // Age / clock checks never block a patient handover — the clinical data does not become
+    // untrue after a number of hours. They produce warnings the receiver must see.
+    function _applyTimeChecks(meta, now) {
+        meta.warnings = meta.warnings || [];
+        if (meta.expiresAt && now > meta.expiresAt) {
+            meta.expired = true;
+            const ageMin = meta.generatedAt ? Math.round((now - meta.generatedAt) / 60000) : null;
+            meta.warnings.push(`Older than the ${Math.round(QR_DEFAULT_TTL_MS / 3600000)}-hour freshness window${ageMin !== null ? ` (generated ${ageMin} min ago)` : ''}. The patient's condition may have changed — confirm with the sender or reassess.`);
+        }
+        if (meta.generatedAt && meta.generatedAt > now + QR_MAX_FUTURE_SKEW_MS) {
+            meta.clockSkew = true;
+            meta.warnings.push(`Sender's clock is ${Math.round((meta.generatedAt - now) / 60000)} min ahead of this device. Times on this record may be inaccurate.`);
+        }
+        return meta;
     }
 
     function validatePatientWrapper(wrapper, ctx) {
@@ -149,62 +334,180 @@
             meta.integrityOk = (fnv1a(canonical) === givenHash);
         }
         const now = ctx.now || Date.now();
-        if (meta.expiresAt && now > meta.expiresAt) return { ok: false, reason: 'QR has expired (regenerate from sender)', meta };
-        if (meta.generatedAt && meta.generatedAt > now + QR_MAX_FUTURE_SKEW_MS) return { ok: false, reason: 'QR generation time is in the future (clock mismatch)', meta };
-        if (!wrapper.d || typeof wrapper.d !== 'object') return { ok: false, reason: 'No patient data in payload', meta };
+        _applyTimeChecks(meta, now);
+        if (!wrapper.d || typeof wrapper.d !== 'object' || Array.isArray(wrapper.d)) return { ok: false, reason: 'No patient data in payload', meta };
         const data = decompressData(wrapper.d);
         if (!data.id) return { ok: false, reason: 'Missing patient ID', meta };
-        if (!['P1', 'P2', 'P3', 'DEAD'].includes(data.category)) return { ok: false, reason: 'Invalid category', meta };
+        if (!isValidCategory(data.category)) return { ok: false, reason: 'Missing or invalid triage category', meta };
         return { ok: true, data, meta };
     }
 
-    function mergePatientRecords(local, incoming, meta) {
+    // ---------- Record merge ----------
+    // Rules (clinical safety first):
+    //  * Identity is by uid where both sides have one (see matchIncomingRecord).
+    //  * Category: a MORE urgent incoming P1/P2/P3 is always taken; a less urgent one, or any change
+    //    involving Not Breathing / Dead / P1 Hold, is never applied automatically — it is kept as a
+    //    conflict for the operator (unless the operator already chose via meta.resolutions).
+    //  * Nothing is silently lost: interventions, injuries, allergies, location history and
+    //    triage history are unions; flags (high risk, evacuated) are OR-ed.
+    //  * Notes never nest: if one side already contains the other, the superset is kept.
+    //  * Every change and conflict is reported so the app can audit it field by field.
+    const CATEGORY_URGENCY = { P1: 0, P2: 1, P3: 2 };
+    const LOW_RISK_TEXT_FIELDS = ['sector', 'landmark', 'floor', 'area', 'evacDest', 'evacVehicle', 'hospitalId', 'locationConfidence', 'tod'];
+
+    function resolveCategoryMerge(localCat, incCat, resolution) {
+        if (!incCat || incCat === localCat) return { take: false };
+        if (!localCat) return { take: true, why: 'local empty' };
+        if (resolution === 'incoming') return { take: true, why: 'operator chose incoming' };
+        if (resolution === 'local') return { take: false, why: 'operator kept local' };
+        if (localCat in CATEGORY_URGENCY && incCat in CATEGORY_URGENCY) {
+            if (CATEGORY_URGENCY[incCat] < CATEGORY_URGENCY[localCat]) return { take: true, why: 'incoming more urgent' };
+            return { take: false, conflict: true, why: 'incoming less urgent — not downgraded automatically' };
+        }
+        return { take: false, conflict: true, why: 'change involves Not Breathing / Dead / P1 Hold — needs a clinician' };
+    }
+    function mergeNotesText(localNotes, incNotes, sender) {
+        const loc = localNotes || '', inc = incNotes || '';
+        if (!inc || inc === loc) return { text: loc, changed: false };
+        if (!loc) return { text: inc, changed: true };
+        if (loc.includes(inc)) return { text: loc, changed: false };
+        if (inc.includes(loc)) return { text: inc, changed: true };
+        return { text: `${loc} [Imported from ${sender || 'Unknown'}: ${inc}]`, changed: true };
+    }
+    function mergeAllergiesText(loc, inc) {
+        loc = loc || ''; inc = inc || '';
+        if (!inc || inc === loc) return { text: loc, changed: false };
+        if (!loc) return { text: inc, changed: true };
+        if (loc.toLowerCase().includes(inc.toLowerCase())) return { text: loc, changed: false };
+        if (inc.toLowerCase().includes(loc.toLowerCase())) return { text: inc, changed: true };
+        return { text: `${loc}; ${inc}`, changed: true };
+    }
+    function _fieldTime(rec, f) { return (rec && rec.fts && typeof rec.fts[f] === 'number') ? rec.fts[f] : null; }
+
+    function mergePatientRecordsDetailed(local, incoming, meta) {
+        meta = meta || {};
+        const resolutions = meta.resolutions || {};
+        const sender = meta.sender || incoming.triager || 'Unknown';
         const out = Object.assign({}, local);
-        const incomingNewer = (meta && typeof meta.recordVersion === 'number')
-            ? meta.recordVersion >= (local._rev || 0)
-            : (incoming.timestamp && incoming.timestamp >= (local.timestamp || 0));
-        if (incomingNewer) {
-            if (incoming.category) out.category = incoming.category;
-            if (incoming.action) out.action = incoming.action;
-            if (incoming.reason) out.reason = incoming.reason;
-            if (incoming.demos) out.demos = incoming.demos;
-            if (incoming.allergies) out.allergies = incoming.allergies;
-            if (incoming.sector) out.sector = incoming.sector;
-            if (incoming.evacDest) out.evacDest = incoming.evacDest;
-            if (incoming.evacVehicle) out.evacVehicle = incoming.evacVehicle;
-            if (incoming.evacuated) out.evacuated = true;
-            if (incoming.highRisk) out.highRisk = true;
-            if (incoming.tool && !out.tool) out.tool = incoming.tool;
+        out.fts = Object.assign({}, local.fts || {});
+        const changes = [], conflicts = [], decisions = [];
+        const note = (field, from, to) => changes.push({ field, from, to });
+        // Operator choices on differing values are part of the record of what happened.
+        ['category', 'demos'].forEach(f => {
+            if (resolutions[f] && incoming[f] && local[f] && incoming[f] !== local[f]) decisions.push({ field: f, chose: resolutions[f], local: local[f], incoming: incoming[f] });
+        });
+
+        // Category (+ its action/reason)
+        const cat = resolveCategoryMerge(local.category, incoming.category, resolutions.category);
+        if (cat.take) {
+            note('category', local.category || '', incoming.category);
+            out.category = incoming.category;
+            if (incoming.action && incoming.action !== local.action) { note('action', local.action || '', incoming.action); out.action = incoming.action; }
+            if (incoming.reason && incoming.reason !== local.reason) { note('reason', local.reason || '', incoming.reason); out.reason = incoming.reason; }
+            out.fts.category = Math.max(_fieldTime(incoming, 'category') || 0, Date.now());
+        } else if (cat.conflict) {
+            conflicts.push({ field: 'category', local: local.category, incoming: incoming.category, why: cat.why });
         }
-        // Always preserve incoming location history, even when the incoming clinical record is older.
-        mergeLocationFieldsInto(out, incoming, { preferIncoming: incomingNewer, user: meta && meta.sender, reason: incomingNewer ? 'import-merge' : 'import-history' });
-        if (incoming.notes) {
-            const tag = ` [Imported from ${meta && meta.sender ? meta.sender : (incoming.triager || 'Unknown')}: ${incoming.notes}]`;
-            if (!(out.notes || '').includes(tag)) out.notes = (out.notes || '') + tag;
+        // Demographics: identity-critical — fill if empty, otherwise conflict unless operator chose.
+        if (incoming.demos && incoming.demos !== local.demos) {
+            if (!local.demos || resolutions.demos === 'incoming') { note('demos', local.demos || '', incoming.demos); out.demos = incoming.demos; }
+            else if (resolutions.demos !== 'local') conflicts.push({ field: 'demos', local: local.demos, incoming: incoming.demos, why: 'demographics differ — confirm identity' });
         }
-        out.interventions = Object.assign({}, out.interventions || {});
-        if (incoming.interventions) {
-            for (const [k, v] of Object.entries(incoming.interventions)) {
-                if (!out.interventions[k]) out.interventions[k] = v;
+        // Allergies: union — never drop an allergy.
+        const al = mergeAllergiesText(local.allergies, incoming.allergies);
+        if (al.changed) { note('allergies', local.allergies || '', al.text); out.allergies = al.text; }
+        // Notes: bounded, no nesting.
+        const nt = mergeNotesText(local.notes, incoming.notes, sender);
+        if (nt.changed) { note('notes', local.notes || '', nt.text); out.notes = nt.text; }
+        // Low-risk operational text: fill if empty, else newer field edit wins.
+        LOW_RISK_TEXT_FIELDS.forEach(f => {
+            const inc = incoming[f];
+            if (!inc || inc === local[f]) return;
+            const incT = _fieldTime(incoming, f), locT = _fieldTime(local, f);
+            if (!local[f] || (incT !== null && (locT === null || incT > locT))) {
+                note(f, local[f] || '', inc); out[f] = inc;
+                if (incT !== null) out.fts[f] = incT;
             }
-        }
-        // Union injury marks by ts; never silently overwrite local marks.
+        });
+        if (incoming.highRisk && !local.highRisk) { note('highRisk', false, true); out.highRisk = true; }
+        if (incoming.evacuated && !local.evacuated) { note('evacuated', false, true); out.evacuated = true; }
+        if (!out.tool && incoming.tool) out.tool = incoming.tool;
+        if (!out.uid && incoming.uid) out.uid = incoming.uid;
+        if (incoming.createdAt && (!out.createdAt || incoming.createdAt < out.createdAt)) out.createdAt = incoming.createdAt;
+        if (!out.createdBy && incoming.createdBy) out.createdBy = incoming.createdBy;
+
+        // Location history always preserved; incoming current location wins only when it is newer.
+        const locTs = (normaliseLocation(local.currentLocation || local.location) || {}).timestamp || 0;
+        const incTs = (normaliseLocation(incoming.currentLocation || incoming.location) || {}).timestamp || 0;
+        const beforeLoc = JSON.stringify(normaliseLocation(out.currentLocation || out.location) || null);
+        mergeLocationFieldsInto(out, incoming, { preferIncoming: incTs > locTs, user: sender, reason: incTs > locTs ? 'import-merge' : 'import-history' });
+        if (JSON.stringify(normaliseLocation(out.currentLocation || out.location) || null) !== beforeLoc) note('location', '', 'updated from import');
+
+        // Interventions: union, earliest time kept.
+        out.interventions = Object.assign({}, local.interventions || {});
+        const added = [];
+        Object.entries(incoming.interventions || {}).forEach(([k, v]) => {
+            if (!out.interventions[k]) { out.interventions[k] = v; added.push(k); }
+            else if (v && v.ts && out.interventions[k].ts && v.ts < out.interventions[k].ts) out.interventions[k] = v;
+        });
+        if (added.length) note('interventions', '', 'added ' + added.join(', '));
+        // Injuries: union by ts|region|label.
         if (Array.isArray(incoming.injuries) && incoming.injuries.length) {
             const seen = new Set((out.injuries || []).map(m => `${m.ts}|${m.region}|${m.label}`));
             const merged = (out.injuries || []).slice();
-            for (const m of incoming.injuries) {
-                const k = `${m.ts}|${m.region}|${m.label}`;
-                if (!seen.has(k)) { merged.push(m); seen.add(k); }
-            }
+            let n = 0;
+            incoming.injuries.forEach(m => { const k = `${m.ts}|${m.region}|${m.label}`; if (!seen.has(k)) { merged.push(m); seen.add(k); n++; } });
             out.injuries = merged;
+            if (n) note('injuries', '', `added ${n} mark(s)`);
         }
-        // Take incoming reassessment if it is more recent.
+        // Triage history: union.
+        if (Array.isArray(incoming.triageHistory) && incoming.triageHistory.length) {
+            const seen = new Set((out.triageHistory || []).map(t => `${t.ts}|${t.category}`));
+            const merged = (out.triageHistory || []).slice();
+            incoming.triageHistory.forEach(t => { const k = `${t.ts}|${t.category}`; if (!seen.has(k)) { merged.push(t); seen.add(k); } });
+            merged.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+            out.triageHistory = merged;
+        }
         if (incoming.lastReassessed && (!out.lastReassessed || incoming.lastReassessed > out.lastReassessed)) {
+            note('lastReassessed', out.lastReassessed || '', incoming.lastReassessed);
             out.lastReassessed = incoming.lastReassessed;
             if (incoming.reassessOutcome) out.reassessOutcome = incoming.reassessOutcome;
         }
-        out._rev = Math.max(out._rev || 0, (meta && meta.recordVersion) || 0) + 1;
-        return out;
+        if (incoming.lastDeteriorationAt && (!out.lastDeteriorationAt || incoming.lastDeteriorationAt > out.lastDeteriorationAt)) out.lastDeteriorationAt = incoming.lastDeteriorationAt;
+        if (incoming.updatedAt && (!out.updatedAt || incoming.updatedAt > out.updatedAt)) out.updatedAt = incoming.updatedAt;
+        // Local handover state is this device's own business; never overwritten by a sender's state.
+
+        if (conflicts.length) {
+            const at = meta.now || Date.now();
+            out.importConflicts = (Array.isArray(local.importConflicts) ? local.importConflicts : []).concat(conflicts.map(c => Object.assign({ from: sender, at }, c)));
+        }
+        out._rev = Math.max(out._rev || 0, (meta && meta.recordVersion) || 0, incoming._rev || 0) + 1;
+        return { record: out, changes, conflicts, decisions };
+    }
+    function mergePatientRecords(local, incoming, meta) {
+        return mergePatientRecordsDetailed(local, incoming, meta).record;
+    }
+
+    // Which local record (if any) is the same patient as an incoming record?
+    // uid match = same patient. Same human ID but different uids = a COLLISION (different patients).
+    function matchIncomingRecord(incoming, list) {
+        list = list || [];
+        if (incoming.uid) {
+            const byUid = list.findIndex(e => e && e.uid === incoming.uid);
+            if (byUid > -1) return { index: byUid, how: 'uid' };
+        }
+        const byId = list.findIndex(e => e && e.id === incoming.id);
+        if (byId === -1) return { index: -1, how: 'none' };
+        const local = list[byId];
+        if (incoming.uid && local.uid && incoming.uid !== local.uid) return { index: -1, how: 'collision', collidesWith: byId };
+        return { index: byId, how: incoming.uid && local.uid ? 'uid' : 'legacy-id' };
+    }
+    function collisionSafeId(id, incoming, list) {
+        const taken = new Set((list || []).map(e => e && e.id));
+        const tag = (incoming.deviceId || (incoming.uid || '').slice(0, 4) || 'IMP').toUpperCase();
+        let candidate = `${id}~${tag}`, n = 2;
+        while (taken.has(candidate)) candidate = `${id}~${tag}${n++}`;
+        return candidate;
     }
 
     // ACK payload builder. The receiver name MUST be the local user accepting
@@ -213,14 +516,36 @@
     // identity.
     function buildAckPayload(patientId, receiverName, ctx) {
         ctx = ctx || {};
-        return {
+        const ack = {
             t: 'MIT_ACK',
-            v: 1,
+            v: 2,
             pid: patientId || '',
             rcv: receiverName || '',
             g: ctx.now || Date.now(),
             app: ctx.appVersion || '',
         };
+        // Which exact version was accepted: lets the sender detect "receiver has an older copy".
+        if (ctx.uid) ack.uid = ctx.uid;
+        if (ctx.payloadHash) ack.ph = ctx.payloadHash;
+        if (ctx.recordVersion !== undefined) ack.rv = ctx.recordVersion;
+        if (ctx.device) ack.dev = ctx.device;
+        ack.h = fnv1a(canonicalJSON(ack));
+        return ack;
+    }
+    // Transfer-level ACK for multi-patient (all / sector) transfers.
+    function buildTransferAckPayload(transferId, payloadHash, count, receiverName, ctx) {
+        ctx = ctx || {};
+        const ack = { t: 'MIT_TACK', v: 1, tid: transferId || '', ph: payloadHash || '', n: count || 0, rcv: receiverName || '', g: ctx.now || Date.now(), app: ctx.appVersion || '' };
+        if (ctx.device) ack.dev = ctx.device;
+        if (ctx.imported !== undefined) ack.imp = ctx.imported;
+        if (ctx.merged !== undefined) ack.mrg = ctx.merged;
+        ack.h = fnv1a(canonicalJSON(ack));
+        return ack;
+    }
+    function verifyAckIntegrity(ack) {
+        if (!ack || typeof ack !== 'object' || !ack.h) return null; // legacy ACK without hash
+        const copy = Object.assign({}, ack); const h = copy.h; delete copy.h;
+        return fnv1a(canonicalJSON(copy)) === h;
     }
 
     // ---------- Structured body-map injuries ----------
@@ -325,14 +650,15 @@
             meta.integrityOk = (fnv1a(canonicalJSON(copy)) === givenHash);
         }
         const now = ctx.now || Date.now();
-        if (meta.expiresAt && now > meta.expiresAt) return { ok: false, reason: 'Bulk QR expired', meta };
-        if (meta.generatedAt && meta.generatedAt > now + QR_MAX_FUTURE_SKEW_MS) return { ok: false, reason: 'Bulk QR generated in the future', meta };
+        _applyTimeChecks(meta, now);
         if (!Array.isArray(wrapper.items)) return { ok: false, reason: 'No items', meta };
-        const data = wrapper.items.map(it => {
-            const decoded = decompressData(it.d || {});
-            decoded._rev = (it.rv || 0);
+        const decodedAll = wrapper.items.map(it => {
+            const decoded = decompressData((it && it.d) || {});
+            decoded._rev = (it && it.rv) || 0;
             return decoded;
-        }).filter(d => d.id && ['P1','P2','P3','DEAD'].includes(d.category));
+        });
+        const data = decodedAll.filter(d => d.id && isValidCategory(d.category));
+        if (data.length !== decodedAll.length) meta.warnings.push(`${decodedAll.length - data.length} record(s) skipped: missing ID or category.`);
         return { ok: true, data, meta };
     }
     function bulkPayloadFits(wrapper) {
@@ -341,11 +667,12 @@
 
     // ---------- Full all-patient offline transfer ----------
     const ALL_TRANSFER_SCHEMA_VERSION = 1;
-    const ALL_QR_CHUNK_SOFT_LIMIT = 1200;
+    const ALL_QR_CHUNK_SOFT_LIMIT = 800; // ~QR version 19-20 at level L: easier phone-to-phone scanning
     const ALL_PATIENT_FIELD_ORDER = [
         'id','time','timestamp','tool','category','action','reason','triager','location','initialLocation','currentLocation','locationHistory','locationConfidence','sector','landmark','floor','area',
         'demos','allergies','notes','highRisk','interventions','evacuated','evacDest','evacVehicle',
-        'injuries','lastReassessed','reassessOutcome','lastDeteriorationAt','handoverState','handoverAt','handoverTo','_rev'
+        'injuries','lastReassessed','reassessOutcome','lastDeteriorationAt','handoverState','handoverAt','handoverTo','_rev',
+        'uid','createdAt','createdBy','deviceId','updatedAt','fts','triageHistory','hospitalId','tod','importConflicts'
     ];
 
     function jsonClone(value) {
@@ -467,12 +794,17 @@
         if (item.act) out.action = item.act;
         return out;
     }
-    function selectBestLocationFix(fixes) {
+    // opts.maxAgeMs: ignore fixes older than this (relative to opts.now) so a patient is never
+    // stamped with where the triager stood several minutes ago.
+    function selectBestLocationFix(fixes, opts) {
+        opts = opts || {};
         if (!Array.isArray(fixes) || !fixes.length) return null;
+        const now = opts.now || Date.now();
         let best = null;
         for (const f of fixes) {
             const n = normaliseLocation(f);
             if (!n || n.lat === undefined || n.lng === undefined) continue;
+            if (opts.maxAgeMs && (n.timestamp === undefined || now - n.timestamp > opts.maxAgeMs)) continue;
             if (!best) { best = n; continue; }
             const ba = _numOrNull(best.acc);
             const na = _numOrNull(n.acc);
@@ -619,6 +951,8 @@
             audit,
             incident: jsonClone(opts.incident || {}) || {},
         };
+        if (opts.scope) wrapper.scope = jsonClone(opts.scope);
+        if (ctx.device) wrapper.dev = ctx.device;
         const canonical = canonicalJSON(wrapper);
         wrapper.h = fnv1a(canonical);
         return wrapper;
@@ -635,49 +969,65 @@
             expiresAt: wrapper.x || null,
             transferId: wrapper.transferId || '',
             sender: wrapper.sndr || '',
+            senderDevice: wrapper.dev || '',
             app: wrapper.app || '',
             count: wrapper.n || 0,
+            scope: wrapper.scope || null,
+            payloadHash: wrapper.h || '',
             auditCount: Array.isArray(wrapper.audit) ? wrapper.audit.length : 0,
             integrityOk: null,
+            warnings: [],
         };
         if (wrapper.h) {
             const copy = Object.assign({}, wrapper);
             const givenHash = copy.h;
             delete copy.h;
             meta.integrityOk = (fnv1a(canonicalJSON(copy)) === givenHash);
-            if (!meta.integrityOk) return { ok: false, reason: 'All-patient payload integrity check failed', meta };
+            if (!meta.integrityOk) return { ok: false, reason: 'All-patient payload integrity check failed (data corrupted in transit)', meta };
         }
         const now = ctx.now || Date.now();
-        if (meta.expiresAt && now > meta.expiresAt) return { ok: false, reason: 'All-patient transfer expired', meta };
-        if (meta.generatedAt && meta.generatedAt > now + QR_MAX_FUTURE_SKEW_MS) return { ok: false, reason: 'All-patient transfer generated in the future', meta };
+        _applyTimeChecks(meta, now);
         if (!Array.isArray(wrapper.patients)) return { ok: false, reason: 'No patients in transfer', meta };
-        const data = wrapper.patients.map(clonePatientRecord).filter(d => d.id && ['P1','P2','P3','DEAD'].includes(d.category));
-        if (data.length !== wrapper.patients.length) return { ok: false, reason: 'One or more patients are missing ID or valid category', meta, data };
-        return { ok: true, data, audit: Array.isArray(wrapper.audit) ? wrapper.audit.map(jsonClone).filter(Boolean) : [], incident: wrapper.incident || {}, meta };
+        const cleaned = wrapper.patients.map(p => sanitisePatientRecord(clonePatientRecord(p)));
+        const data = cleaned.filter(d => d && d.id && isValidCategory(d.category));
+        const skipped = cleaned.length - data.length;
+        if (skipped) meta.warnings.push(`${skipped} record(s) cannot be imported: missing patient ID or triage category.`);
+        if (!data.length) return { ok: false, reason: 'No valid patient records in transfer', meta, data };
+        return { ok: true, data, skipped, audit: Array.isArray(wrapper.audit) ? wrapper.audit.map(jsonClone).filter(Boolean) : [], incident: wrapper.incident || {}, meta };
     }
 
+    // Chunk a transport body. body is ASCII JSON ("json") or "MITZ1:" + base64 deflate ("z1").
     function buildAllPatientsChunks(payload, opts) {
         opts = opts || {};
         const maxChars = Math.max(400, opts.maxChars || ALL_QR_CHUNK_SOFT_LIMIT);
-        const body = (typeof payload === 'string') ? payload : JSON.stringify(payload);
+        const body = opts.body || ((typeof payload === 'string') ? payload : toAsciiJSON(payload));
+        const enc = opts.enc || 'json';
         const transferId = (payload && payload.transferId) || fnv1a(body);
         const payloadHash = fnv1a(body);
         const generatedAt = (payload && payload.g) || Date.now();
         const expiresAt = (payload && payload.x) || (generatedAt + QR_DEFAULT_TTL_MS);
         const sender = (payload && payload.sndr) || '';
         const app = (payload && payload.app) || '';
-        const overheadSample = { t:'MIT_ALL_CHUNK', v:1, transferId, totalChunks:999, chunkIndex:999, g:generatedAt, x:expiresAt, sndr:sender, app, payloadHash, chunkHash:'12345678', data:'' };
-        const overhead = JSON.stringify(overheadSample).length + 32;
-        const sliceSize = Math.max(100, maxChars - overhead);
-        const total = Math.max(1, Math.ceil(body.length / sliceSize));
-        const chunks = [];
-        for (let i = 0; i < total; i++) {
-            const data = body.slice(i * sliceSize, (i + 1) * sliceSize);
-            const chunk = { t:'MIT_ALL_CHUNK', v:1, transferId, totalChunks:total, chunkIndex:i, g:generatedAt, x:expiresAt, sndr:sender, app, payloadHash, chunkHash:fnv1a(data), data };
-            chunk.h = fnv1a(canonicalJSON(chunk));
-            chunks.push(chunk);
+        const overheadSample = { t:'MIT_ALL_CHUNK', v:1, transferId, totalChunks:999, chunkIndex:999, g:generatedAt, x:expiresAt, sndr:sender, app, payloadHash, chunkHash:'12345678', data:'', enc, h:'12345678' };
+        const overhead = toAsciiJSON(overheadSample).length + 16;
+        // Slice so that the ESCAPED chunk (quotes/backslashes double up) stays within maxChars.
+        const budget = Math.max(100, maxChars - overhead);
+        const slices = [];
+        let pos = 0;
+        while (pos < body.length) {
+            let len = Math.min(budget, body.length - pos);
+            while (len > 1 && JSON.stringify(body.slice(pos, pos + len)).length - 2 > budget) len = Math.floor(len * 0.9);
+            slices.push(body.slice(pos, pos + len));
+            pos += len;
         }
-        return chunks;
+        if (!slices.length) slices.push('');
+        const total = slices.length;
+        return slices.map((data, i) => {
+            const chunk = { t:'MIT_ALL_CHUNK', v:1, transferId, totalChunks:total, chunkIndex:i, g:generatedAt, x:expiresAt, sndr:sender, app, payloadHash, chunkHash:fnv1a(data), data };
+            if (enc !== 'json') chunk.enc = enc;
+            chunk.h = fnv1a(canonicalJSON(chunk));
+            return chunk;
+        });
     }
 
     function validateAllPatientChunk(chunk, ctx) {
@@ -687,7 +1037,7 @@
         const meta = {
             transferId: chunk.transferId || '', totalChunks: chunk.totalChunks || 0, chunkIndex: chunk.chunkIndex,
             generatedAt: chunk.g || null, expiresAt: chunk.x || null, sender: chunk.sndr || '', app: chunk.app || '',
-            payloadHash: chunk.payloadHash || '', chunkHash: chunk.chunkHash || '', integrityOk: null
+            payloadHash: chunk.payloadHash || '', chunkHash: chunk.chunkHash || '', enc: chunk.enc || 'json', integrityOk: null, warnings: []
         };
         if (!meta.transferId) return { ok:false, reason:'Chunk missing transfer ID', meta };
         if (!Number.isInteger(meta.totalChunks) || meta.totalChunks < 1) return { ok:false, reason:'Chunk total invalid', meta };
@@ -699,13 +1049,12 @@
             meta.integrityOk = (fnv1a(canonicalJSON(copy)) === givenHash);
             if (!meta.integrityOk) return { ok:false, reason:'Chunk wrapper integrity check failed', meta };
         }
-        const now = ctx.now || Date.now();
-        if (meta.expiresAt && now > meta.expiresAt) return { ok:false, reason:'All-patient chunk expired', meta };
-        if (meta.generatedAt && meta.generatedAt > now + QR_MAX_FUTURE_SKEW_MS) return { ok:false, reason:'All-patient chunk generated in the future', meta };
+        _applyTimeChecks(meta, ctx.now || Date.now());
         return { ok:true, chunk, meta };
     }
 
-    function reassembleAllPatientChunks(chunks, ctx) {
+    // Join validated chunks. Does not decode/decompress.
+    function reassembleChunkBody(chunks, ctx) {
         ctx = ctx || {};
         const seen = new Map();
         let firstMeta = null;
@@ -719,53 +1068,146 @@
             }
             if (!seen.has(m.chunkIndex)) seen.set(m.chunkIndex, c);
         }
-        const total = firstMeta ? firstMeta.totalChunks : 0;
         if (!firstMeta) return { ok:false, reason:'No chunks scanned', received:0, total:0 };
+        const total = firstMeta.totalChunks;
         if (seen.size < total) {
-            const missing = []; for (let i=0;i<total;i++) if (!seen.has(i)) missing.push(i);
+            const missing = []; for (let i = 0; i < total; i++) if (!seen.has(i)) missing.push(i);
             return { ok:false, incomplete:true, reason:`Need ${total - seen.size} more chunk(s)`, received:seen.size, total, missing, meta:firstMeta };
         }
         let body = '';
-        for (let i=0; i<total; i++) body += seen.get(i).data;
+        for (let i = 0; i < total; i++) body += seen.get(i).data;
         if (fnv1a(body) !== firstMeta.payloadHash) return { ok:false, reason:'Overall transfer checksum failed', received:seen.size, total, meta:firstMeta };
+        return { ok:true, body, enc:firstMeta.enc, received:seen.size, total, meta:firstMeta };
+    }
+    function _finishReassembly(text, joined, ctx) {
         let payload;
-        try { payload = JSON.parse(body); } catch (_) { return { ok:false, reason:'Reassembled payload is not valid JSON', received:seen.size, total, meta:firstMeta }; }
+        try { payload = JSON.parse(text); } catch (_) { return { ok:false, reason:'Reassembled payload is not valid JSON', received:joined.received, total:joined.total, meta:joined.meta }; }
         const valid = validateAllPatientsWrapper(payload, ctx);
-        if (!valid.ok) return Object.assign({ received:seen.size, total }, valid);
-        valid.received = seen.size; valid.total = total;
+        if (!valid.ok) return Object.assign({ received:joined.received, total:joined.total }, valid);
+        valid.received = joined.received; valid.total = joined.total; valid.wrapper = payload;
         return valid;
     }
+    function reassembleAllPatientChunks(chunks, ctx) {
+        const joined = reassembleChunkBody(chunks, ctx);
+        if (!joined.ok) return joined;
+        if (joined.enc !== 'json') return { ok:false, reason:'Compressed transfer: use reassembleAllPatientChunksAsync', received:joined.received, total:joined.total, meta:joined.meta };
+        return _finishReassembly(joined.body, joined, ctx);
+    }
+    async function reassembleAllPatientChunksAsync(chunks, ctx) {
+        const joined = reassembleChunkBody(chunks, ctx);
+        if (!joined.ok) return joined;
+        let text;
+        try { text = await decodeTransportText(joined.body); }
+        catch (e) { return { ok:false, reason:'Could not decompress transfer: ' + (e && e.message ? e.message : e), received:joined.received, total:joined.total, meta:joined.meta }; }
+        return _finishReassembly(text, joined, ctx);
+    }
 
+    function _transferResult(payload, transport, enc, jsonText, maxChars) {
+        if (transport.length <= maxChars) return { mode:'single', payload, text: jsonText, qrText: transport, enc, chunks:[], transferId:payload.transferId, totalChunks:1, byteLength:transport.length, jsonLength: jsonText.length };
+        const chunks = buildAllPatientsChunks(payload, { maxChars, body: transport, enc });
+        return { mode:'chunked', payload, text: jsonText, qrText: null, enc, chunks, transferId:payload.transferId, totalChunks:chunks.length, byteLength:transport.length, jsonLength: jsonText.length };
+    }
     function buildAllPatientsTransfer(entries, opts, ctx) {
         opts = opts || {}; ctx = ctx || {};
         const payload = buildAllPatientsPayload(entries, opts, ctx);
-        const text = JSON.stringify(payload);
-        const maxChars = opts.maxChars || ALL_QR_CHUNK_SOFT_LIMIT;
-        if (text.length <= maxChars) return { mode:'single', payload, text, chunks:[], transferId:payload.transferId, totalChunks:1, byteLength:text.length };
-        const chunks = buildAllPatientsChunks(payload, { maxChars });
-        return { mode:'chunked', payload, text, chunks, transferId:payload.transferId, totalChunks:chunks.length, byteLength:text.length };
+        const text = toAsciiJSON(payload);
+        return _transferResult(payload, text, 'json', text, opts.maxChars || ALL_QR_CHUNK_SOFT_LIMIT);
+    }
+    // Same as above but compresses (deflate + base64) where the platform supports it — typically 5-10x fewer QR codes.
+    async function buildAllPatientsTransferAsync(entries, opts, ctx) {
+        opts = opts || {}; ctx = ctx || {};
+        const payload = buildAllPatientsPayload(entries, opts, ctx);
+        const text = toAsciiJSON(payload);
+        let transport = text, enc = 'json';
+        if (opts.compress !== false) {
+            const z = await encodeTransportText(text);
+            if (z && z.length < text.length) { transport = z; enc = 'z1'; }
+        }
+        return _transferResult(payload, transport, enc, text, opts.maxChars || ALL_QR_CHUNK_SOFT_LIMIT);
     }
 
+    // Import plan: uid-aware matching, field-level merge report, collisions renamed (never merged).
     function mergeAllPatientRecords(existingList, incomingList, meta) {
         const records = (existingList || []).map(clonePatientRecord);
         let imported = 0, merged = 0;
-        const nearDuplicates = [];
-        for (const incoming of (incomingList || [])) {
-            const idx = records.findIndex(e => e.id === incoming.id);
+        const nearDuplicates = [], collisions = [], report = [];
+        for (const raw of (incomingList || [])) {
+            const incoming = Object.assign({}, raw);
             const recordMeta = Object.assign({}, meta || {}, { recordVersion: incoming._rev || (meta && meta.recordVersion) || 0 });
-            if (idx > -1) {
-                records[idx] = mergePatientRecords(records[idx], incoming, recordMeta);
+            const match = matchIncomingRecord(incoming, records);
+            if (match.index > -1) {
+                const res = mergePatientRecordsDetailed(records[match.index], incoming, recordMeta);
+                records[match.index] = res.record;
                 merged++;
-            } else {
-                const cands = findDuplicateCandidates(incoming, records, { threshold: 0.7 });
-                if (cands.length) nearDuplicates.push({ incoming, candidates: cands });
-                const entry = clonePatientRecord(incoming);
-                entry._rev = (incoming._rev || 0) + 1;
-                records.push(entry);
-                imported++;
+                report.push({ id: res.record.id, action: 'merged', how: match.how, changes: res.changes, conflicts: res.conflicts });
+                continue;
             }
+            const entry = clonePatientRecord(incoming);
+            if (match.how === 'collision') {
+                const newId = collisionSafeId(incoming.id, incoming, records);
+                collisions.push({ originalId: incoming.id, newId });
+                entry.id = newId;
+                entry.importConflicts = (entry.importConflicts || []).concat([{ field: 'id', local: incoming.id, incoming: newId, why: 'Same patient ID as a different local patient — imported under a new ID. Check the physical tag.', from: (meta && meta.sender) || '', at: (meta && meta.now) || Date.now() }]);
+            }
+            const cands = findDuplicateCandidates(entry, records, { threshold: 0.7 });
+            if (cands.length) nearDuplicates.push({ incoming: entry, candidates: cands });
+            entry.handoverState = 'received';
+            entry.receivedFrom = (meta && meta.sender) || '';
+            entry.receivedAt = (meta && meta.now) || Date.now();
+            entry._rev = (incoming._rev || 0) + 1;
+            records.push(entry);
+            imported++;
+            report.push({ id: entry.id, action: match.how === 'collision' ? 'imported-renamed' : 'imported', how: match.how });
         }
-        return { records, imported, merged, nearDuplicates };
+        return { records, imported, merged, nearDuplicates, collisions, report };
+    }
+
+    // ---------- Transport encoding (compression) ----------
+    const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    function bytesToBase64(bytes) {
+        let out = '', i = 0;
+        for (; i + 2 < bytes.length; i += 3) {
+            const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+            out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + B64[(n >> 6) & 63] + B64[n & 63];
+        }
+        if (i < bytes.length) {
+            const n = (bytes[i] << 16) | ((i + 1 < bytes.length ? bytes[i + 1] : 0) << 8);
+            out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63] + (i + 1 < bytes.length ? B64[(n >> 6) & 63] : '=') + '=';
+        }
+        return out;
+    }
+    function base64ToBytes(str) {
+        const clean = String(str).replace(/[^A-Za-z0-9+/]/g, '');
+        const out = new Uint8Array(Math.floor(clean.length * 3 / 4));
+        let o = 0;
+        for (let i = 0; i < clean.length; i += 4) {
+            const a = B64.indexOf(clean[i]), b = B64.indexOf(clean[i + 1]);
+            const c = i + 2 < clean.length ? B64.indexOf(clean[i + 2]) : -1, d = i + 3 < clean.length ? B64.indexOf(clean[i + 3]) : -1;
+            const n = (a << 18) | (b << 12) | ((c < 0 ? 0 : c) << 6) | (d < 0 ? 0 : d);
+            if (o < out.length) out[o++] = (n >> 16) & 255;
+            if (c >= 0 && o < out.length) out[o++] = (n >> 8) & 255;
+            if (d >= 0 && o < out.length) out[o++] = n & 255;
+        }
+        return out.slice(0, o);
+    }
+    function compressionSupported() {
+        return typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined' && typeof Blob !== 'undefined' && typeof Response !== 'undefined';
+    }
+    async function encodeTransportText(text) {
+        if (!compressionSupported()) return null;
+        try {
+            const stream = new Blob([utf8Bytes(text)]).stream().pipeThrough(new CompressionStream('deflate'));
+            const buf = new Uint8Array(await new Response(stream).arrayBuffer());
+            return 'MITZ1:' + bytesToBase64(buf);
+        } catch (_) { return null; }
+    }
+    function isCompressedTransport(text) { return typeof text === 'string' && text.indexOf('MITZ1:') === 0; }
+    async function decodeTransportText(text) {
+        if (!isCompressedTransport(text)) return text;
+        if (!compressionSupported()) throw new Error('This browser cannot decompress transfers — use the transfer file instead');
+        const stream = new Blob([base64ToBytes(text.slice(6))]).stream().pipeThrough(new DecompressionStream('deflate'));
+        const buf = new Uint8Array(await new Response(stream).arrayBuffer());
+        return new TextDecoder().decode(buf);
     }
 
     // ---------- Patient identity / duplicate matching ----------
@@ -824,7 +1266,14 @@
             if (dist < 30) score += 0.30;
             else if (dist < 100) score += 0.30 * (1 - (dist - 30) / 70);
         }
-        return used > 0 ? score / used : 0;
+        const raw = used > 0 ? score / used : 0;
+        // Category, sector and triage time alone are shared by many different casualties in a
+        // mass-casualty incident. Without matching demographics or GPS within 100 m there is no
+        // real evidence of identity, so the score is capped below every warning threshold.
+        const demosMatch = !!(da && db && (da === db || da.includes(db) || db.includes(da)));
+        const gpsNear = dist !== null && dist < 100;
+        if (!demosMatch && !gpsNear) return Math.min(raw, 0.5);
+        return raw;
     }
     function findDuplicateCandidates(incoming, existingList, opts) {
         opts = opts || {};
@@ -840,22 +1289,28 @@
     }
 
     // ---------- Reassessment scheduling ----------
-    // Default intervals (ms): P1 = 10 min, P2 = 30 min, P3 = 60 min.
-    const REASSESS_INTERVALS = { P1: 10*60*1000, P2: 30*60*1000, P3: 60*60*1000, DEAD: null };
-    function nextReassessmentDue(entry, now) {
+    // Local defaults (not specified by NHSE B0128, which says "reassess regularly") — require clinical sign-off.
+    // Not Breathing (TST) is due immediately: NARU — "must be re-assessed by a Healthcare responder as soon as possible".
+    const REASSESS_INTERVALS = { P1: 10*60*1000, P2: 30*60*1000, P3: 60*60*1000, P1_HOLD: 30*60*1000, NOT_BREATHING: 5*60*1000, DEAD: null };
+    function nextReassessmentDue(entry, now, intervals) {
         if (!entry) return null;
-        const interval = REASSESS_INTERVALS[entry.category];
-        if (!interval) return null;
+        const table = Object.assign({}, REASSESS_INTERVALS, intervals || {});
+        const interval = table[entry.category];
+        if (interval === null || interval === undefined) return null;
+        if (entry.category === 'NOT_BREATHING' && entry.lastReassessed == null) {
+            return (entry.timestamp != null) ? entry.timestamp : ((now != null) ? now : Date.now());
+        }
         const last = (entry.lastReassessed != null) ? entry.lastReassessed
                   : (entry.timestamp != null) ? entry.timestamp
                   : (now != null) ? now : Date.now();
         return last + interval;
     }
-    function reassessmentStatus(entry, now) {
+    function reassessmentStatus(entry, now, intervals) {
         const t = now || Date.now();
-        const due = nextReassessmentDue(entry, t);
+        const due = nextReassessmentDue(entry, t, intervals);
         if (due === null) return { state: 'na', dueAt: null, overdueMs: 0 };
         const overdueMs = t - due;
+        if (overdueMs >= 0 && entry && entry.category === 'NOT_BREATHING') return { state: 'overdue', dueAt: due, overdueMs, hcp: true };
         if (overdueMs > 0) return { state: 'overdue', dueAt: due, overdueMs };
         if (overdueMs > -2 * 60 * 1000) return { state: 'due-soon', dueAt: due, overdueMs };
         return { state: 'ok', dueAt: due, overdueMs };
@@ -870,11 +1325,11 @@
     }
 
     // ---------- Deterioration detection ----------
-    // Categories ordered most-acute first. P1 < P2 < P3; DEAD treated separately.
-    const CATEGORY_RANK = { P1: 0, P2: 1, P3: 2, DEAD: -1 };
+    const CATEGORY_RANK = { P1: 0, P2: 1, P3: 2 };
     function categoryWorsened(prev, next) {
-        if (prev === next) return false;
-        if (next === 'DEAD' && prev !== 'DEAD') return true;
+        if (prev === next || !next) return false;
+        const terminal = ['DEAD', 'NOT_BREATHING', 'P1_HOLD'];
+        if (terminal.indexOf(next) > -1) return terminal.indexOf(prev) === -1 || (prev === 'NOT_BREATHING' && next === 'DEAD');
         const rp = CATEGORY_RANK[prev], rn = CATEGORY_RANK[next];
         if (rp === undefined || rn === undefined) return false;
         return rn < rp;
@@ -887,10 +1342,14 @@
     function buildPatientTimeline(entry, auditLog) {
         const events = [];
         if (!entry) return events;
-        if (entry.timestamp) {
+        if (Array.isArray(entry.triageHistory) && entry.triageHistory.length) {
+            for (const t of entry.triageHistory) {
+                events.push({ ts: t.ts || 0, kind: 'triage', label: `${t.kind === 'retriage' ? 'Re-triage' : (t.kind === 'correction' ? 'Triage corrected' : 'Triage')}: ${categoryShort(t.category)}${t.reason ? ' — ' + t.reason : ''}`, detail: [t.tool, t.by].filter(Boolean).join(' • ') });
+            }
+        } else if (entry.timestamp) {
             events.push({
                 ts: entry.timestamp, kind: 'triage',
-                label: `Triage: ${entry.category}${entry.reason ? ' — ' + entry.reason : ''}`,
+                label: `Triage: ${categoryShort(entry.category)}${entry.reason ? ' — ' + entry.reason : ''}`,
                 detail: entry.tool || '',
             });
         }
@@ -922,10 +1381,10 @@
         if (Array.isArray(auditLog)) {
             for (const a of auditLog) {
                 if (!a || a.patientId !== entry.id) continue;
-                if (['TRIAGE_COMPLETE','INTERVENTION_ADDED','INTERVENTION_REMOVED'].includes(a.action)) continue; // already covered
+                if (['TRIAGE_COMPLETE','RETRIAGE_COMPLETE','TRIAGE_CORRECTED','INTERVENTION_ADDED','INTERVENTION_REMOVED','LOCATION_UPDATE','REASSESS'].includes(a.action)) continue; // already covered by record fields
                 events.push({
                     ts: a.clinTime || a.sysTime, kind: 'audit',
-                    label: a.action.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()),
+                    label: String(a.action || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase()),
                     detail: a.details || '',
                 });
             }
@@ -945,14 +1404,15 @@
         return s;
     }
 
-    // Triage flow logic (TST + MITT) — pure decision functions for tests
+    // Triage flow logic (TST + MITT) — pure decision functions, matching the NHS England
+    // TST and NHS MITT flowcharts (April 2023). The app's question text mirrors the cards.
     function tstNext(stepId, answer) {
         const flow = {
             walking: { yes: { type: 'result', category: 'P3', reason: 'Walking' }, no: { type: 'next', step: 'bleeding' } },
-            bleeding: { yes: { type: 'result', category: 'P1', reason: 'Catastrophic Bleeding' }, no: { type: 'next', step: 'talking' } },
+            bleeding: { yes: { type: 'result', category: 'P1', reason: 'Severe Bleeding' }, no: { type: 'next', step: 'talking' } },
             talking: { yes: { type: 'next', step: 'penetrating' }, no: { type: 'next', step: 'breathing' } },
-            penetrating: { yes: { type: 'result', category: 'P1', reason: 'Penetrating Trauma' }, no: { type: 'result', category: 'P2', reason: 'Casualty Not Walking' } },
-            breathing: { yes: { type: 'result', category: 'P1', reason: 'Unconscious - Breathing' }, no: { type: 'result', category: 'DEAD', reason: 'Apnoeic' } },
+            penetrating: { yes: { type: 'result', category: 'P1', reason: 'Penetrating Injury' }, no: { type: 'result', category: 'P2', reason: 'Talking, No Penetrating Injury' } },
+            breathing: { yes: { type: 'result', category: 'P1', reason: 'Not Talking, Breathing' }, no: { type: 'result', category: 'NOT_BREATHING', reason: 'Not Breathing' } },
         };
         if (!flow[stepId]) return null;
         return answer ? flow[stepId].yes : flow[stepId].no;
@@ -961,14 +1421,162 @@
         const flow = {
             cat_bleed: { yes: { type: 'result', category: 'P1', reason: 'Catastrophic Bleeding' }, no: { type: 'next', step: 'walking' } },
             walking: { yes: { type: 'result', category: 'P3', reason: 'Walking' }, no: { type: 'next', step: 'breathing' } },
-            breathing: { yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', reason: 'Apnoeic' } },
-            voice: { yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', reason: 'Unresponsive to Voice' } },
-            age: { yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', reason: 'Age < 2' } },
-            rr: { yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', reason: 'RR outside 12-23' } },
-            hr: { yes: { type: 'result', category: 'P2', reason: 'Stable Physiology' }, no: { type: 'result', category: 'P1', reason: 'Tachycardia > 100' } },
+            breathing: { yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', reason: 'Not Breathing' } },
+            voice: { yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', reason: 'Does Not Respond to Voice' } },
+            age: { yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', reason: 'Aged 2 or Under' } },
+            rr: { yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', reason: 'Breathing Rate Outside 12-23' } },
+            // Card: "Heart Rate 100 or More" — YES -> P1, NO -> P2.
+            hr: { yes: { type: 'result', category: 'P1', reason: 'Heart Rate 100 or More' }, no: { type: 'result', category: 'P2', reason: 'Heart Rate Under 100' } },
         };
         if (!flow[stepId]) return null;
         return answer ? flow[stepId].yes : flow[stepId].no;
+    }
+
+    // ---------- SHA-256 (audit hash chain) ----------
+    function utf8Bytes(str) {
+        if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(String(str));
+        const s = unescape(encodeURIComponent(String(str)));
+        const out = new Uint8Array(s.length);
+        for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+        return out;
+    }
+    const _SHA_K = (() => {
+        const k = [], primes = [];
+        for (let n = 2; primes.length < 64; n++) { if (primes.every(p => n % p)) primes.push(n); }
+        primes.forEach(p => k.push((Math.cbrt(p) % 1) * 4294967296 >>> 0));
+        return { k, h: primes.slice(0, 8).map(p => (Math.sqrt(p) % 1) * 4294967296 >>> 0) };
+    })();
+    function sha256Hex(str) {
+        const bytes = utf8Bytes(str);
+        const l = bytes.length;
+        const total = ((l + 9 + 63) >> 6) << 6;
+        const m = new Uint8Array(total);
+        m.set(bytes); m[l] = 0x80;
+        const bitsHi = Math.floor(l / 0x20000000), bitsLo = (l << 3) >>> 0;
+        m[total - 8] = (bitsHi >>> 24) & 255; m[total - 7] = (bitsHi >>> 16) & 255; m[total - 6] = (bitsHi >>> 8) & 255; m[total - 5] = bitsHi & 255;
+        m[total - 4] = (bitsLo >>> 24) & 255; m[total - 3] = (bitsLo >>> 16) & 255; m[total - 2] = (bitsLo >>> 8) & 255; m[total - 1] = bitsLo & 255;
+        const H = _SHA_K.h.slice(), K = _SHA_K.k, W = new Array(64);
+        const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+        for (let off = 0; off < total; off += 64) {
+            for (let i = 0; i < 16; i++) W[i] = ((m[off + i*4] << 24) | (m[off + i*4 + 1] << 16) | (m[off + i*4 + 2] << 8) | m[off + i*4 + 3]) >>> 0;
+            for (let i = 16; i < 64; i++) {
+                const s0 = rotr(W[i-15], 7) ^ rotr(W[i-15], 18) ^ (W[i-15] >>> 3);
+                const s1 = rotr(W[i-2], 17) ^ rotr(W[i-2], 19) ^ (W[i-2] >>> 10);
+                W[i] = (W[i-16] + s0 + W[i-7] + s1) >>> 0;
+            }
+            let [a, b, c, d, e, f, g, h] = H;
+            for (let i = 0; i < 64; i++) {
+                const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+                const ch = (e & f) ^ (~e & g);
+                const t1 = (h + S1 + ch + K[i] + W[i]) >>> 0;
+                const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+                const maj = (a & b) ^ (a & c) ^ (b & c);
+                const t2 = (S0 + maj) >>> 0;
+                h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+            }
+            H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+            H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+        }
+        return H.map(x => ('00000000' + x.toString(16)).slice(-8)).join('');
+    }
+
+    // ---------- Tamper-evident audit log ----------
+    // Each entry carries seq, prevHash and hash = SHA-256(canonical entry without hash).
+    // Editing, deleting or reordering any stored entry breaks the chain from that point.
+    // (Evidence of tampering, not prevention: record the head hash externally — it is printed on every export.)
+    const AUDIT_GENESIS = '0'.repeat(64);
+    function sealAuditEntry(entry, prev) {
+        const e = jsonClone(entry) || {};
+        delete e.hash;
+        e.seq = prev ? (prev.seq || 0) + 1 : 1;
+        e.prevHash = prev ? prev.hash : AUDIT_GENESIS;
+        e.hash = sha256Hex(canonicalJSON(e));
+        return e;
+    }
+    function verifyAuditChain(entries) {
+        const list = Array.isArray(entries) ? entries : [];
+        let prev = null;
+        for (let i = 0; i < list.length; i++) {
+            const e = list[i];
+            const why = (reason) => ({ ok: false, count: list.length, verified: i, brokenAt: i, brokenSeq: e && e.seq, reason, headHash: list.length ? list[list.length - 1].hash : AUDIT_GENESIS });
+            if (!e || !e.hash) return why('entry has no hash');
+            if (e.seq !== (prev ? prev.seq + 1 : 1)) return why('sequence gap or reordering');
+            if (e.prevHash !== (prev ? prev.hash : AUDIT_GENESIS)) return why('previous-hash link broken');
+            const copy = Object.assign({}, e); delete copy.hash;
+            if (sha256Hex(canonicalJSON(copy)) !== e.hash) return why('entry content altered');
+            prev = e;
+        }
+        return { ok: true, count: list.length, verified: list.length, headHash: prev ? prev.hash : AUDIT_GENESIS };
+    }
+    // Seal pre-existing (unchained) entries once, preserving their content and marking them legacy.
+    function sealLegacyAudit(entries) {
+        const out = [];
+        (entries || []).forEach(e => { out.push(sealAuditEntry(Object.assign({}, e, { legacyUnsealed: true }), out[out.length - 1] || null)); });
+        return out;
+    }
+    function auditKey(a) {
+        if (!a) return '';
+        if (a.deviceId && a.seq && a.hash) return `${a.deviceId}|${a.seq}|${a.hash}`;
+        return [a.sysTime, a.user, a.action, a.patientId, a.details].join('|');
+    }
+    // Other devices' audit rows are kept separately (they have their own chains) and de-duplicated.
+    function mergeImportedAudit(existing, incoming, source) {
+        const out = (existing || []).slice();
+        const seen = new Set(out.map(auditKey));
+        let added = 0;
+        (incoming || []).forEach(a => {
+            if (!a || typeof a !== 'object') return;
+            const k = auditKey(a);
+            if (seen.has(k)) return;
+            seen.add(k);
+            out.push(Object.assign({}, jsonClone(a), { importedVia: source || '' }));
+            added++;
+        });
+        return { list: out, added };
+    }
+
+    // ---------- Export helpers ----------
+    // CSV cell with formula-injection guard (cells starting = + - @ tab CR are prefixed with ').
+    function csvCell(v) {
+        if (v === undefined || v === null) return '""';
+        let s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+        return '"' + s.replace(/"/g, '""') + '"';
+    }
+    // Unambiguous local timestamp with UTC offset, e.g. 2026-09-25T14:03:22.123+01:00
+    function isoWithOffset(ts) {
+        const n = _num(ts);
+        if (n === null) return '';
+        const d = new Date(n);
+        const off = -d.getTimezoneOffset();
+        const p = (x, w) => String(Math.abs(x)).padStart(w || 2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}${off >= 0 ? '+' : '-'}${p(Math.floor(Math.abs(off) / 60))}:${p(Math.abs(off) % 60)}`;
+    }
+
+    // ---------- Legacy data migration ----------
+    // Brings records saved by older versions up to date. Returns audit events describing every change.
+    function migrateLegacyRecords(list, ctx) {
+        ctx = ctx || {};
+        const events = [];
+        const records = (list || []).map(r => {
+            const e = Object.assign({}, r);
+            if (!e.uid) { e.uid = makeUid(); events.push({ action: 'RECORD_MIGRATED', patientId: e.id, details: 'Assigned permanent record uid (upgrade from earlier version)' }); }
+            if (!e.createdAt) e.createdAt = e.timestamp || ctx.now || Date.now();
+            if (!e.createdBy) e.createdBy = e.triager || '';
+            if (!e.fts) e.fts = {};
+            if (!Array.isArray(e.triageHistory) || !e.triageHistory.length) e.triageHistory = e.category ? [{ ts: e.timestamp || e.createdAt, category: e.category, reason: e.reason || '', action: e.action || '', tool: e.tool || '', by: e.triager || '', kind: 'triage' }] : [];
+            if (e.category === 'DEAD' && e.tool === 'TST') {
+                e.category = 'NOT_BREATHING';
+                events.push({ action: 'CATEGORY_MIGRATED', patientId: e.id, details: 'TST outcome relabelled DEAD -> Not Breathing (NHS England labelling: Dead is MITT only). Needs healthcare reassessment.' });
+            }
+            return e;
+        });
+        const counts = {};
+        records.forEach(r => { counts[r.id] = (counts[r.id] || 0) + 1; });
+        Object.keys(counts).filter(id => counts[id] > 1).forEach(id => {
+            events.push({ action: 'DUPLICATE_ID_FOUND', patientId: id, details: `${counts[id]} stored records share this ID (earlier version could reuse IDs). All are now shown — review each.` });
+        });
+        return { records, events };
     }
 
     const api = {
@@ -987,6 +1595,14 @@
         similarityScore, findDuplicateCandidates,
         nextReassessmentDue, reassessmentStatus, applyReassessment,
         categoryWorsened, buildPatientTimeline, shortCodeFromHash,
+        CATEGORIES, CATEGORY_INFO, PATIENT_QR_MAX_CHARS, PATIENT_QR_LOCATION_HISTORY_MAX, AUDIT_GENESIS,
+        isValidCategory, categoryShort, categoryLabel, toAsciiJSON, makeUid, makeDeviceCode, nextAutoId,
+        sanitisePatientRecord, sanitiseInterventions, mergePatientRecordsDetailed, matchIncomingRecord, collisionSafeId,
+        resolveCategoryMerge, mergeNotesText, buildTransferAckPayload, verifyAckIntegrity,
+        reassembleChunkBody, reassembleAllPatientChunksAsync, buildAllPatientsTransferAsync,
+        encodeTransportText, decodeTransportText, isCompressedTransport, compressionSupported, bytesToBase64, base64ToBytes,
+        sha256Hex, sealAuditEntry, verifyAuditChain, sealLegacyAudit, mergeImportedAudit, auditKey,
+        csvCell, isoWithOffset, migrateLegacyRecords,
     };
 
     if (typeof module !== 'undefined' && module.exports) {

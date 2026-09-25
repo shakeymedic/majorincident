@@ -30,3 +30,17 @@ jobs:
             }
             console.log('Inline JS parses cleanly');
           "
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install test dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Run end-to-end tests (two simulated phones)
+        run: node tests/e2e.js
