@@ -676,7 +676,9 @@
 
     /* ---- v0.8.0 safety review additions ---- */
     /* Phone-width layout fixes */
-    html, body { overflow-x: hidden; }
+    /* Clip (not hide) sideways overflow: 'hidden' on html/body creates a second scroll container,
+       which breaks vertical scrolling in iPhone Safari. 'clip' does not create a scroll container. */
+    .container { overflow-x: clip; }
     header { flex-wrap: wrap; gap: 6px; }
     .header-controls { gap: 6px; flex-wrap: wrap; }
     @media (max-width: 480px) {
@@ -1419,7 +1421,7 @@
 <script>
     // ---------- App version / build ----------
     const APP_VERSION = '0.8.0';
-    const APP_BUILD = '2026-09-25-safety-review';
+    const APP_BUILD = '2026-09-25-scroll-fix';
     const QR_DEFAULT_TTL_MS = MITTLib.QR_DEFAULT_TTL_MS;
     const GPS_FRESH_MS = 30 * 1000;       // fixes older than this are not used for "best fix"
     const GPS_STAMP_MAX_AGE_MS = 60 * 1000; // never stamp a patient with a position older than this
