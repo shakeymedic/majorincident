@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v9-2026-09-25-scroll-fix';
+const CACHE_NAME = 'mit-triage-v10-2026-09-25-compact-patient';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 const TILE_CACHE_MAX = 600;

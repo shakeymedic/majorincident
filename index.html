@@ -433,8 +433,34 @@
     tr.critical-alert td.cat-cell { outline: 3px solid #cc0000; outline-offset: -3px; }
     @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
 
-    #details-container { border-top: 1px solid #ccc; margin-top: 1.5rem; padding-top: 1.5rem; display: none; }
-    #details-container.show { display: block; }
+    #details-container { display: block; margin-top: 0.5rem; }
+    /* Compact patient screen: key facts on top, everything else in tap-to-open sections */
+    #result-screen .triage-tag { font-size: 3.2rem; padding: 1rem; margin: 0.5rem 0; border-width: 5px; }
+    #result-screen .triage-label { font-size: 1.05rem; margin-top: 2px; }
+    #result-screen .triage-tag.cat-bg-NOT_BREATHING #tag-text, #result-screen .triage-tag.cat-bg-P1_HOLD #tag-text { font-size: 2.3rem; }
+    .rs-head { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:1.15rem; margin:0.2rem 0 0.4rem; flex-wrap:wrap; }
+    .rs-action { font-weight:bold; text-align:center; font-size:1rem; color:var(--text-color); margin:0 0 0.6rem; }
+    .rs-row { display:flex; gap:8px; margin-bottom:8px; }
+    .rs-row .btn { flex:1; margin-bottom:0; padding:1rem 0.5rem; font-size:1.05rem; }
+    .rs-row3 .btn, .btn.rs-small { padding:0.75rem 0.4rem; font-size:0.95rem; }
+    .risk-toggle { display:flex; align-items:center; gap:12px; font-weight:bold; color:var(--nhs-red); padding:12px 14px; border:3px solid var(--nhs-red); border-radius:10px; background:rgba(218,41,28,0.06); margin-bottom:0.6rem; cursor:pointer; }
+    .risk-toggle input { width:30px; height:30px; flex:0 0 auto; }
+    .risk-toggle.on { background:var(--nhs-red); color:#fff; }
+    details.rs-sec { border:2px solid rgba(0,94,184,0.35); border-radius:10px; margin-bottom:8px; background:var(--card-bg); }
+    details.rs-sec > summary { list-style:none; cursor:pointer; padding:14px 16px; font-weight:bold; font-size:1.1rem; color:var(--nhs-blue); display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; min-height:52px; }
+    details.rs-sec > summary::-webkit-details-marker { display:none; }
+    details.rs-sec > summary::before { content:"▸"; display:inline-block; width:1em; }
+    details.rs-sec[open] > summary::before { content:"▾"; }
+    body.night-mode details.rs-sec > summary { color: var(--nhs-yellow); }
+    .rs-sum { font-weight:normal; font-size:0.85rem; color:var(--nhs-grey); }
+    .rs-body { padding:0 14px 12px; }
+    .rs-body .int-grid { margin-bottom:0.5rem; gap:8px; }
+    .rs-body .int-btn { padding:10px 6px; font-size:0.95rem; min-height:58px; }
+    .rs-body .int-btn::before { font-size:1rem; margin-bottom:2px; }
+    .rs-body .location-card { border:none; padding:0; margin:0; background:none; }
+    .rs-body .location-card h3 { display:none; }
+    details.rs-prompts { display:none; padding:0.8rem 1rem; margin-bottom:0.6rem; }
+    details.rs-prompts > summary { font-weight:800; text-transform:uppercase; cursor:pointer; }
     
     .modal-overlay {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -1172,9 +1198,9 @@
         </div>
 
         <div id="result-screen" class="screen">
-            <h2>Triage Result</h2>
-            <div style="display:flex; justify-content:center; gap:15px; align-items:center;">
-                <p style="font-size:1.2rem;">ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong></p>
+            <div class="rs-head">
+                <span>ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong></span>
+                <span id="reassess-head"></span>
             </div>
             <div id="result-alerts"></div>
             <div id="result-tag" class="triage-tag">
@@ -1182,35 +1208,32 @@
                 <span class="triage-label" id="tag-label">IMMEDIATE</span>
                 <div id="hr-badge" class="hr-badge" style="display:none;">HIGH RISK</div>
             </div>
-            <button id="btn-change-answer" class="btn btn-secondary" style="display:none; background:#666;" onclick="changeLastAnswer()">↩ Change last answer (tapped wrong button)</button>
-            <div id="clinical-prompts" class="clinical-prompt"></div>
-            <div id="action-box" class="clinical-note" style="font-size: 1.1rem; font-weight: bold; text-align: center; border-color: var(--nhs-red); color: var(--nhs-red);"></div>
-
-            <div id="result-location-summary" class="location-status-card unknown">
-                <strong>Location:</strong> <span id="location-status-text">Waiting for GPS / sector</span>
-                <div id="location-age-warning" class="location-mini"></div>
-                <button class="btn btn-secondary" style="margin:0.7rem 0 0 0; padding:0.85rem; font-size:0.95rem;" onclick="openLocationEditor()">Confirm / edit patient location</button>
+            <div id="risk-container" style="display:none;">
+                <label class="risk-toggle">
+                    <input type="checkbox" id="risk-check" onchange="onHighRiskChange()">
+                    <span>HIGH RISK OF DETERIORATION</span>
+                </label>
+            </div>
+            <div id="action-box" class="rs-action"></div>
+            <button id="btn-change-answer" class="btn btn-secondary rs-small" style="display:none; background:#666;" onclick="changeLastAnswer()">↩ Change last answer (tapped wrong button)</button>
+            <div class="rs-row">
+                <button class="btn btn-primary" onclick="generatePatientQR()">📱 QR Handover</button>
+                <button class="btn btn-primary" style="background:var(--nhs-green);" onclick="nextPatient()">Next Patient →</button>
+            </div>
+            <div class="rs-row rs-row3">
+                <button id="btn-reassess" class="btn btn-secondary rs-small" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
+                <button id="btn-retriage" class="btn btn-secondary rs-small" onclick="reTriage()">↻ Re-Triage</button>
+                <button id="btn-atmist" class="btn btn-secondary rs-small" onclick="generateAtmist()">📢 ATMIST</button>
             </div>
 
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <button class="btn btn-primary" style="flex: 1;" onclick="generatePatientQR()">📱 QR Handover</button>
-                <button class="btn btn-nfc nfc-only" style="flex: 1; display:none;" onclick="triggerNfcSend()">📡 Write NFC tag</button>
-            </div>
-
-            <button id="btn-toggle-details" class="btn btn-secondary" onclick="toggleDetails()">+ Interventions &amp; Notes</button>
-            <div style="display:flex; gap:10px; margin-top:10px;">
-                <button id="btn-retriage" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-blue); color: var(--nhs-blue); background: var(--card-bg);" onclick="reTriage()">↻ Re-Triage</button>
-                <button id="btn-atmist" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-green); color: var(--nhs-green); background: var(--card-bg);" onclick="generateAtmist()">📢 ATMIST</button>
-            </div>
-            <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-                <button id="btn-reassess" class="btn btn-secondary" style="flex:1; border:2px solid var(--nhs-yellow); color: var(--text-color); background: var(--card-bg); min-width:130px;" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
-                <button class="btn btn-secondary" style="flex:1; min-width:130px; background:#444;" onclick="openTimelineForCurrent()">🕒 Timeline</button>
-                <button class="btn btn-secondary" style="flex:1; min-width:130px; background:#555;" onclick="printPatientLabel()">🖨 Print Label</button>
-            </div>
+            <details id="clinical-prompts" class="clinical-prompt rs-prompts"></details>
 
             <div id="details-container">
+            <details class="rs-sec" id="sec-interventions">
+                <summary>Interventions <span class="rs-sum" id="sum-interventions"></span></summary>
+                <div class="rs-body">
                 <div id="time-offset-container">
-                    <label for="time-offset" style="font-size:0.9rem; font-weight:bold;">Time of next intervention / injury:</label>
+                    <label for="time-offset" style="font-size:0.9rem; font-weight:bold;">Time of next entry:</label>
                     <select id="time-offset">
                         <option value="0">Now</option>
                         <option value="5">5 mins ago</option>
@@ -1220,9 +1243,6 @@
                         <option value="60">1 hour ago</option>
                     </select>
                 </div>
-                <p class="qr-meta" style="text-align:right; margin-top:-8px;">Resets to "Now" after each use.</p>
-
-                <h3>Interventions</h3>
                 <div class="int-grid">
                     <button class="int-btn" data-type="Tourniquet" onclick="recordIntervention(this, 'Tourniquet')">Tourniquet<span class="int-time"></span></button>
                     <button class="int-btn" data-type="Wound Packing" onclick="recordIntervention(this, 'Wound Packing')">Wound / Haemostatic Packing<span class="int-time"></span></button>
@@ -1238,7 +1258,28 @@
                     <button class="int-btn" data-type="Splintage" onclick="recordIntervention(this, 'Splintage')">Splintage<span class="int-time"></span></button>
                 </div>
 
-                <h3>Clinical Notes</h3>
+                </div>
+            </details>
+
+            <details class="rs-sec" id="sec-notes">
+                <summary>Injuries, allergies &amp; notes <span class="rs-sum" id="sum-notes"></span></summary>
+                <div class="rs-body">
+                <div class="input-group">
+                        <label for="p-demos">Demographics</label>
+                        <div style="display:flex; gap:5px; margin-bottom:10px;">
+                            <button class="btn demo-btn" onclick="addDemoText('Adult')">Adult</button>
+                            <button class="btn demo-btn" onclick="addDemoText('Child')">Child</button>
+                            <button class="btn demo-btn" onclick="addDemoText('Male')">Male</button>
+                            <button class="btn demo-btn" onclick="addDemoText('Female')">Female</button>
+                        </div>
+                        <input type="text" id="p-demos" class="rec-field" placeholder="Age / Gender (e.g. 35M)">
+                    </div>
+                    <div class="input-group"><label for="p-allergies">Allergies</label><input type="text" id="p-allergies" class="rec-field" placeholder="e.g. Penicillin"></div>
+                    <div class="input-group">
+                        <label for="p-notes">Notes</label>
+                        <textarea id="p-notes" class="rec-field" rows="3" placeholder="Injuries, mechanism etc."></textarea>
+                        <button class="voice-btn" onclick="startVoice('p-notes')" aria-label="Dictate note">🎙</button>
+                    </div>
                 <div class="input-group">
                     <label>Quick Injury Select</label>
                     <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px;">
@@ -1252,6 +1293,12 @@
                 </div>
                 <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="openBodyMap()">👤 Mark Injury on Body Map</button>
 
+                </div>
+            </details>
+
+            <details class="rs-sec" id="sec-location">
+                <summary>Location <span class="rs-sum" id="sum-location"></span></summary>
+                <div class="rs-body">
                 <div class="location-card" id="location-editor">
                     <h3>Patient Location</h3>
                     <div id="location-editor-status" class="location-status-card unknown">Location not confirmed.</div>
@@ -1284,7 +1331,23 @@
                     <p class="location-mini">Map imagery may be unavailable offline. Stored coordinates, labels and history remain usable and are included in transfers.</p>
                 </div>
 
-                <div class="card">
+                </div>
+            </details>
+
+            <details class="rs-sec" id="sec-transport">
+                <summary>Transport &amp; handover <span class="rs-sum" id="sum-transport"></span></summary>
+                <div class="rs-body">
+                    <div class="input-group"><label for="p-evac-dest">Destination</label><input type="text" id="p-evac-dest" class="rec-field" placeholder="e.g. Royal Infirmary, CCS"></div>
+                    <div class="input-group"><label for="p-evac-vehicle">Vehicle / crew</label><input type="text" id="p-evac-vehicle" class="rec-field" placeholder="e.g. AMB-404, HART Team 1"></div>
+                    <div class="input-group"><label for="p-hospital-id">Hospital / receiving ID number</label><input type="text" id="p-hospital-id" class="rec-field" placeholder="Pre-assigned hospital number, if known"></div>
+                    <button class="btn btn-secondary btn-handover" style="margin-bottom:10px; background-color:#555;" onclick="scanHandover()">Hand over care to a colleague (scan their ID)</button>
+                    <button id="btn-evac" class="btn btn-evac" onclick="toggleEvac()">Mark as EVACUATED</button>
+                </div>
+            </details>
+
+            <details class="rs-sec" id="sec-category">
+                <summary>Change category <span class="rs-sum" id="sum-category"></span></summary>
+                <div class="rs-body">
                     <div class="input-group">
                         <label for="p-cat-override">Category (change / override)</label>
                         <select id="p-cat-override" onchange="onCategoryOverride()">
@@ -1296,43 +1359,20 @@
                             <option value="P1_HOLD">P1 Hold (senior clinical decision)</option>
                         </select>
                     </div>
-                    <div class="input-group">
-                        <label for="p-demos">Demographics</label>
-                        <div style="display:flex; gap:5px; margin-bottom:10px;">
-                            <button class="btn demo-btn" onclick="addDemoText('Adult')">Adult</button>
-                            <button class="btn demo-btn" onclick="addDemoText('Child')">Child</button>
-                            <button class="btn demo-btn" onclick="addDemoText('Male')">Male</button>
-                            <button class="btn demo-btn" onclick="addDemoText('Female')">Female</button>
-                        </div>
-                        <input type="text" id="p-demos" class="rec-field" placeholder="Age / Gender (e.g. 35M)">
-                    </div>
-                    <div class="input-group"><label for="p-allergies">Allergies</label><input type="text" id="p-allergies" class="rec-field" placeholder="e.g. Penicillin"></div>
-                    <div class="input-group">
-                        <label for="p-notes">Notes</label>
-                        <textarea id="p-notes" class="rec-field" rows="3" placeholder="Injuries, mechanism etc."></textarea>
-                        <button class="voice-btn" onclick="startVoice('p-notes')" aria-label="Dictate note">🎙</button>
-                    </div>
                 </div>
+            </details>
 
-                <div id="risk-container" style="display:none; margin-bottom: 1.5rem;">
-                    <label style="display:flex; align-items:center; gap:15px; font-weight:bold; color:var(--nhs-red); padding:15px; border:2px solid var(--nhs-red); border-radius:8px; background: rgba(218, 41, 28, 0.05);">
-                        <input type="checkbox" id="risk-check" style="width:28px; height:28px;" onchange="onHighRiskChange()">
-                        HIGH RISK OF DETERIORATION
-                    </label>
+            <details class="rs-sec" id="sec-more">
+                <summary>More <span class="rs-sum">timeline, label, NFC</span></summary>
+                <div class="rs-body rs-row rs-row3" style="margin:0;">
+                    <button class="btn btn-secondary rs-small" onclick="openTimelineForCurrent()">🕒 Timeline</button>
+                    <button class="btn btn-secondary rs-small" onclick="printPatientLabel()">🖨 Print Label</button>
+                    <button class="btn btn-nfc nfc-only rs-small" style="display:none;" onclick="triggerNfcSend()">📡 NFC tag</button>
                 </div>
-
-                <div class="card" style="border-top: 4px solid var(--nhs-dark-blue);">
-                    <h3>Transport / Evacuation</h3>
-                    <div class="input-group"><label for="p-evac-dest">Destination</label><input type="text" id="p-evac-dest" class="rec-field" placeholder="e.g. Royal Infirmary, CCS"></div>
-                    <div class="input-group"><label for="p-evac-vehicle">Vehicle / crew</label><input type="text" id="p-evac-vehicle" class="rec-field" placeholder="e.g. AMB-404, HART Team 1"></div>
-                    <div class="input-group"><label for="p-hospital-id">Hospital / receiving ID number</label><input type="text" id="p-hospital-id" class="rec-field" placeholder="Pre-assigned hospital number, if known"></div>
-                    <button class="btn btn-secondary btn-handover" style="margin-bottom:10px; background-color:#555;" onclick="scanHandover()">Hand over care to a colleague (scan their ID)</button>
-                    <button id="btn-evac" class="btn btn-evac" onclick="toggleEvac()">Mark as EVACUATED</button>
-                </div>
+            </details>
             </div>
 
-            <div style="margin-top:auto; padding-top:1.5rem;">
-                <button class="btn btn-primary" onclick="nextPatient()">NEXT PATIENT →</button>
+            <div style="margin-top:auto; padding-top:1rem;">
                 <button class="btn btn-secondary" onclick="showLog()">View Log</button>
             </div>
         </div>
@@ -1421,7 +1461,7 @@
 <script>
     // ---------- App version / build ----------
     const APP_VERSION = '0.8.0';
-    const APP_BUILD = '2026-09-25-scroll-fix';
+    const APP_BUILD = '2026-09-25-compact-patient';
     const QR_DEFAULT_TTL_MS = MITTLib.QR_DEFAULT_TTL_MS;
     const GPS_FRESH_MS = 30 * 1000;       // fixes older than this are not used for "best fix"
     const GPS_STAMP_MAX_AGE_MS = 60 * 1000; // never stamp a patient with a position older than this
@@ -1838,20 +1878,21 @@
         if (!entry) return;
         const loc = locationForEntry(entry);
         const cls = MITTLib.classifyLocationAccuracy(loc && loc.acc);
-        const card = $('result-location-summary');
-        if (card) card.className = 'location-status-card ' + (loc ? cls.className : (entry.sector ? 'ok' : 'unknown'));
         const text = locationLabel(entry);
         setText('location-status-text', text);
         const ageText = loc && loc.timestamp ? `Recorded ${MITTLib.formatLocationAge(loc.timestamp)}.` : 'No GPS position stored.';
         const warning = loc && cls.warning ? ' Accuracy is poor — confirm sector/landmark or correct coordinates.' : '';
         setText('location-age-warning', `${ageText}${warning}`);
         setText('location-editor-status', `${text}. ${ageText}${warning}`);
+        setText('sum-location', `${loc && cls.warning ? '⚠ poor GPS — ' : ''}${[entry.sector, entry.landmark].filter(Boolean).join(' • ') || (loc && loc.lat ? `±${loc.acc || '?'}m GPS` : 'not set')}`);
     }
-    function openLocationEditor() {
-        const c = $('details-container');
-        if (c && !c.classList.contains('show')) toggleDetails();
-        setTimeout(() => { const e = $('location-editor'); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+    function openSection(id, scroll) {
+        const d = $(id);
+        if (!d) return;
+        d.open = true;
+        if (scroll) setTimeout(() => d.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     }
+    function openLocationEditor() { openSection('sec-location', true); }
     function readLocationFormValues() {
         return {
             lat: $('p-loc-lat').value.trim(), lng: $('p-loc-lng').value.trim(), acc: $('p-loc-acc').value.trim(),
@@ -2305,10 +2346,12 @@
         clearChildren(promptBox);
         if (prompts) {
             promptBox.style.display = 'block';
-            promptBox.appendChild(el('h4', { text: 'Care prompts (NARU CCP interventions)' }));
-            promptBox.appendChild(el('ul', null, prompts.map(p => el('li', { text: p }))));
-            promptBox.appendChild(el('small', { text: 'Prompts only — not a substitute for clinical judgement.' }));
+            promptBox.open = entry.category === 'P1' || entry.category === 'NOT_BREATHING';
+            promptBox.appendChild(el('summary', { text: 'Care prompts' }));
+            promptBox.appendChild(el('ul', { style: 'margin-top:6px;' }, prompts.map(p => el('li', { text: p }))));
+            promptBox.appendChild(el('small', { text: 'NARU CCP interventions. Prompts only — not a substitute for clinical judgement.' }));
         } else promptBox.style.display = 'none';
+        setText('reassess-head', `${entry.tool || ''} • ${fmtTime(entry.createdAt || entry.timestamp)}`);
         renderResultAlerts(entry);
         $('btn-change-answer').style.display = (lastTriagePath && lastTriagePath.uid === entry.uid && lastTriagePath.path.length) ? 'block' : 'none';
         refreshCurrentPatientLocationStatus();
@@ -2326,6 +2369,7 @@
         $('p-loc-acc').value = loc && loc.acc ? loc.acc : '';
         $('p-location-confidence').value = entry.locationConfidence || (loc ? 'gps-approximate' : 'unknown');
         $('risk-check').checked = !!entry.highRisk;
+        $('risk-check').closest('.risk-toggle').classList.toggle('on', !!entry.highRisk);
         $('p-evac-vehicle').value = entry.evacVehicle || '';
         $('p-evac-dest').value = entry.evacDest || '';
         $('p-hospital-id').value = entry.hospitalId || '';
@@ -2339,7 +2383,7 @@
             btn.classList.toggle('active', !!i);
             btn.querySelector('.int-time').textContent = i ? (i.time || '') : '';
         });
-        if (!opts.keepDetailsOpen) { $('details-container').classList.remove('show'); setText('btn-toggle-details', '+ Interventions & Notes'); }
+        updateSectionSummaries(entry);
         updateReassessPill(entry);
         showScreen('result-screen');
     }
@@ -2383,13 +2427,37 @@
         else if (status.state === 'due-soon') pill.textContent = `Due ~${remaining}m`;
         else pill.textContent = `OK ${remaining}m`;
     }
-    function toggleDetails() {
-        const container = $('details-container');
-        const open = !container.classList.contains('show');
-        container.classList.toggle('show', open);
-        setText('btn-toggle-details', open ? 'Hide Details' : '+ Interventions & Notes');
-        if (open) container.scrollIntoView({ behavior: 'smooth' });
-        else commitDirtyFields('Details closed');
+    // Opens every section (used when a task needs the full record on screen).
+    function toggleDetails() { document.querySelectorAll('#details-container details.rs-sec').forEach(d => { d.open = true; }); }
+    // Remember which sections the user keeps open; saving edits when a section closes.
+    function wireSectionState() {
+        const saved = lsJSON('mit_open_sections', {}) || {};
+        document.querySelectorAll('#details-container details.rs-sec').forEach(d => {
+            if (saved[d.id]) d.open = true;
+            d.addEventListener('toggle', () => {
+                if (!d.open) commitDirtyFields('Section closed');
+                const st = lsJSON('mit_open_sections', {}) || {};
+                st[d.id] = d.open; ls('mit_open_sections', JSON.stringify(st));
+            });
+        });
+    }
+    function updateSectionSummaries(entry) {
+        const ints = Object.entries(entry.interventions || {});
+        setText('sum-interventions', ints.length ? ints.map(([k, v]) => `${k} ${v && v.time ? v.time : ''}`.trim()).join(', ') : 'none recorded');
+        const n = [];
+        if (entry.allergies) n.push('⚠ Allergies: ' + entry.allergies);
+        if (entry.demos) n.push(entry.demos);
+        if ((entry.injuries || []).length) n.push(`${entry.injuries.length} injury mark(s)`);
+        if (entry.notes) n.push('notes');
+        setText('sum-notes', n.join(' • ') || 'none recorded');
+        const t = [];
+        if (entry.evacuated) t.push('EVACUATED');
+        if (entry.evacDest) t.push('→ ' + entry.evacDest);
+        if (entry.evacVehicle) t.push(entry.evacVehicle);
+        if (entry.handoverTo) t.push('care: ' + entry.handoverTo);
+        if (entry.hospitalId) t.push('hosp ' + entry.hospitalId);
+        setText('sum-transport', t.join(' • ') || 'on scene');
+        setText('sum-category', `currently ${catShort(entry.category)}`);
     }
 
     // ---------- Field saving: only fields the user actually edited are written ----------
@@ -2414,7 +2482,7 @@
             changed = true;
         });
         dirtyFields.clear();
-        if (changed) { saveState(); updateDashboard(); }
+        if (changed) { saveState(); updateDashboard(); updateSectionSummaries(entry); }
         return changed;
     }
     function wireFieldHandlers() {
@@ -2452,6 +2520,7 @@
         touch(entry, ['highRisk']);
         logAudit(entry.highRisk ? 'HIGH_RISK_SET' : 'HIGH_RISK_CLEARED', entry.id, entry.highRisk ? 'High risk of deterioration flagged' : 'High-risk flag removed', Date.now(), { uid: entry.uid });
         $('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
+        $('risk-check').closest('.risk-toggle').classList.toggle('on', entry.highRisk);
         saveState();
     }
     // Time for the next intervention/injury only; resets to "Now" after each use.
@@ -2509,6 +2578,7 @@
         }
         btn.classList.toggle('active', !!entry.interventions[type]);
         btn.querySelector('.int-time').textContent = entry.interventions[type] ? entry.interventions[type].time : '';
+        updateSectionSummaries(entry);
         saveState();
     }
     function toggleEvac() {
@@ -2560,7 +2630,7 @@
         entry.injuries.push(mark);
         touch(entry, ['injuries']);
         logAudit('BODYMAP_MARK', entry.id, `${mark.side} ${mark.region}${label ? ' ' + label : ''}${severity !== 'unspecified' ? ' (' + severity + ')' : ''}`, ts, { uid: entry.uid });
-        renderInjuryMarks(); saveState();
+        renderInjuryMarks(); updateSectionSummaries(entry); saveState();
     }
     function undoLastInjury() {
         const entry = currentEntry();
@@ -2626,8 +2696,8 @@
         closeReassessModal();
         renderResultScreen(updated, { keepDetailsOpen: outcome === 'worsened' });
         if (outcome === 'worsened') {
-            openLocationEditor();
-            setTimeout(() => { const s = $('p-cat-override'); s.scrollIntoView({ behavior: 'smooth', block: 'center' }); s.focus(); }, 150);
+            openSection('sec-category', true);
+            setTimeout(() => { $('p-cat-override').focus(); }, 150);
             showBlockingError('Patient worsened', 'Review the triage category now. Change it under "Category", or use Re-Triage.');
         } else showToast(`Reassessment recorded: ${outcome}`);
     }
@@ -2698,7 +2768,7 @@
         const detailsEmpty = !entry.notes && !entry.demos && !Object.keys(entry.interventions || {}).length;
         if (detailsEmpty && entry.category !== 'DEAD') {
             const ok = await inAppConfirm({ title: 'Handover details look thin', message: `No interventions, notes or demographics recorded for ${entry.id}. Generate the QR anyway?`, okLabel: 'Generate anyway', cancelLabel: 'Add details first' });
-            if (!ok) { if (!$('details-container').classList.contains('show')) toggleDetails(); return; }
+            if (!ok) { openSection('sec-notes', true); return; }
         }
         const wrapper = buildPatientPayload(entry, { ttlMs: QR_DEFAULT_TTL_MS });
         const json = MITTLib.toAsciiJSON(wrapper);
@@ -3883,6 +3953,7 @@
     document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `MITT v${APP_VERSION} (${APP_BUILD})`); });
     window.onload = function () {
         wireFieldHandlers();
+        wireSectionState();
         setupNfcButtons();
         initGPS();
         requestWakeLock();
