@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v11-2026-09-26-bugfix-sweep';
+const CACHE_NAME = 'mit-triage-v12-2026-09-26-ios-compat';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 const TILE_CACHE_MAX = 600;
@@ -7,9 +7,13 @@ const PRECACHE_URLS = [
     './index.html',
     './manifest.json',
     './icon.svg',
+    './apple-touch-icon.png',
+    './icon-192.png',
+    './icon-512.png',
     './lib.js',
     './vendor/qrcode.min.js',
     './vendor/html5-qrcode.min.js',
+    './vendor/pako_inflate.min.js',
     './vendor/leaflet.css',
     './vendor/leaflet.js',
     './vendor/markercluster.css',

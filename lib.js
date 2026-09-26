@@ -1203,10 +1203,21 @@
         } catch (_) { return null; }
     }
     function isCompressedTransport(text) { return typeof text === 'string' && text.indexOf('MITZ1:') === 0; }
+    // Pure-JS inflate (vendor/pako_inflate.min.js) for browsers without DecompressionStream,
+    // e.g. iPhones on iOS < 16.4, so they can still receive compressed QR handovers.
+    function _jsInflate() {
+        const g = (typeof self !== 'undefined' ? self : (typeof globalThis !== 'undefined' ? globalThis : null));
+        return g && g.pako && typeof g.pako.inflate === 'function' ? g.pako.inflate : null;
+    }
     async function decodeTransportText(text) {
         if (!isCompressedTransport(text)) return text;
-        if (!compressionSupported()) throw new Error('This browser cannot decompress transfers — use the transfer file instead');
-        const stream = new Blob([base64ToBytes(text.slice(6))]).stream().pipeThrough(new DecompressionStream('deflate'));
+        const bytes = base64ToBytes(text.slice(6));
+        if (!compressionSupported()) {
+            const inflate = _jsInflate();
+            if (!inflate) throw new Error('This browser cannot decompress transfers — use the transfer file instead');
+            return new TextDecoder().decode(inflate(bytes));
+        }
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
         const buf = new Uint8Array(await new Response(stream).arrayBuffer());
         return new TextDecoder().decode(buf);
     }

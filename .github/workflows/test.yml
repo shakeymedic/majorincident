@@ -40,6 +40,8 @@ jobs:
           node-version: '20'
       - name: Install test dependencies
         run: npm install --no-audit --no-fund
+      - name: Check scripts parse on older iPhones (ES2019)
+        run: node tests/syntax-compat.js
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
       - name: Run end-to-end tests (two simulated phones)

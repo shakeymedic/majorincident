@@ -482,6 +482,107 @@ async function test(name, fn) {
     });
     await R._ctx.close();
 
+    console.log('\ne2e: iPhone / iPad compatibility');
+    const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1';
+    const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
+    const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
+    await test('an older iPhone without DecompressionStream (iOS < 16.4) accepts a compressed QR from an Android phone', async () => {
+        const S = await device('Android', Object.assign({ userAgent: ANDROID_UA }, phone));
+        const I = await device('Old iPhone', Object.assign({ userAgent: IPHONE_UA, initScript: 'delete window.CompressionStream; delete window.DecompressionStream;' }, phone));
+        await setup(S, 'Medic Android'); await setup(I, 'Medic iPhone');
+        assert.strictEqual(await I.evaluate(() => MITTLib.compressionSupported()), false);
+        await triage(S, 'TST', [false, false, true, false]);
+        await S.evaluate(() => { const e = currentEntry(); e.notes = 'Blast injury, lacerations to both legs, tourniquet applied right thigh, Zoë, £20 in pocket. '.repeat(3); e.allergies = 'Latex'; saveState(); return generatePatientQR(); });
+        const text = await qrText(S);
+        assert.ok(text.startsWith('MITZ1:'), 'sender used compression');
+        await scan(I, text);
+        await page_visible(I, '#preview-modal');
+        assert.match(await I.textContent('#preview-content'), /New patient/);
+        await I.evaluate(() => acceptPreview());
+        const got = await I.evaluate(() => incidentLog[incidentLog.length - 1]);
+        assert.match(got.notes, /Zoë, £20/);
+        assert.strictEqual(got.allergies, 'Latex');
+        await S._ctx.close(); await I._ctx.close();
+    });
+    await test('iPhone in Safari is told to add to Home Screen (7-day deletion, separate storage); dismissal sticks', async () => {
+        const I = await device('iPhone Safari', Object.assign({ userAgent: IPHONE_UA }, phone));
+        assert.ok(await I.isVisible('#ios-install-banner'));
+        assert.match(await I.textContent('#ios-install-banner'), /Add to Home Screen[\s\S]*7 days[\s\S]*stored separately/);
+        await I.click('#ios-install-banner button');
+        assert.strictEqual(await I.isVisible('#ios-install-banner'), false);
+        await I.reload(); await I.waitForFunction(() => dbReady === true);
+        assert.strictEqual(await I.isVisible('#ios-install-banner'), false);
+        await I._ctx.close();
+        const H = await device('iPhone Home Screen app', Object.assign({ userAgent: IPHONE_UA, initScript: 'Object.defineProperty(navigator, "standalone", { get: () => true });' }, phone));
+        assert.strictEqual(await H.isVisible('#ios-install-banner'), false);
+        await H._ctx.close();
+        const Dr = await device('Android Chrome', Object.assign({ userAgent: ANDROID_UA }, phone));
+        assert.strictEqual(await Dr.isVisible('#ios-install-banner'), false);
+        await Dr._ctx.close();
+    });
+    await test('iPhone exports open the share sheet ("Save to Files"); a cancelled share is recorded in the audit', async () => {
+        const stub = `window.__shared = []; window.__shareResult = 'ok';
+            navigator.canShare = (d) => !!(d && d.files && d.files.length);
+            navigator.share = (d) => { window.__shared.push({ name: d.files[0].name, type: d.files[0].type, size: d.files[0].size });
+                return window.__shareResult === 'ok' ? Promise.resolve() : Promise.reject(new DOMException('cancelled', 'AbortError')); };`;
+        const I = await device('iPhone export', Object.assign({ userAgent: IPHONE_UA, initScript: stub }, phone));
+        await setup(I, 'Medic iPhone');
+        await triage(I, 'TST', [true]);
+        let downloaded = false; I.on('download', () => { downloaded = true; });
+        await I.evaluate(() => downloadCSV('SNAPSHOT'));
+        await I.waitForTimeout(200);
+        const shared = await I.evaluate(() => window.__shared);
+        assert.strictEqual(shared.length, 1);
+        assert.match(shared[0].name, /^MITT_casualty_register_.*\.csv$/);
+        assert.strictEqual(shared[0].type, 'text/csv');
+        assert.ok(shared[0].size > 0);
+        assert.strictEqual(downloaded, false);
+        await I.evaluate(() => { window.__shareResult = 'cancel'; downloadArchive(); });
+        await I.waitForTimeout(300);
+        assert.ok(await I.evaluate(() => auditLog.some(a => a.action === 'FILE_SAVE_CANCELLED' && /MITT_archive_/.test(a.details))));
+        await I._ctx.close();
+    });
+    await test('if the phone drops the database connection (iOS after backgrounding), saving reconnects and nothing is lost', async () => {
+        const I = await device('iPhone reconnect', Object.assign({ userAgent: IPHONE_UA }, phone));
+        await setup(I, 'Medic iPhone');
+        await I.evaluate(() => db.close()); // every later transaction now throws InvalidStateError
+        await triage(I, 'TST', [true]);
+        const ok = await I.evaluate(() => saveState());
+        assert.strictEqual(ok, true);
+        assert.doesNotMatch(await I.textContent('#save-status'), /NOT SAVED/);
+        assert.ok(await I.evaluate(() => auditLog.some(a => a.action === 'STORAGE_RECONNECTED')));
+        const uid = await I.evaluate(() => currentEntry().uid);
+        await I.evaluate(() => saveState());
+        await I.reload(); await I.waitForFunction(() => dbReady === true);
+        assert.ok(await I.evaluate(u => incidentLog.some(r => r.uid === u), uid));
+        await I._ctx.close();
+    });
+    await test('no text box is under 16px (iPhones zoom the page when one is tapped)', async () => {
+        const I = await device('iPhone fonts', Object.assign({ userAgent: IPHONE_UA }, phone));
+        const small = await I.evaluate(() => Array.from(document.querySelectorAll('input:not([type=radio]):not([type=checkbox]):not([type=file]):not([type=hidden]), select, textarea'))
+            .filter(e => parseFloat(getComputedStyle(e).fontSize) < 16).map(e => e.id || e.className));
+        assert.deepStrictEqual(small, []);
+        await I._ctx.close();
+    });
+    await test('with an iPhone notch and home bar, the header, dialogs, toast and footer stay clear of them', async () => {
+        const I = await device('iPhone notch', Object.assign({ userAgent: IPHONE_UA }, phone));
+        const cdp = await I._ctx.newCDPSession(I);
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 47, bottom: 34, left: 0, right: 0 } });
+        await setup(I, 'Medic iPhone');
+        const m = await I.evaluate(() => {
+            const px = (el, prop) => parseFloat(getComputedStyle(el)[prop]);
+            return { header: px(document.querySelector('header'), 'paddingTop'), modal: px(document.querySelector('.modal-overlay'), 'paddingTop'),
+                modalBottom: px(document.querySelector('.modal-overlay'), 'paddingBottom'), footer: px(document.querySelector('footer'), 'paddingBottom') };
+        });
+        assert.ok(m.header >= 47, 'header ' + m.header);
+        assert.ok(m.modal >= 47 && m.modalBottom >= 34, 'modal ' + m.modal + '/' + m.modalBottom);
+        assert.ok(m.footer >= 34, 'footer ' + m.footer);
+        await I.evaluate(() => showToast('hello'));
+        await I.waitForTimeout(400);
+        const top = await I.evaluate(() => document.getElementById('toast').getBoundingClientRect().top);
+        assert.ok(top >= 47, 'toast top ' + top);
+        await I._ctx.close();
+    });
     await test('QR codes are identical to a standards-conformant reference encoder (versions 1-35)', async () => {
         const QR = require('qrcode');
         const samples = await A.evaluate(() => {
