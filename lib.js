@@ -68,6 +68,10 @@
         if (typeof v === 'object') return '';
         return String(v).slice(0, max || 200);
     }
+    // Maximum stored length of each free-text field. The app's input boxes use lower limits
+    // (FIELD_INPUT_LIMITS) so merged records have headroom and text is never cut in normal use.
+    const FIELD_LIMITS = { id: 80, demos: 300, allergies: 2000, notes: 20000, evacDest: 200, evacVehicle: 200, hospitalId: 80, sector: 120, landmark: 120, floor: 60, area: 120, action: 300, reason: 160, triager: 80 };
+    const FIELD_INPUT_LIMITS = { id: 60, demos: 200, allergies: 1000, notes: 10000, evacDest: 120, evacVehicle: 120, hospitalId: 60, sector: 80, landmark: 80, floor: 40, area: 80, triager: 60 };
     function _num(v) {
         if (v === undefined || v === null || v === '') return null;
         const n = Number(v);
@@ -100,10 +104,13 @@
         return out;
     }
     // Type-check every field of a record received from another device. Never trust a QR/file.
-    function sanitisePatientRecord(rec) {
+    // truncated (optional array): receives the names of any text fields that had to be shortened.
+    function sanitisePatientRecord(rec, truncated) {
         if (!rec || typeof rec !== 'object') return null;
+        const L = FIELD_LIMITS;
+        if (Array.isArray(truncated)) Object.keys(L).forEach(k => { if (typeof rec[k] === 'string' && rec[k].length > L[k]) truncated.push(k); });
         const out = {
-            id: _str(rec.id, 80).trim(),
+            id: _str(rec.id, L.id).trim(),
             uid: _str(rec.uid, 64),
             time: _str(rec.time, 16),
             timestamp: _num(rec.timestamp),
@@ -112,20 +119,20 @@
             deviceId: _str(rec.deviceId, 16),
             tool: _str(rec.tool, 16),
             category: isValidCategory(rec.category) ? rec.category : '',
-            action: _str(rec.action, 200),
-            reason: _str(rec.reason, 120),
-            triager: _str(rec.triager, 80),
+            action: _str(rec.action, L.action),
+            reason: _str(rec.reason, L.reason),
+            triager: _str(rec.triager, L.triager),
             locationConfidence: _str(rec.locationConfidence, 40),
-            sector: _str(rec.sector, 80), landmark: _str(rec.landmark, 80), floor: _str(rec.floor, 40), area: _str(rec.area, 80),
-            demos: _str(rec.demos, 120),
-            allergies: _str(rec.allergies, 300),
-            notes: _str(rec.notes, 4000),
+            sector: _str(rec.sector, L.sector), landmark: _str(rec.landmark, L.landmark), floor: _str(rec.floor, L.floor), area: _str(rec.area, L.area),
+            demos: _str(rec.demos, L.demos),
+            allergies: _str(rec.allergies, L.allergies),
+            notes: _str(rec.notes, L.notes),
             highRisk: !!rec.highRisk,
             interventions: sanitiseInterventions(rec.interventions),
             evacuated: !!rec.evacuated,
-            evacDest: _str(rec.evacDest, 120),
-            evacVehicle: _str(rec.evacVehicle, 120),
-            hospitalId: _str(rec.hospitalId, 60),
+            evacDest: _str(rec.evacDest, L.evacDest),
+            evacVehicle: _str(rec.evacVehicle, L.evacVehicle),
+            hospitalId: _str(rec.hospitalId, L.hospitalId),
             tod: _str(rec.tod, 16),
             injuries: sanitiseInjuries(rec.injuries),
             lastReassessed: _num(rec.lastReassessed),
@@ -248,7 +255,7 @@
         return wrapper;
     }
 
-    function decompressData(short) {
+    function decompressData(short, truncated) {
         const raw = {
             id: short.i || '',
             uid: short.u || '',
@@ -294,7 +301,12 @@
             handoverTo: short.ht || '',
             lastDeteriorationAt: short.ld || null,
         };
-        return sanitisePatientRecord(raw);
+        return sanitisePatientRecord(raw, truncated);
+    }
+    function _truncationWarning(fields) {
+        if (!fields.length) return null;
+        const uniq = fields.filter((f, i) => fields.indexOf(f) === i);
+        return `Some text was too long and has been shortened: ${uniq.join(', ')}. Check the full record with the sender.`;
     }
 
     // Age / clock checks never block a patient handover — the clinical data does not become
@@ -336,7 +348,9 @@
         const now = ctx.now || Date.now();
         _applyTimeChecks(meta, now);
         if (!wrapper.d || typeof wrapper.d !== 'object' || Array.isArray(wrapper.d)) return { ok: false, reason: 'No patient data in payload', meta };
-        const data = decompressData(wrapper.d);
+        const cut = [];
+        const data = decompressData(wrapper.d, cut);
+        const tw = _truncationWarning(cut); if (tw) meta.warnings.push(tw);
         if (!data.id) return { ok: false, reason: 'Missing patient ID', meta };
         if (!isValidCategory(data.category)) return { ok: false, reason: 'Missing or invalid triage category', meta };
         return { ok: true, data, meta };
@@ -652,11 +666,13 @@
         const now = ctx.now || Date.now();
         _applyTimeChecks(meta, now);
         if (!Array.isArray(wrapper.items)) return { ok: false, reason: 'No items', meta };
+        const cut = [];
         const decodedAll = wrapper.items.map(it => {
-            const decoded = decompressData((it && it.d) || {});
+            const decoded = decompressData((it && it.d) || {}, cut);
             decoded._rev = (it && it.rv) || 0;
             return decoded;
         });
+        const tw = _truncationWarning(cut); if (tw) meta.warnings.push(tw);
         const data = decodedAll.filter(d => d.id && isValidCategory(d.category));
         if (data.length !== decodedAll.length) meta.warnings.push(`${decodedAll.length - data.length} record(s) skipped: missing ID or category.`);
         return { ok: true, data, meta };
@@ -988,7 +1004,9 @@
         const now = ctx.now || Date.now();
         _applyTimeChecks(meta, now);
         if (!Array.isArray(wrapper.patients)) return { ok: false, reason: 'No patients in transfer', meta };
-        const cleaned = wrapper.patients.map(p => sanitisePatientRecord(clonePatientRecord(p)));
+        const cut = [];
+        const cleaned = wrapper.patients.map(p => sanitisePatientRecord(clonePatientRecord(p), cut));
+        const tw = _truncationWarning(cut); if (tw) meta.warnings.push(tw);
         const data = cleaned.filter(d => d && d.id && isValidCategory(d.category));
         const skipped = cleaned.length - data.length;
         if (skipped) meta.warnings.push(`${skipped} record(s) cannot be imported: missing patient ID or triage category.`);
@@ -1341,7 +1359,9 @@
     function categoryWorsened(prev, next) {
         if (prev === next || !next) return false;
         const terminal = ['DEAD', 'NOT_BREATHING', 'P1_HOLD'];
-        if (terminal.indexOf(next) > -1) return terminal.indexOf(prev) === -1 || (prev === 'NOT_BREATHING' && next === 'DEAD');
+        if (next === 'DEAD') return true; // prev !== next already checked
+        if (next === 'NOT_BREATHING') return prev !== 'DEAD';
+        if (terminal.indexOf(next) > -1) return terminal.indexOf(prev) === -1;
         const rp = CATEGORY_RANK[prev], rn = CATEGORY_RANK[next];
         if (rp === undefined || rn === undefined) return false;
         return rn < rp;
@@ -1554,7 +1574,8 @@
     function csvCell(v) {
         if (v === undefined || v === null) return '""';
         let s = typeof v === 'object' ? JSON.stringify(v) : String(v);
-        if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+        // A plain number (e.g. longitude -2.2426 west of Greenwich) cannot run as a formula: keep it numeric.
+        if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
         return '"' + s.replace(/"/g, '""') + '"';
     }
     // Unambiguous local timestamp with UTC offset, e.g. 2026-09-25T14:03:22.123+01:00
@@ -1609,6 +1630,7 @@
         similarityScore, findDuplicateCandidates,
         nextReassessmentDue, reassessmentStatus, applyReassessment,
         categoryWorsened, buildPatientTimeline, shortCodeFromHash,
+        FIELD_LIMITS, FIELD_INPUT_LIMITS,
         CATEGORIES, CATEGORY_INFO, PATIENT_QR_MAX_CHARS, PATIENT_QR_LOCATION_HISTORY_MAX, AUDIT_GENESIS,
         isValidCategory, categoryShort, categoryLabel, toAsciiJSON, makeUid, makeDeviceCode, nextAutoId,
         sanitisePatientRecord, sanitiseInterventions, mergePatientRecordsDetailed, matchIncomingRecord, collisionSafeId,
