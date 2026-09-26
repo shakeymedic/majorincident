@@ -480,17 +480,21 @@
     .modal-overlay {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0,0,0,0.9); z-index: 2000; display: none;
-        flex-direction: column; align-items: center; justify-content: center;
+        flex-direction: column; align-items: center; justify-content: flex-start;
         overflow-y: auto;
         padding: 1rem 0;
         padding-top: calc(1rem + env(safe-area-inset-top, 0px));
         padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
         -webkit-overflow-scrolling: touch;
     }
+    /* Centre a dialog when it fits; when it is taller than the screen its top stays reachable by scrolling. */
+    .modal-overlay > * { margin-top: auto; margin-bottom: auto; flex-shrink: 0; }
     /* Scanner modal sits above QR modal and other transient modals */
     #scanner-modal { z-index: 2500; }
     /* Receiver preview modal must sit on top of scanner */
     #preview-modal { z-index: 2600; }
+    /* Paste box is opened from inside the scanner */
+    #paste-modal { z-index: 2700; }
     /* Confirm-action modal sits on top of everything */
     #confirm-modal { z-index: 3500; }
     .modal-box {
@@ -753,7 +757,9 @@
         .icon-btn { padding: 8px 11px; font-size: 0.85rem; }
     }
     .dashboard:not(.expanded) .dash-sub { display: none; }
-    .dashboard:not(.expanded) .dash-card { min-width: 64px; }
+    .dashboard:not(.expanded) .dash-card { min-width: 0; flex-direction: column; gap: 0; padding: 4px 2px; line-height: 1.15; }
+    .dashboard:not(.expanded) .dash-label { font-size: 0.75rem; white-space: nowrap; }
+    .dashboard:not(.expanded) .dash-num { white-space: nowrap; font-size: 1.05rem; }
     .triage-tag.cat-bg-NOT_BREATHING #tag-text, .triage-tag.cat-bg-P1_HOLD #tag-text { font-size: 3rem; line-height: 1.1; display: block; }
     .triage-tag { overflow-wrap: anywhere; }
 
@@ -1511,7 +1517,7 @@
 <script>
     // ---------- App version / build ----------
     const APP_VERSION = '0.8.0';
-    const APP_BUILD = '2026-09-26-ios-compat';
+    const APP_BUILD = '2026-09-26-full-check';
     const QR_DEFAULT_TTL_MS = MITTLib.QR_DEFAULT_TTL_MS;
     const GPS_FRESH_MS = 30 * 1000;       // fixes older than this are not used for "best fix"
     const GPS_STAMP_MAX_AGE_MS = 60 * 1000; // never stamp a patient with a position older than this
@@ -1996,7 +2002,7 @@
         return {
             lat: $('p-loc-lat').value.trim(), lng: $('p-loc-lng').value.trim(), acc: $('p-loc-acc').value.trim(),
             sector: $('p-sector').value.trim(), landmark: $('p-landmark').value.trim(), floor: $('p-floor').value.trim(), area: $('p-area').value.trim(),
-            confidence: $('p-location-confidence').value,
+            confidence: $('p-location-confidence').value || ((currentEntry() || {}).locationConfidence || 'unknown'),
         };
     }
     // Applies the location form ONLY if something actually changed. Unchanged coordinates keep their
@@ -2172,6 +2178,7 @@
         if (newIdRaw === null) return;
         const newId = newIdRaw.trim();
         if (!newId || newId === currentPatientId) return;
+        if (newId.length > MITTLib.FIELD_INPUT_LIMITS.id) { showBlockingError('ID too long', `Patient IDs can be up to ${MITTLib.FIELD_INPUT_LIMITS.id} characters.`); return; }
         const clash = incidentLog.find(e => e.id === newId && (!onResult || e.uid !== currentEntry().uid));
         if (clash) { showBlockingError('ID already in use', `${newId} is already used by another patient (${catShort(clash.category)}, triaged ${fmtTime(clash.createdAt || clash.timestamp)}). Choose a different ID, or open that patient from the log.`); return; }
         const oldId = currentPatientId;
@@ -2594,6 +2601,13 @@
         if (changed) { saveState(); updateDashboard(); updateSectionSummaries(entry); }
         return changed;
     }
+    // Input limits come from the same table the receiving device uses, so text typed here is never cut on handover.
+    function applyInputLimits() {
+        const L = MITTLib.FIELD_INPUT_LIMITS;
+        const map = { 'p-demos': 'demos', 'p-allergies': 'allergies', 'p-notes': 'notes', 'p-evac-dest': 'evacDest', 'p-evac-vehicle': 'evacVehicle', 'p-hospital-id': 'hospitalId',
+            'p-sector': 'sector', 'p-landmark': 'landmark', 'p-floor': 'floor', 'p-area': 'area', 'intro-sector': 'sector', 'intro-triager': 'triager', 'manual-id-input': 'id' };
+        Object.keys(map).forEach(id => { const f = $(id); if (f && L[map[id]]) f.maxLength = L[map[id]]; });
+    }
     function wireFieldHandlers() {
         Object.keys(REC_FIELDS).forEach(id => {
             const f = $(id);
@@ -2900,12 +2914,19 @@
         setText('qr-desc', `Show to the receiver. Brightness up. Generated ${fmtTime(wrapper.g)}.`);
         setText('qr-expiry', `Check code ${MITTLib.shortCodeFromHash(wrapper.h)} • version ${wrapper.rv} • app v${APP_VERSION}`);
         $('qr-modal').style.display = 'flex';
-        entry.lastQr = { hash: wrapper.h, rv: wrapper.rv, at: Date.now() };
+        entry.lastQr = { hash: wrapper.h, rv: wrapper.rv, at: Date.now(), content: qrContentHash(entry) };
         entry.handoverState = 'pending';
         entry.handoverAt = Date.now();
         logAudit('QR_GENERATED', entry.id, `Patient QR v${wrapper.v} rev ${wrapper.rv} hash ${wrapper.h} (${text.length} chars${text !== json ? ', compressed' : ''})`, Date.now(), { uid: entry.uid });
         saveState();
         $('qr-modal').dataset.handoverUid = entry.uid;
+    }
+    // Fingerprint of what a receiver gets from a patient QR, ignoring the handover bookkeeping that
+    // scanning an ACK itself updates, so a repeated ACK scan is not mistaken for a changed record.
+    function qrContentHash(entry) {
+        const d = buildPatientPayload(entry).d;
+        ['hs', 'ha', 'ht', 'up', 'ft'].forEach(k => { delete d[k]; });
+        return MITTLib.fnv1a(MITTLib.canonicalJSON(d));
     }
     function reshowLastPatientQr() { closeHandoverFlow(); generatePatientQR(); }
     function closeHandoverFlow() { $('handover-flow-modal').style.display = 'none'; }
@@ -3268,6 +3289,7 @@
             const picked = document.querySelector('input[name="dup-pick"]:checked');
             if (!picked) { showToast('Select a patient to merge into'); $('dup-warn-modal').style.display = 'flex'; return; }
             const idx = incidentLog.findIndex(e => e.uid === picked.value || e.id === picked.value);
+            if (idx === -1) { showBlockingError('Patient not found', 'That patient is no longer on this device. Nothing was imported.'); _pendingImport = null; return; }
             _commitImport({ mergeIntoUid: incidentLog[idx].uid });
             return;
         }
@@ -3312,7 +3334,7 @@
         const last = entry.lastQr || null;
         let state = 'accepted', note = '';
         if (!payload.ph) note = 'Older receiver app: version not verifiable.';
-        else if (last && payload.ph === last.hash && (entry.updatedAt || 0) > last.at + 1000) { state = 'accepted-outdated'; note = `Record changed after the QR was shown at ${fmtTime(last.at)}. The receiver does NOT have those changes — show the QR again.`; }
+        else if (last && payload.ph === last.hash && (last.content ? qrContentHash(entry) !== last.content : (entry.updatedAt || 0) > last.at + 1000)) { state = 'accepted-outdated'; note = `Record changed after the QR was shown at ${fmtTime(last.at)}. The receiver does NOT have those changes — show the QR again.`; }
         else if (last && payload.ph !== last.hash) { state = 'accepted-outdated'; note = 'The receiver accepted an earlier QR, not the latest one. Show the QR again.'; }
         entry.handoverState = state;
         entry.handoverTo = rcv;
@@ -3401,26 +3423,51 @@
         rows.forEach(([k, v]) => box.appendChild(el('div', { style: 'margin:0.4rem 0;' }, [el('strong', { text: k + ': ' }), v])));
     }
     function closeAllPreflightModal() { $('all-preflight-modal').style.display = 'none'; }
-    async function buildTransferForScope() {
+    function _transferRequest() {
         const scope = selectedScope();
         const includeAudit = $('transfer-include-audit').checked;
         const records = recordsForScope(scope);
         if (!records.length) { showBlockingError('Nothing to send', 'No patients match that choice.'); return null; }
         const contentKey = MITTLib.fnv1a(MITTLib.canonicalJSON(records.map(MITTLib.clonePatientRecord))) + '|' + JSON.stringify(scope) + '|' + includeAudit + '|' + (includeAudit ? auditLog.length : 0);
-        // Re-opening an unchanged transfer shows the SAME codes, so a receiver's partial progress stays valid.
-        if (_allTransfer && _allTransferKey === contentKey && Date.now() - _allTransfer.payload.g < 60 * 60 * 1000) return _allTransfer;
         const opts = {
             ttlMs: QR_DEFAULT_TTL_MS, scope,
             auditLog: includeAudit ? auditLog : [],
             incident: { sector: currentSector, generatedBy: triagerName, generatedRole: userRole || '', device: deviceId, appVersion: APP_VERSION },
         };
-        const t = await MITTLib.buildAllPatientsTransferAsync(records, opts, { sender: triagerName, appVersion: APP_VERSION, device: deviceId });
-        _allTransfer = t; _allTransferKey = contentKey;
+        return { scope, includeAudit, records, contentKey, opts, ctx: { sender: triagerName, appVersion: APP_VERSION, device: deviceId } };
+    }
+    function _cachedTransfer(req) {
+        // Re-opening an unchanged transfer shows the SAME codes, so a receiver's partial progress stays valid.
+        return (_allTransfer && _allTransferKey === req.contentKey && Date.now() - _allTransfer.payload.g < 60 * 60 * 1000) ? _allTransfer : null;
+    }
+    async function buildTransferForScope() {
+        const req = _transferRequest();
+        if (!req) return null;
+        const cached = _cachedTransfer(req);
+        if (cached) return cached;
+        const t = await MITTLib.buildAllPatientsTransferAsync(req.records, req.opts, req.ctx);
+        _allTransfer = t; _allTransferKey = req.contentKey;
         _allTransferChunkIndex = 0; _allTransferShown = new Set();
+        _registerSentTransfer(t, req, 'qr');
+        return t;
+    }
+    // Files need no compression, so they are built synchronously: on iPhone the share sheet must open
+    // straight from the tap (iOS can refuse it after background work).
+    function buildTransferFileForScope() {
+        const req = _transferRequest();
+        if (!req) return null;
+        const cached = _cachedTransfer(req);
+        if (cached) return cached;
+        const t = MITTLib.buildAllPatientsTransfer(req.records, req.opts, req.ctx);
+        _registerSentTransfer(t, req, 'file');
+        return t;
+    }
+    function _registerSentTransfer(t, req, kind) {
+        const scope = req.scope, records = req.records, includeAudit = req.includeAudit;
         sentTransfers[t.transferId] = { uids: records.map(r => r.uid), ids: records.map(r => r.id), payloadHash: t.payload.h, count: records.length, at: Date.now(), scope };
         Object.keys(sentTransfers).sort((a, b) => sentTransfers[b].at - sentTransfers[a].at).slice(20).forEach(k => delete sentTransfers[k]);
         ls('mit_sent_transfers', JSON.stringify(sentTransfers));
-        logAudit('TRANSFER_GENERATED', '-', `${scopeLabel(scope)}: ${records.length} record(s) [${records.map(r => r.id).join(', ')}]; transfer ${t.transferId}; hash ${t.payload.h}; ${t.totalChunks} QR(s); ${t.enc === 'z1' ? 'compressed' : 'uncompressed'}; audit ${includeAudit ? 'included' : 'not included'}`, Date.now());
+        logAudit('TRANSFER_GENERATED', '-', `${scopeLabel(scope)}: ${records.length} record(s) [${records.map(r => r.id).join(', ')}]; transfer ${t.transferId}; hash ${t.payload.h}; ${kind === 'file' ? 'transfer file' : `${t.totalChunks} QR(s); ${t.enc === 'z1' ? 'compressed' : 'uncompressed'}`}; audit ${includeAudit ? 'included' : 'not included'}`, Date.now());
         return t;
     }
     async function startAllPatientsQrTransfer() {
@@ -3497,15 +3544,15 @@
         _anchorDownload(filename, text, type);
     }
     function stamp() { return MITTLib.isoWithOffset(Date.now()).replace(/[:.]/g, '-'); }
-    async function exportAllPatientsFile() {
-        const t = await buildTransferForScope();
+    function exportAllPatientsFile() {
+        const t = buildTransferFileForScope();
         if (!t) return;
         downloadBlob(`MITT_transfer_${deviceId}_${t.transferId}_${stamp()}.json`, t.text, 'application/json');
         logAudit('TRANSFER_FILE_EXPORTED', '-', `Transfer ${t.transferId}, ${t.payload.n} record(s), hash ${t.payload.h}`, Date.now());
         showToast('Transfer file saved. Move it to the other device and use "Import transfer file".', { long: true });
     }
     async function shareAllPatientsFile() {
-        const t = await buildTransferForScope();
+        const t = buildTransferFileForScope();
         if (!t) return;
         const file = new File([t.text], `MITT_transfer_${deviceId}_${t.transferId}.json`, { type: 'application/json' });
         if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
@@ -3906,7 +3953,7 @@
         const ok1 = await inAppConfirm({ title: 'Close / reset incident', message: 'This removes all patients from this device. First you must save a full incident archive (records + tamper-evident audit trail).', okLabel: 'Save archive and continue', danger: true });
         if (!ok1) return;
         const digest = downloadArchive();
-        const saved = await inAppConfirm({ title: 'Check the archive saved', message: `An archive file should now be in your downloads (SHA-256 starts ${digest.slice(0, 16)}).\n\nOn some phones downloads can fail silently. Only continue if you can see the file, or you have exported it another way.`, okLabel: 'I can see the saved archive', cancelLabel: 'Stop — keep data' });
+        const saved = await inAppConfirm({ title: 'Check the archive saved', message: `An archive file should now be saved — in Downloads, or wherever you chose in the share sheet (SHA-256 starts ${digest.slice(0, 16)}).\n\nOn some phones saving can fail silently. Only continue if you can see the file, or you have exported it another way.`, okLabel: 'I can see the saved archive', cancelLabel: 'Stop — keep data' });
         if (!saved) { showToast('Reset cancelled. Data kept.'); return; }
         const ok2 = await inAppConfirm({ title: 'Final check', message: 'Type DELETE to remove all patients from this device.', okLabel: 'Remove all patients', danger: true, requireText: 'DELETE' });
         if (!ok2) { showToast('Reset cancelled. Data kept.'); return; }
@@ -3917,6 +3964,8 @@
         incidentLog = []; auditLog = []; importedAudit = []; methaneHistory = [];
         appendAudit({ deviceId, sysTime: Date.now(), sysTimeISO: MITTLib.isoWithOffset(Date.now()), user: triagerName, role: userRole || '', action: 'DATA_WIPE', patientId: '-', details: `Incident closed. Previous: ${summary.records} records, ${summary.auditEntries} audit entries, audit head ${summary.auditHeadHash} (${v.ok ? 'intact' : 'BROKEN'}), archive SHA-256 ${digest}`, app: APP_VERSION });
         ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers'].forEach(k => ls(k, null));
+        // A copy left in backup browser storage (from any earlier fallback) would keep patient data on the phone.
+        if (storageMode === 'indexeddb') ls(FALLBACK_KEY, null);
         patientCounter = 1; currentLogIndex = -1; cachedCcsLocation = null;
         const ok = await saveState();
         if (!ok) { showBlockingError('Reset not saved', 'The device could not save the reset. Close and reopen the app.'); return; }
@@ -4116,6 +4165,7 @@
     setupIosInstallBanner();
     document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `MITT v${APP_VERSION} (${APP_BUILD})`); });
     window.onload = function () {
+        applyInputLimits();
         wireFieldHandlers();
         wireSectionState();
         setupNfcButtons();
