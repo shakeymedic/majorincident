@@ -9,9 +9,14 @@
 <meta name="description" content="Major Incident Triage Tool">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org; connect-src 'self' https://*.tile.openstreetmap.org; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';">
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-title" content="MITT">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Major Incident Triage</title>
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/html5-qrcode.min.js"></script>
+<script src="vendor/pako_inflate.min.js"></script>
 <script src="lib.js"></script>
 <link rel="stylesheet" href="vendor/leaflet.css" />
 <script src="vendor/leaflet.js"></script>
@@ -67,12 +72,13 @@
     body.gloved .int-btn { padding: 28px 12px; font-size: 1.25rem; min-height: 92px; }
 
     /* One-handed mode: sticky bottom action bar; primary actions reachable by thumb */
-    body.one-hand .screen { padding-bottom: 90px; }
+    body.one-hand .screen { padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
     body.one-hand .one-hand-bar { display: flex !important; }
     .one-hand-bar {
         display: none;
         position: fixed; bottom: 0; left: 0; right: 0;
         gap: 8px; padding: 10px 12px;
+        padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
         background: var(--card-bg);
         border-top: 2px solid var(--nhs-blue);
         z-index: 1500;
@@ -87,7 +93,7 @@
     body.panic #btn-mitt,
     body.panic #intro-screen .card label[for],
     body.panic .home-secondary { display: none !important; }
-    body.panic header { padding: 0.6rem; }
+    body.panic header { padding: 0.6rem; padding-top: calc(0.6rem + env(safe-area-inset-top, 0px)); }
     body.panic header .icon-btn { font-size: 0.85rem; padding: 6px 10px; }
     body.panic .instruction-card { font-size: 2rem; }
     body.panic .btn-yes, body.panic .btn-no { height: 150px; font-size: 2.4rem; }
@@ -102,7 +108,12 @@
         color: var(--text-color);
         -webkit-font-smoothing: antialiased;
         overscroll-behavior-y: none;
+        /* Landscape iPhones: keep content clear of the notch. */
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
     }
+    /* Stop iOS enlarging text when the phone is turned sideways. */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
     .container {
         max-width: 800px;
@@ -129,6 +140,10 @@
         background-color: var(--nhs-blue);
         color: white;
         padding: 0.8rem 1rem;
+        /* iPhone notch / Dynamic Island when installed to the home screen (status bar is translucent). */
+        padding-top: calc(0.8rem + env(safe-area-inset-top, 0px));
+        padding-left: max(1rem, env(safe-area-inset-left, 0px));
+        padding-right: max(1rem, env(safe-area-inset-right, 0px));
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -468,6 +483,9 @@
         flex-direction: column; align-items: center; justify-content: center;
         overflow-y: auto;
         padding: 1rem 0;
+        padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+        -webkit-overflow-scrolling: touch;
     }
     /* Scanner modal sits above QR modal and other transient modals */
     #scanner-modal { z-index: 2500; }
@@ -524,7 +542,7 @@
         left: 50%; top: 30px; transform: translateX(-50%); font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         opacity: 0; transition: opacity 0.3s, top 0.3s;
     }
-    #toast.show { visibility: visible; opacity: 1; top: 50px; }
+    #toast.show { visibility: visible; opacity: 1; top: calc(50px + env(safe-area-inset-top, 0px)); }
 
     .editable-id { border-bottom: 2px dashed var(--nhs-blue); cursor: text; padding-bottom: 2px; }
     .editable-id::after { content: " ✎"; font-size: 0.8em; opacity: 0.5; }
@@ -558,7 +576,7 @@
     #sw-update-banner {
         display: none;
         position: fixed;
-        bottom: 12px; left: 12px; right: 12px;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: 12px; right: 12px;
         z-index: 4000;
         background: var(--nhs-dark-blue);
         color: white;
@@ -584,7 +602,7 @@
         color: white;
         border: 1px solid rgba(255,255,255,0.6);
     }
-    body.one-hand #sw-update-banner { bottom: 92px; }
+    body.one-hand #sw-update-banner { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
 
     /* Reassessment pill */
     .reassess-pill {
@@ -668,7 +686,7 @@
         background: rgba(255,255,255,0.85);
         padding: 8px; border-radius: 8px;
     }
-    .injury-form select, .injury-form input { padding: 8px; font-size: 0.95rem; }
+    .injury-form select, .injury-form input { padding: 8px; font-size: 16px; } /* <16px makes iPhones zoom in on focus */
 
     /* Printable wristband */
     .wristband {
@@ -701,6 +719,28 @@
     }
 
     /* ---- v0.8.0 safety review additions ---- */
+    .title-short { display: none; }
+    @media (max-width: 420px) { .title-full { display: none; } .title-short { display: inline; } header { flex-wrap: nowrap; } .header-controls { flex-wrap: nowrap; gap: 5px; } }
+    /* Tap targets: at least 44x44 px everywhere (gloves, stress, moving vehicles) */
+    .icon-btn { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+    .btn.injury-btn, .btn.demo-btn { min-height: 44px; }
+    #bodymap-form .btn { min-height: 44px; }
+    details.rs-prompts > summary { padding: 10px 0; min-height: 44px; display: flex; align-items: center; }
+    /* Patient log as cards on phones: no sideways scrolling inside the table */
+    @media (max-width: 640px) {
+        .log-container { border: none; overflow-x: visible; }
+        #log-table thead { display: none; }
+        #log-table, #log-table tbody { display: block; }
+        #log-table tr { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center; padding: 10px 12px; margin-bottom: 8px; border: 2px solid rgba(0,0,0,0.12); border-radius: 10px; height: auto; }
+        #log-table td { border: none; padding: 0; }
+        #log-table td:nth-child(1) { grid-column: 1; font-size: 0.85rem; }
+        #log-table td:nth-child(2) { grid-column: 2; font-size: 1.05rem; overflow-wrap: anywhere; }
+        #log-table td:nth-child(3) { grid-column: 3; padding: 6px 10px; border-radius: 8px; text-align: center; }
+        #log-table td:nth-child(n+4) { grid-column: 1 / -1; }
+        #log-table td[colspan] { grid-column: 1 / -1; }
+        body.night-mode #log-table tr { border-color: rgba(255,255,255,0.18); }
+    }
+
     /* Phone-width layout fixes */
     /* Clip (not hide) sideways overflow: 'hidden' on html/body creates a second scroll container,
        which breaks vertical scrolling in iPhone Safari. 'clip' does not create a scroll container. */
@@ -708,7 +748,7 @@
     header { flex-wrap: wrap; gap: 6px; }
     .header-controls { gap: 6px; flex-wrap: wrap; }
     @media (max-width: 480px) {
-        header { padding: 0.6rem 0.7rem; }
+        header { padding: 0.6rem 0.7rem; padding-top: calc(0.6rem + env(safe-area-inset-top, 0px)); padding-left: max(0.7rem, env(safe-area-inset-left, 0px)); padding-right: max(0.7rem, env(safe-area-inset-right, 0px)); }
         h1 { font-size: 1.05rem; }
         .icon-btn { padding: 8px 11px; font-size: 0.85rem; }
     }
@@ -731,6 +771,9 @@
     }
     .storage-banner { display:none; background:#DA291C; color:#fff; padding:10px 14px; font-weight:bold; font-size:0.95rem; }
     .storage-banner.show { display:block; }
+    .ios-install-banner { display:none; background:#fff3cd; color:#664d03; border-bottom:3px solid #ffbf00; padding:10px 14px; font-size:0.95rem; line-height:1.4; }
+    .ios-install-banner.show { display:block; }
+    .ios-install-banner button { display:block; margin-top:8px; min-height:44px; min-width:88px; background:#005EB8; color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:1rem; }
     .storage-banner button { margin-left:8px; background:#fff; color:#DA291C; border:none; border-radius:6px; padding:6px 10px; font-weight:bold; }
     .alert-card { border-left:6px solid var(--nhs-red); background: rgba(218,41,28,0.08); padding:0.8rem 1rem; border-radius:8px; margin-bottom:0.8rem; }
     .alert-card.info { border-left-color: var(--nhs-blue); background: rgba(0,94,184,0.08); }
@@ -1063,7 +1106,7 @@
 <div class="container">
     <header>
         <div>
-            <h1>Major Incident <span id="mode-indicator" class="mode-badge" style="display:none;"></span></h1>
+            <h1><span class="title-full">Major Incident</span><span class="title-short">MITT</span> <span id="mode-indicator" class="mode-badge" style="display:none;"></span></h1>
         </div>
         <div class="header-controls">
             <button class="icon-btn" onclick="resetToHome()" aria-label="Home">🏠</button>
@@ -1074,6 +1117,13 @@
     </header>
 
     <div id="storage-banner" class="storage-banner" role="alert"></div>
+    <div id="ios-install-banner" class="ios-install-banner" role="note">
+        <strong>iPhone / iPad: add MITT to your Home Screen before an incident.</strong>
+        In Safari tap the Share button (square with an up arrow), then <em>Add to Home Screen</em>, and use that icon from then on.
+        Safari can delete saved records after 7 days without use; the Home Screen app does not.
+        Records made in Safari do not appear in the Home Screen app (they are stored separately): move them with <em>Send patients → Export transfer file</em> here, then <em>Import transfer file</em> in the Home Screen app.
+        <button type="button" onclick="dismissIosInstallBanner()">OK</button>
+    </div>
 
     <div class="status-bar">
         <span class="status-item" id="header-user">User: -</span>
@@ -1127,7 +1177,7 @@
                             <option value="Triage Sieve">Triage Sieve</option>
                             <option value="Decon">Decon</option>
                         </select>
-                        <button class="btn btn-secondary" style="width:50px; padding:0;" onclick="addCustomSector()" aria-label="Add sector">+</button>
+                        <button class="btn btn-secondary" style="width:auto; min-width:52px; flex:0 0 52px; padding:0; margin:0;" onclick="addCustomSector()" aria-label="Add sector">+</button>
                     </div>
                     <input type="text" id="intro-sector" placeholder="Or type manually..." style="margin-top:8px;" autocomplete="off">
                 </div>
@@ -1449,7 +1499,7 @@
             </div>
         </div>
     </main>
-    <footer style="text-align:center; padding:6px 8px; font-size:0.75rem; color:var(--nhs-grey); flex-shrink:0;">
+    <footer style="text-align:center; padding:6px 8px; padding-bottom:calc(6px + env(safe-area-inset-bottom, 0px)); font-size:0.75rem; color:var(--nhs-grey); flex-shrink:0;">
         <span id="app-version-label">MITT</span> • <span id="save-status">Not yet saved</span>
     </footer>
     <nav class="one-hand-bar" id="one-hand-bar" aria-label="One-handed quick actions">
@@ -1461,7 +1511,7 @@
 <script>
     // ---------- App version / build ----------
     const APP_VERSION = '0.8.0';
-    const APP_BUILD = '2026-09-25-compact-patient';
+    const APP_BUILD = '2026-09-26-ios-compat';
     const QR_DEFAULT_TTL_MS = MITTLib.QR_DEFAULT_TTL_MS;
     const GPS_FRESH_MS = 30 * 1000;       // fixes older than this are not used for "best fix"
     const GPS_STAMP_MAX_AGE_MS = 60 * 1000; // never stamp a patient with a position older than this
@@ -1565,7 +1615,7 @@
             if (!('indexedDB' in window)) { fail('IndexedDB not supported'); return; }
             const req = indexedDB.open('MITT_DB', 1);
             req.onupgradeneeded = (event) => { const d = event.target.result; if (!d.objectStoreNames.contains('logs')) d.createObjectStore('logs'); };
-            req.onsuccess = (event) => { if (settled) return; settled = true; db = event.target.result; storageMode = 'indexeddb'; loadLogsFromDB(); };
+            req.onsuccess = (event) => { if (settled) return; settled = true; db = event.target.result; _watchDbConnection(); storageMode = 'indexeddb'; loadLogsFromDB(); };
             req.onerror = () => fail(req.error ? req.error.message : 'open failed');
             req.onblocked = () => fail('database blocked by another tab');
             setTimeout(() => fail('database did not open within 5 seconds'), 5000);
@@ -1627,20 +1677,51 @@
         if (cachedCcsLocation) ls('mit_ccs_location', JSON.stringify(cachedCcsLocation));
         if (userRole) ls('mit_user_role', userRole);
         try { ls('mit_methane', JSON.stringify(readMethaneForm())); } catch (e) {}
-        if (!dbReady) return; // never overwrite stored data before it has been loaded
+        if (!dbReady) return Promise.resolve(false); // never overwrite stored data before it has been loaded
         const payload = { incidentLog, auditLog, methaneHistory, importedAudit, wipeHistory };
-        if (storageMode === 'indexeddb' && db) {
+        if (storageMode === 'indexeddb') {
+            // If the write fails, reconnect once and retry: iOS Safari can drop the database
+            // connection while the app is in the background ("Connection to Indexed Database
+            // server lost"), after which every write fails until the connection is reopened.
+            return _idbWrite(payload).catch(err => _reopenDatabase().then(() => _idbWrite(payload)).catch(err2 => { throw err2 || err; }))
+                .then(() => { markSaved(); return true; })
+                .catch(e => { saveFailed((e && e.message) || 'write aborted'); return false; });
+        }
+        try { localStorage.setItem(FALLBACK_KEY, JSON.stringify(payload)); markSaved(); return Promise.resolve(true); }
+        catch (e) { saveFailed(e.message); return Promise.resolve(false); }
+    }
+    function _idbWrite(payload) {
+        return new Promise((resolve, reject) => {
             try {
+                if (!db) throw new Error('database connection closed');
                 const tx = db.transaction('logs', 'readwrite');
                 const store = tx.objectStore('logs');
                 Object.keys(payload).forEach(k => store.put(payload[k], k));
-                tx.oncomplete = () => markSaved();
-                tx.onerror = tx.onabort = () => saveFailed(tx.error ? tx.error.message : 'write aborted');
-            } catch (e) { saveFailed(e.message); }
-        } else {
-            try { localStorage.setItem(FALLBACK_KEY, JSON.stringify(payload)); markSaved(); }
-            catch (e) { saveFailed(e.message); }
-        }
+                tx.oncomplete = () => resolve();
+                tx.onerror = tx.onabort = () => reject(tx.error || new Error('write aborted'));
+            } catch (e) { reject(e); }
+        });
+    }
+    let _reopenPromise = null;
+    function _reopenDatabase() {
+        if (_reopenPromise) return _reopenPromise;
+        _reopenPromise = new Promise((resolve, reject) => {
+            try { if (db) db.close(); } catch (e) {}
+            try {
+                const req = indexedDB.open('MITT_DB', 1);
+                req.onsuccess = (event) => { db = event.target.result; _watchDbConnection(); resolve(); };
+                req.onerror = () => reject(req.error || new Error('reopen failed'));
+                req.onblocked = () => reject(new Error('database blocked by another tab'));
+                setTimeout(() => reject(new Error('database did not reopen within 5 seconds')), 5000);
+            } catch (e) { reject(e); }
+        }).then(() => { logAudit('STORAGE_RECONNECTED', '-', 'Device database connection was lost and has been reopened', Date.now()); })
+          .finally(() => { _reopenPromise = null; });
+        return _reopenPromise;
+    }
+    function _watchDbConnection() {
+        if (!db) return;
+        db.onclose = () => { db = null; }; // closed by the browser (not by us): reopen on next save
+        db.onversionchange = () => { try { db.close(); } catch (e) {} db = null; };
     }
     function markSaved() {
         if (_lastSaveError) { _lastSaveError = null; if (storageMode === 'indexeddb') setStorageBanner(null); }
@@ -1683,6 +1764,11 @@
         entry._rev = (entry._rev || 0) + 1;
     }
     function currentEntry() { return currentLogIndex > -1 ? incidentLog[currentLogIndex] : null; }
+    // Re-render the patient screen only if it is already showing that patient (never switch screens behind the user).
+    function refreshIfShowing(entry) {
+        const cur = currentEntry();
+        if (cur && entry && cur.uid === entry.uid && $('result-screen').classList.contains('active')) renderResultScreen(cur);
+    }
     function indexByUid(uid) { return incidentLog.findIndex(e => e.uid === uid); }
     function idPrefix() { return devicePrefix || deviceId; }
     function duplicateIdSet() {
@@ -1709,9 +1795,22 @@
         if (type === 'alert') navigator.vibrate([100, 50, 100, 50, 100]);
         if (type === 'tap') navigator.vibrate(50);
     }
+    // One shared AudioContext: iOS caps how many can exist and starts them suspended,
+    // so a new context per beep eventually fails and is silent until resumed.
+    let _audioCtx = null;
+    function _getAudioCtx() {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        if (!_audioCtx) _audioCtx = new AC();
+        if (_audioCtx.state === 'suspended' && _audioCtx.resume) _audioCtx.resume().catch(() => {});
+        return _audioCtx;
+    }
+    // Unlock audio on the first tap (required by iOS before a later scan can beep).
+    document.addEventListener('touchend', function _unlockAudio() { try { _getAudioCtx(); } catch (e) {} document.removeEventListener('touchend', _unlockAudio, true); }, true);
     function playBeep() {
         try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const ctx = _getAudioCtx();
+            if (!ctx) return;
             const osc = ctx.createOscillator();
             osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime);
             osc.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.1);
@@ -2068,6 +2167,7 @@
         // Only an existing, saved record on the result screen can be renamed. On the question screen
         // this only changes the ID the NEW patient will receive (the old bug renamed the previous patient).
         const onResult = !!inResult && !!currentEntry();
+        if (!onResult && (pendingReTriageUid || pendingCorrectionUid)) { showToast('This updates an existing patient — change the ID on the patient screen afterwards.', { long: true }); return; }
         const newIdRaw = await inAppPrompt({ title: 'Edit Patient ID', message: 'Type the ID from the physical tag:', defaultValue: currentPatientId });
         if (newIdRaw === null) return;
         const newId = newIdRaw.trim();
@@ -2152,13 +2252,19 @@
         dash.classList.toggle('expanded', isLog);
         $('evac-summary').style.display = isLog ? 'block' : 'none';
         $('oh-primary').textContent = id === 'result-screen' ? 'Next Patient' : 'Triage';
-        // A pending re-triage never lingers: leaving the home/question screens cancels it.
+        // A pending re-triage / correction never lingers: leaving the relevant screens cancels it.
         if (pendingReTriageUid && id !== 'home-screen' && id !== 'question-screen') pendingReTriageUid = null;
+        if (pendingCorrectionUid && id !== 'question-screen') pendingCorrectionUid = null;
         if (id === 'home-screen') renderHomeAlerts();
     }
+    let lastTriageTool = 'TST';
     function initiateTriage(tool) {
         try { commitDirtyFields('Starting triage'); } catch (e) {}
+        if (tool !== 'TST' && tool !== 'MITT') tool = 'TST';
+        if (tool === 'MITT' && userRole !== 'HCP') tool = 'TST'; // MITT is for clinicians at the CCP/CCS
+        pendingCorrectionUid = null; // corrections start only from "Change last answer"
         currentTool = tool;
+        lastTriageTool = tool;
         stepHistory = [];
         currentLogIndex = -1; // a new triage never edits the previously open record
         const badge = $('mode-indicator');
@@ -2267,6 +2373,7 @@
             const prev = entry.category;
             entry.triageHistory = (entry.triageHistory || []).concat([hist]);
             Object.assign(entry, { category, action, reason, tool: currentTool, time, timestamp: now, triager: triagerName });
+            entry.lastReassessed = now; entry.reassessOutcome = kind === 'correction' ? 'triage corrected' : 're-triaged';
             if (tod) entry.tod = tod;
             touch(entry, ['category', 'action', 'reason', 'tool', 'tod']);
             currentLogIndex = idx;
@@ -2391,7 +2498,9 @@
         const box = $('result-alerts');
         clearChildren(box);
         if (entry.category === 'NOT_BREATHING') {
-            box.appendChild(el('div', { className: 'alert-card' }, [el('h4', { text: 'Needs healthcare reassessment' }), 'Triaged Not Breathing (TST). A healthcare responder must reassess as soon as possible and set the category (e.g. Dead or P1).']));
+            const card = el('div', { className: 'alert-card' }, [el('h4', { text: 'Needs healthcare reassessment' }), 'Triaged Not Breathing (TST). A healthcare responder must reassess as soon as possible and set the category (e.g. Dead or P1).']);
+            if (userRole === 'HCP') card.appendChild(el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Change category now', onclick: () => { openSection('sec-category', true); setTimeout(() => $('p-cat-override').focus(), 150); } }));
+            box.appendChild(card);
         }
         const dups = duplicateIdSet();
         if (dups.has(entry.id)) box.appendChild(el('div', { className: 'alert-card' }, [el('h4', { text: 'Duplicate ID on this device' }), 'Another record has the same ID. Check the physical tags and change one ID (tap the ID above).']));
@@ -2502,6 +2611,7 @@
         if (newCat === oldCat) return;
         if ((newCat === 'DEAD' || newCat === 'P1_HOLD') && userRole !== 'HCP') { showBlockingError('Clinician decision', `${catShort(newCat)} can only be set by a healthcare professional.`); $('p-cat-override').value = oldCat; return; }
         entry.category = newCat;
+        entry.lastReassessed = Date.now(); entry.reassessOutcome = 'category changed';
         entry.triageHistory = (entry.triageHistory || []).concat([{ ts: Date.now(), category: newCat, reason: 'Category changed manually', tool: entry.tool, by: triagerName, kind: 'override' }]);
         (entry.importConflicts || []).filter(c => c.field === 'category' && !c.resolved).forEach(c => { c.resolved = true; c.resolvedBy = triagerName; c.resolvedAt = Date.now(); });
         touch(entry, ['category']);
@@ -2638,7 +2748,7 @@
         const removed = entry.injuries.pop();
         touch(entry, ['injuries']);
         logAudit('BODYMAP_UNDO', entry.id, `Removed ${removed.side} ${removed.region} ${removed.label || ''} (marked ${removed.time})`, Date.now(), { uid: entry.uid });
-        renderInjuryMarks(); saveState();
+        renderInjuryMarks(); updateSectionSummaries(entry); saveState();
     }
     async function clearInjuries() {
         const entry = currentEntry();
@@ -2650,7 +2760,7 @@
         entry.injuries = [];
         touch(entry, ['injuries']);
         logAudit('BODYMAP_CLEAR', entry.id, `Cleared ${n} mark(s): ${removedText}`, Date.now(), { uid: entry.uid });
-        renderInjuryMarks(); saveState();
+        renderInjuryMarks(); updateSectionSummaries(entry); saveState();
     }
 
     // ---------- Voice notes ----------
@@ -2679,7 +2789,7 @@
         const status = MITTLib.reassessmentStatus(e, Date.now(), reassessIntervals);
         setText('reassess-summary', `${e.id} — ${catShort(e.category)}${status.dueAt ? ` (due ${fmtTime(status.dueAt)})` : ''}`);
         const note = $('reassess-hcp-note');
-        if (e.category === 'NOT_BREATHING') { note.style.display = 'block'; note.textContent = userRole === 'HCP' ? 'After reassessing, set the category (e.g. Dead or P1) using "Category" in Interventions & Notes.' : 'This patient needs a healthcare responder. Record your check, and ask a clinician to reassess.'; }
+        if (e.category === 'NOT_BREATHING') { note.style.display = 'block'; note.textContent = userRole === 'HCP' ? 'After reassessing, set the new category (e.g. Dead or P1) under "Change category".' : 'This patient needs a healthcare responder. Record your check, and ask a clinician to reassess.'; }
         else note.style.display = 'none';
         $('reassess-modal').style.display = 'flex';
     }
@@ -2698,7 +2808,7 @@
         if (outcome === 'worsened') {
             openSection('sec-category', true);
             setTimeout(() => { $('p-cat-override').focus(); }, 150);
-            showBlockingError('Patient worsened', 'Review the triage category now. Change it under "Category", or use Re-Triage.');
+            showBlockingError('Patient worsened', 'Review the triage category now: change it under "Change category", or use Re-Triage.');
         } else showToast(`Reassessment recorded: ${outcome}`);
     }
 
@@ -2832,7 +2942,7 @@
         _qrFullscreen = !_qrFullscreen;
         box.style.maxWidth = _qrFullscreen ? '100vw' : '';
         box.style.width = _qrFullscreen ? '100vw' : '';
-        box.style.height = _qrFullscreen ? '100vh' : '';
+        box.style.height = _qrFullscreen ? window.innerHeight + 'px' : ''; // 100vh overshoots the visible area in iOS Safari
         box.style.justifyContent = _qrFullscreen ? 'center' : '';
         box.style.background = _qrFullscreen ? '#fff' : '';
         setText('btn-qr-full', _qrFullscreen ? '↙ Exit Full Screen' : '⛶ Full Screen');
@@ -3115,7 +3225,8 @@
             target = res.record;
             logAudit(mergeIntoUid ? 'DATA_IMPORT_MERGE_DUP' : 'DATA_IMPORT_MERGE', target.id, `Merged from ${sender} (incoming ${data.id} rev ${meta.recordVersion}, hash ${wrapper && wrapper.h || '-'}, match ${mergeIntoUid ? 'operator' : match.how})`, Date.now(), { uid: target.uid });
             auditMergeReport(target.id, target.uid, res, sender, mergeIntoUid ? 'operator' : match.how);
-            if (currentEntry() && currentEntry().uid === target.uid) renderResultScreen(target);
+            res.record.handoverLog = (local.handoverLog || []).concat([{ from: sender, at: Date.now(), by: triagerName, method: 'qr-merge' }]);
+            refreshIfShowing(target);
             showToast(`Record updated: ${target.id}`);
         } else {
             const entry = MITTLib.clonePatientRecord(data);
@@ -3213,7 +3324,7 @@
         closeHandoverFlow();
         if (state === 'accepted') showAckResult(true, 'Handover accepted', `${entry.id} handover to ${rcv} confirmed and audited.${note ? ' ' + note : ''}`);
         else showAckResult(false, 'Receiver has an older version', `${entry.id}: ${note}`);
-        if (currentEntry() && currentEntry().uid === entry.uid) renderResultScreen(entry);
+        refreshIfShowing(entry);
     }
     function closeAckSuccess() { $('ack-success-modal').style.display = 'none'; }
 
@@ -3235,7 +3346,7 @@
     }
     function scopeLabel(scope) {
         if (!scope || scope.type === 'all') return 'All patients';
-        if (scope.type === 'patient') { const i = indexByUid(scope.uid); return `Patient ${i > -1 ? incidentLog[i].id : ''}`; }
+        if (scope.type === 'patient') { const i = indexByUid(scope.uid); return i > -1 ? `Patient ${incidentLog[i].id}` : 'One patient'; }
         if (scope.type === 'sector') return `Sector: ${scope.sector}`;
         return 'On-scene patients only';
     }
@@ -3347,12 +3458,43 @@
     }
     function stopAutoCycle() { if (_autoCycleTimer) clearInterval(_autoCycleTimer); _autoCycleTimer = null; setText('btn-auto-cycle', '▶ Auto-cycle'); }
     function closeAllTransferModal() { stopAutoCycle(); $('all-transfer-modal').style.display = 'none'; }
-    function downloadBlob(filename, text, type) {
+    function setupIosInstallBanner() {
+        const b = $('ios-install-banner');
+        if (b && isIOS() && !isStandalone() && ls('mit_ios_install_dismissed') !== '1') b.classList.add('show');
+    }
+    function dismissIosInstallBanner() {
+        ls('mit_ios_install_dismissed', '1');
+        const b = $('ios-install-banner'); if (b) b.classList.remove('show');
+    }
+    function isIOS() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+    function isStandalone() {
+        return window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    }
+    function _anchorDownload(filename, text, type) {
         const blob = new Blob([text], { type: type || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const a = el('a', { href: url, download: filename });
         document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+    // iPhones/iPads: download links are unreliable (especially in the home-screen app,
+    // where a downloaded file can open in a viewer with no way back), so offer the share
+    // sheet ("Save to Files", AirDrop, Mail). Everything else: normal download.
+    function downloadBlob(filename, text, type) {
+        if (isIOS() && navigator.share && navigator.canShare) {
+            let file = null;
+            try { file = new File([text], filename, { type: (type || 'application/octet-stream').split(';')[0] }); } catch (e) {}
+            if (file && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: filename }).catch(e => {
+                    if (e && e.name === 'AbortError') { logAudit('FILE_SAVE_CANCELLED', '-', filename, Date.now()); showToast('File not saved (share cancelled).'); }
+                    else _anchorDownload(filename, text, type);
+                });
+                return;
+            }
+        }
+        _anchorDownload(filename, text, type);
     }
     function stamp() { return MITTLib.isoWithOffset(Date.now()).replace(/[:.]/g, '-'); }
     async function exportAllPatientsFile() {
@@ -3504,7 +3646,7 @@
         const before = new Map(incidentLog.map(e => [e.uid, e.category]));
         incidentLog = plan.records;
         plan.report.forEach(rep => {
-            const rec = incidentLog.find(e => e.id === rep.id);
+            const rec = rep.uid ? incidentLog.find(e => e.uid === rep.uid) : incidentLog.find(e => e.id === rep.id);
             const uid = rec ? rec.uid : '';
             if (rep.action === 'merged') {
                 auditMergeReport(rep.id, uid, { changes: rep.changes, conflicts: rep.conflicts }, sender, rep.how);
@@ -3521,7 +3663,8 @@
         _pendingBulkImport = null;
         $('bulk-receive-modal').style.display = 'none';
         saveState(); updateDashboard();
-        if (currentEntry()) renderResultScreen(currentEntry());
+        refreshIfShowing(currentEntry());
+        if ($('log-screen').classList.contains('active')) showLog();
         // Transfer-level ACK so the sender knows exactly what arrived.
         const ack = MITTLib.buildTransferAckPayload(r.meta.transferId || '', r.meta.payloadHash || '', r.data.length, triagerName, { appVersion: APP_VERSION, device: deviceId, imported: plan.imported, merged: plan.merged });
         const text = MITTLib.toAsciiJSON(ack);
@@ -3634,7 +3777,7 @@
         }).sort((a, b) => (b.e.timestamp || 0) - (a.e.timestamp || 0));
         if (!rows.length) { tbody.appendChild(el('tr', null, [el('td', { colspan: '6', text: incidentLog.length ? 'No patients match.' : 'No patients yet.' })])); return; }
         rows.forEach(({ e: row, i }) => {
-            const tr = el('tr', { className: 'clickable-row', onclick: () => editEntry(i) });
+            const tr = el('tr', { className: 'clickable-row', onclick: () => editEntryByUid(row.uid) });
             const tq = row.interventions && row.interventions['Tourniquet'];
             const ra = MITTLib.reassessmentStatus(row, now, reassessIntervals);
             if ((tq && tq.ts && now - tq.ts > 2 * 60 * 60 * 1000) || ra.state === 'overdue') tr.classList.add('critical-alert');
@@ -3672,11 +3815,13 @@
         });
     }
     function editEntry(index) {
+        if (!incidentLog[index]) return;
+        commitDirtyFields('Opening another patient');
         currentLogIndex = index;
         currentPatientId = incidentLog[index].id;
-        currentTool = incidentLog[index].tool;
         renderResultScreen(incidentLog[index]);
     }
+    function editEntryByUid(uid) { const i = indexByUid(uid); if (i > -1) editEntry(i); }
     function refreshLog() { try { showLog(); } catch (e) {} }
 
     // ================= EXPORTS (for debrief and inquiry) =================
@@ -3773,8 +3918,9 @@
         appendAudit({ deviceId, sysTime: Date.now(), sysTimeISO: MITTLib.isoWithOffset(Date.now()), user: triagerName, role: userRole || '', action: 'DATA_WIPE', patientId: '-', details: `Incident closed. Previous: ${summary.records} records, ${summary.auditEntries} audit entries, audit head ${summary.auditHeadHash} (${v.ok ? 'intact' : 'BROKEN'}), archive SHA-256 ${digest}`, app: APP_VERSION });
         ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers'].forEach(k => ls(k, null));
         patientCounter = 1; currentLogIndex = -1; cachedCcsLocation = null;
-        saveState();
-        setTimeout(() => location.reload(), 600);
+        const ok = await saveState();
+        if (!ok) { showBlockingError('Reset not saved', 'The device could not save the reset. Close and reopen the app.'); return; }
+        location.reload();
     }
 
     // ================= METHANE =================
@@ -3808,7 +3954,7 @@
     function nextPatient() {
         commitDirtyFields('Next patient');
         pendingReTriageUid = null; pendingCorrectionUid = null;
-        initiateTriage(currentTool || 'TST');
+        initiateTriage(lastTriageTool || 'TST');
     }
     function resetToHome() { try { commitDirtyFields('Home'); } catch (e) {} showScreen('home-screen'); }
 
@@ -3947,9 +4093,27 @@
         if ($('home-screen').classList.contains('active')) renderHomeAlerts();
     }, 30 * 1000);
 
+    // Two copies of the app open at once (two tabs, or the installed app plus a browser tab) would
+    // overwrite each other's saves. Detect it and tell the user to close one.
+    function watchForOtherCopies() {
+        if (typeof BroadcastChannel === 'undefined') return;
+        const me = MITTLib.makeUid();
+        const ch = new BroadcastChannel('mitt-instances');
+        const warn = () => setStorageBanner('MITT is open in another tab or window on this phone. Close the other copy now — two copies can overwrite each other\'s patients.');
+        ch.onmessage = (ev) => {
+            const m = ev.data || {};
+            if (m.from === me) return;
+            if (m.type === 'hello') { ch.postMessage({ type: 'here', from: me }); warn(); }
+            if (m.type === 'here') warn();
+        };
+        ch.postMessage({ type: 'hello', from: me });
+    }
+
     loadModePrefs();
     loadLocalSettings();
     openDatabase();
+    watchForOtherCopies();
+    setupIosInstallBanner();
     document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `MITT v${APP_VERSION} (${APP_BUILD})`); });
     window.onload = function () {
         wireFieldHandlers();

@@ -90,11 +90,24 @@ Scanning a colleague's **My ID** records who took over care (it no longer marks 
 
 ## Storage safety
 
-Data is written to IndexedDB after every change (and when the app is hidden or closed). Nothing is written until stored data has loaded, so an early save can never overwrite the log. If IndexedDB is unavailable or a write fails, a red banner says so, data is saved to backup browser storage, and **Export archive now** is offered. The app requests persistent storage. The footer shows when data was last saved.
+Data is written to IndexedDB after every change (and when the app is hidden or closed). Nothing is written until stored data has loaded, so an early save can never overwrite the log. If IndexedDB is unavailable at start-up, a red banner says so and data is saved to backup browser storage instead. If a write fails (for example, iOS dropping the database connection while the app was in the background), the app reconnects and retries once; if it still fails, a red banner says so and **Export archive now** is offered. The app requests persistent storage. The footer shows when data was last saved.
+
+## iPhone and iPad
+
+MITT is written for Safari on iOS 15 and later; older versions may work but are untested. The automated tests run in Chromium set up to behave like an iPhone (screen size, notch, missing features); they are not a substitute for testing on a real iPhone (see the QA checklist below). Differences from Android:
+
+- **Install it:** Share button → **Add to Home Screen**, before an incident. In Safari (not installed), iOS can delete a site's saved data after 7 days without use; the Home Screen app is exempt. The Home Screen app keeps **its own records, separate from Safari**, so anything triaged in Safari must be sent across (QR or transfer file) before switching. The app shows this tip on iPhones until dismissed.
+- **QR handover:** iPhones on iOS older than 16.4 cannot use the browser's built-in decompression, so MITT includes a decompression library (`vendor/pako_inflate.min.js`) and those iPhones can still receive compressed codes. They send uncompressed codes, which may need more QR parts.
+- **Saving exports:** on iPhone, exports open the share sheet (**Save to Files**, AirDrop, Mail) instead of a download. A cancelled share is recorded in the audit trail as `FILE_SAVE_CANCELLED`.
+- **Not available on iPhone:** vibration feedback, NFC tags (the NFC buttons are hidden), and keeping the screen awake in the Home Screen app before iOS 18.4. Set Auto-Lock to a long interval or **Never** during an incident.
+- **Camera:** the Home Screen app may ask for camera permission again after it has been closed.
+- **Layout:** the header, dialogs, toasts and bottom bars stay clear of the notch / Dynamic Island and the home bar.
 
 ## Manual two-phone QA checklist (do this on your real devices before use)
 
-1. Load MITT on phone A and phone B once online, then switch both to airplane mode; confirm both still open.
+Use **one iPhone and one Android phone** for at least one full run, and do steps 3, 5 and 6 in both directions.
+
+1. Load MITT on phone A and phone B once online (on the iPhone, from the Home Screen icon), then switch both to airplane mode; confirm both still open.
 2. On A, triage a TST patient (tap a quick-injury emoji button, add an allergy with an accent or £), a TST "not breathing" patient, and a MITT patient.
 3. QR Handover from A to B: check B's preview, accept, scan B's ACK on A → "Handover accepted".
 4. Change A's patient to a more urgent category, hand over again, and confirm B updates. Change it to a less urgent category and confirm B asks you to choose.
@@ -114,10 +127,11 @@ Data is written to IndexedDB after every change (and when the app is hidden or c
 
 ```bash
 node tests/lib.test.js          # logic: merge, IDs, transfer, audit chain, triage flows (no dependencies)
+node tests/syntax-compat.js     # fails on JavaScript syntax too new for older iPhones (needs npm install)
 npm install && node tests/e2e.js # real app in headless Chromium, simulating two phones
 ```
 
-The end-to-end suite covers the two-phone handover, multi-part transfer, reload persistence, audit tamper detection, legacy migration, storage failure, reset, and checks the app's QR codes against a reference encoder. CI runs both on every push (see `.github/workflows/test.yml`).
+The end-to-end suite covers the two-phone handover, multi-part transfer, reload persistence, audit tamper detection, legacy migration, storage failure, reset, iPhone behaviour (old-iOS decompression, share-sheet export, notch layout, no zoom-on-tap, database reconnection), and checks the app's QR codes against a reference encoder. CI runs both on every push (see `.github/workflows/test.yml`).
 
 ## Intended-use limitations
 

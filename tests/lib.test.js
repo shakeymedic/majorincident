@@ -815,6 +815,22 @@ group('review: acknowledgements', () => {
         const txt = await lib.decodeTransportText(z.qrText);
         assert.strictEqual(lib.validateAllPatientsWrapper(JSON.parse(txt), { now }).ok, true);
     });
+    await atest('compressed QR decodes without DecompressionStream (iOS < 16.4) via the bundled pako fallback', async () => {
+        const z = await lib.buildAllPatientsTransferAsync(many.slice(0, 2), {}, { now });
+        assert.ok(lib.isCompressedTransport(z.qrText));
+        const native = await lib.decodeTransportText(z.qrText);
+        const saved = { C: globalThis.CompressionStream, D: globalThis.DecompressionStream, pako: globalThis.pako };
+        try {
+            delete globalThis.CompressionStream; delete globalThis.DecompressionStream; delete globalThis.pako;
+            assert.strictEqual(lib.compressionSupported(), false);
+            await assert.rejects(() => lib.decodeTransportText(z.qrText), /cannot decompress/);
+            globalThis.pako = require('../vendor/pako_inflate.min.js');
+            assert.strictEqual(await lib.decodeTransportText(z.qrText), native);
+        } finally {
+            globalThis.CompressionStream = saved.C; globalThis.DecompressionStream = saved.D;
+            if (saved.pako) globalThis.pako = saved.pako; else delete globalThis.pako;
+        }
+    });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);
 })();
