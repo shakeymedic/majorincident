@@ -764,6 +764,38 @@ group('review: tamper-evident audit', () => {
         assert.strictEqual(lib.csvCell('=HYPERLINK("x")'), `"'=HYPERLINK(""x"")"`);
         assert.strictEqual(lib.csvCell('plain'), '"plain"');
     });
+    test('csvCell keeps negative numbers (longitudes west of Greenwich) numeric, but still guards text starting with -', () => {
+        assert.strictEqual(lib.csvCell('-2.2426000'), '"-2.2426000"');
+        assert.strictEqual(lib.csvCell(-2.24), '"-2.24"');
+        assert.strictEqual(lib.csvCell('-1'), '"-1"');
+        assert.strictEqual(lib.csvCell('-2+3'), `"'-2+3"`);
+        assert.strictEqual(lib.csvCell('-cmd|x'), `"'-cmd|x"`);
+        assert.strictEqual(lib.csvCell('+44 7700'), `"'+44 7700"`);
+    });
+    test('any change to DEAD, and P1 Hold -> Not Breathing, count as deterioration', () => {
+        assert.strictEqual(lib.categoryWorsened('P1_HOLD', 'DEAD'), true);
+        assert.strictEqual(lib.categoryWorsened('NOT_BREATHING', 'DEAD'), true);
+        assert.strictEqual(lib.categoryWorsened('P3', 'DEAD'), true);
+        assert.strictEqual(lib.categoryWorsened('P1_HOLD', 'NOT_BREATHING'), true);
+        assert.strictEqual(lib.categoryWorsened('DEAD', 'NOT_BREATHING'), false);
+        assert.strictEqual(lib.categoryWorsened('DEAD', 'P1'), false);
+        assert.strictEqual(lib.categoryWorsened('NOT_BREATHING', 'P1_HOLD'), false);
+    });
+    test('long allergies and notes survive a handover intact; anything over the limit is reported, never silently cut', () => {
+        const allergies = 'Penicillin; '.repeat(80).trim(); // ~960 chars: longer than the old 300 limit
+        const notes = 'Blast injury, both legs. '.repeat(300); // ~7500 chars: longer than the old 4000 limit
+        const w = lib.buildPatientPayload({ id: 'L-1', uid: 'u1', category: 'P1', allergies, notes }, {}, { now: 1 });
+        const v = lib.validatePatientWrapper(JSON.parse(lib.toAsciiJSON(w)), { now: 2 });
+        assert.strictEqual(v.data.allergies, allergies);
+        assert.strictEqual(v.data.notes, notes);
+        assert.ok(!v.meta.warnings.some(x => /shortened/.test(x)));
+        const huge = lib.buildPatientPayload({ id: 'L-2', uid: 'u2', category: 'P1', allergies: 'x'.repeat(lib.FIELD_LIMITS.allergies + 5) }, {}, { now: 1 });
+        const v2 = lib.validatePatientWrapper(huge, { now: 2 });
+        assert.ok(v2.meta.warnings.some(x => /shortened: allergies/.test(x)), v2.meta.warnings.join('|'));
+        const all = lib.validateAllPatientsWrapper(lib.buildAllPatientsPayload([{ id: 'L-3', uid: 'u3', category: 'P2', notes: 'y'.repeat(lib.FIELD_LIMITS.notes + 1) }], {}, { now: 1 }), { now: 2 });
+        assert.ok(all.meta.warnings.some(x => /shortened: notes/.test(x)));
+        Object.keys(lib.FIELD_INPUT_LIMITS).forEach(k => assert.ok(lib.FIELD_INPUT_LIMITS[k] <= lib.FIELD_LIMITS[k], k));
+    });
     test('isoWithOffset includes a UTC offset', () => {
         assert.match(lib.isoWithOffset(1700000000000), /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}[+-]\d\d:\d\d$/);
     });

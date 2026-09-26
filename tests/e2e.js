@@ -482,6 +482,99 @@ async function test(name, fn) {
     });
     await R._ctx.close();
 
+    console.log('\ne2e: full-check fixes');
+    await test('scanning the same ACK twice still says "accepted"; a real change after the QR is still caught', async () => {
+        const S = await device('Sender'), R = await device('Receiver');
+        await setup(S, 'Medic S'); await setup(R, 'Medic R');
+        await triage(S, 'TST', [false, true]);
+        await S.evaluate(() => { const e = currentEntry(); e.notes = 'Leg wound'; saveState(); return generatePatientQR(); });
+        await scan(R, await qrText(S));
+        await page_visible(R, '#preview-modal');
+        await R.evaluate(() => acceptPreview());
+        const ack = await qrText(R);
+        await S.evaluate(() => closeQR());
+        for (let i = 0; i < 2; i++) {
+            await S.evaluate(() => { closeHandoverFlow(); closeAckSuccess(); _scanLastCode = null; });
+            await scan(S, ack);
+            await page_visible(S, '#ack-success-modal');
+            assert.match(await S.textContent('#ack-success-title'), /Handover accepted/, 'scan ' + (i + 1));
+            assert.strictEqual(await S.evaluate(() => currentEntry().handoverState), 'accepted');
+        }
+        await S.evaluate(() => { closeAckSuccess(); document.getElementById('p-allergies').value = 'Latex'; markDirty('p-allergies'); commitDirtyFields(); _scanLastCode = null; });
+        await scan(S, ack);
+        await page_visible(S, '#ack-success-modal');
+        assert.match(await S.textContent('#ack-success-title'), /older version/i);
+        await S._ctx.close(); await R._ctx.close();
+    });
+    await test('"Paste" opened from inside the scanner appears on top of it', async () => {
+        const P = await device('Paste');
+        await setup(P, 'Medic P');
+        const onTop = await P.evaluate(() => {
+            document.getElementById('scanner-modal').style.display = 'flex';
+            openPasteCode();
+            const r = document.getElementById('paste-input').getBoundingClientRect();
+            const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return !!(hit && hit.closest('#paste-modal'));
+        });
+        assert.ok(onTop);
+        await P._ctx.close();
+    });
+    await test('closing an incident also removes any copy of patients in backup browser storage', async () => {
+        const Z = await device('Reset');
+        await setup(Z, 'Medic Z');
+        await triage(Z, 'TST', [true]);
+        await Z.evaluate(() => localStorage.setItem(FALLBACK_KEY, JSON.stringify({ incidentLog: [{ id: 'OLD-1', uid: 'x', category: 'P1' }] })));
+        const [dl] = await Promise.all([Z.waitForEvent('download'), Z.evaluate(() => { clearAllData(); }).then(() => answerDialog(Z, true))]);
+        assert.ok(await dl.path());
+        await answerDialog(Z, true);
+        await answerDialog(Z, true, 'DELETE');
+        await Z.waitForTimeout(1200);
+        await Z.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true);
+        assert.strictEqual(await Z.evaluate(() => localStorage.getItem(FALLBACK_KEY)), null);
+        assert.strictEqual(await Z.evaluate(() => incidentLog.length), 0);
+        await Z._ctx.close();
+    });
+    await test('on a 320-390 px phone every dashboard counter stays on one line', async () => {
+        for (const width of [320, 360, 390]) {
+            const D = await device('Dash ' + width, { viewport: { width, height: 700 }, isMobile: true, hasTouch: true });
+            await setup(D, 'Medic D');
+            await D.evaluate(() => { for (let i = 0; i < 12; i++) { initiateTriage('TST'); handleAnswer(i % 2 === 0); } resetToHome(); updateDashboard(); });
+            const tall = await D.evaluate(() => Array.from(document.querySelectorAll('#global-dashboard .dash-num, #global-dashboard .dash-label'))
+                .filter(e => e.offsetParent !== null && e.getBoundingClientRect().height > parseFloat(getComputedStyle(e).fontSize) * 1.6).map(e => e.id || e.textContent));
+            assert.deepStrictEqual(tall, [], 'width ' + width);
+            await D._ctx.close();
+        }
+    });
+    await test('a dialog taller than the screen (gloved mode, small phone) can be scrolled to its top', async () => {
+        const G = await device('Gloved', { viewport: { width: 320, height: 480 }, isMobile: true, hasTouch: true });
+        await setup(G, 'Medic G');
+        const top = await G.evaluate(() => {
+            document.body.classList.add('gloved');
+            const m = document.getElementById('tod-modal'); m.style.display = 'flex'; m.scrollTop = 0;
+            return m.querySelector('.modal-box').getBoundingClientRect().top;
+        });
+        assert.ok(top >= 0, 'dialog top at ' + top);
+        await G._ctx.close();
+    });
+    await test('text boxes are limited to what a receiving device keeps in full', async () => {
+        const T = await device('Limits');
+        const lim = await T.evaluate(() => ({ a: $('p-allergies').maxLength, n: $('p-notes').maxLength, d: $('p-demos').maxLength, id: $('manual-id-input').maxLength, L: MITTLib.FIELD_INPUT_LIMITS }));
+        assert.strictEqual(lim.a, lim.L.allergies); assert.strictEqual(lim.n, lim.L.notes); assert.strictEqual(lim.d, lim.L.demos); assert.strictEqual(lim.id, lim.L.id);
+        await T._ctx.close();
+    });
+    await test('editing a location label keeps a location confidence value that is not in the menu', async () => {
+        const C = await device('Confidence');
+        await setup(C, 'Medic C');
+        await triage(C, 'TST', [true]);
+        const conf = await C.evaluate(() => {
+            const e = currentEntry(); e.locationConfidence = 'imported-other'; renderResultScreen(e);
+            const f = document.getElementById('p-landmark'); f.value = 'Bus stop'; f.dispatchEvent(new Event('change'));
+            return [e.locationConfidence, e.landmark];
+        });
+        assert.deepStrictEqual(conf, ['imported-other', 'Bus stop']);
+        await C._ctx.close();
+    });
+
     console.log('\ne2e: iPhone / iPad compatibility');
     const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1';
     const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
@@ -540,6 +633,20 @@ async function test(name, fn) {
         await I.evaluate(() => { window.__shareResult = 'cancel'; downloadArchive(); });
         await I.waitForTimeout(300);
         assert.ok(await I.evaluate(() => auditLog.some(a => a.action === 'FILE_SAVE_CANCELLED' && /MITT_archive_/.test(a.details))));
+        await I._ctx.close();
+    });
+    await test('iPhone "Export transfer file" opens the share sheet straight from the tap (no background work first)', async () => {
+        const stub = `window.__shared = []; navigator.canShare = (d) => !!(d && d.files); navigator.share = (d) => { window.__shared.push(d.files[0].name); return Promise.resolve(); };`;
+        const I = await device('iPhone transfer file', Object.assign({ userAgent: IPHONE_UA, initScript: stub }, phone));
+        await setup(I, 'Medic iPhone');
+        await triage(I, 'TST', [true]);
+        await I.evaluate(() => openAllPatientsTransfer());
+        const sharedSync = await I.evaluate(() => { exportAllPatientsFile(); return window.__shared.slice(); });
+        assert.strictEqual(sharedSync.length, 1);
+        assert.match(sharedSync[0], /^MITT_transfer_.*\.json$/);
+        const sharedSync2 = await I.evaluate(() => { window.__shared = []; shareAllPatientsFile(); return window.__shared.slice(); });
+        assert.strictEqual(sharedSync2.length, 1);
+        assert.ok(await I.evaluate(() => auditLog.some(a => a.action === 'TRANSFER_GENERATED' && /transfer file/.test(a.details))));
         await I._ctx.close();
     });
     await test('if the phone drops the database connection (iOS after backgrounding), saving reconnects and nothing is lost', async () => {

@@ -142,6 +142,17 @@ The end-to-end suite covers the two-phone handover, multi-part transfer, reload 
 
 ## Contributing / change log
 
+### v0.8.0 build 2026-09-26-full-check — full line-by-line check
+
+- Handover: scanning the same ACK twice no longer reports "receiver has an older version"; the check now compares the record's clinical content, not its last-changed time.
+- Handover: allergies, notes and other text are no longer cut on the receiving phone (previously allergies over 300 and notes over 4,000 characters were silently shortened). Input boxes now have limits below what a receiver keeps, and anything over the limit is shown as a warning instead of being dropped silently.
+- Exports: negative numbers (longitudes west of Greenwich) are no longer turned into text in the CSV files.
+- Deterioration: any change to Dead, and P1 Hold to Not Breathing, is now flagged as deterioration.
+- Paste box opened from the scanner now appears on top of it; dialogs taller than the screen can be scrolled to the top; dashboard counters stay on one line on phones.
+- Reset also removes any copy of patients kept in backup browser storage.
+- iPhone: transfer files open the share sheet straight from the tap.
+- Android: a proper "maskable" home-screen icon, so the round icon mask no longer crops the artwork.
+
 ### v0.8.0 — safety review (handover, data integrity, audit, clinical alignment)
 
 - **Data loss fixed:** IDs could be reused (leaving via Home), hiding the earlier patient from the log/dashboard/exports; editing the ID on the question screen renamed the previous patient; re-triage created a blank duplicate hiding interventions/allergies; the "time of event" offset silently back-dated all later records; typed destination/vehicle could be lost; background field saves overwrote imported data and handover notes.
