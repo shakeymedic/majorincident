@@ -427,6 +427,61 @@ async function test(name, fn) {
         await A.goBack(); await A.waitForTimeout(200);
         assert.ok(A.url().endsWith('index.html'));
     });
+    console.log('\ne2e: second-round bug fixes');
+    const R = await device('R');
+    await setup(R, 'Medic R');
+    await test('leaving a "Change last answer" half-way never overwrites another patient', async () => {
+        await triage(R, 'TST', [true]); // P3
+        const first = await R.evaluate(() => currentEntry().uid);
+        await R.evaluate(() => { changeLastAnswer(); resetToHome(); });
+        await triage(R, 'TST', [false, true]); // new patient, P1
+        const recs = await R.evaluate(() => incidentLog.map(e => [e.uid, e.category]));
+        assert.strictEqual(recs.length, 2);
+        assert.strictEqual(recs.find(r => r[0] === first)[1], 'P3');
+    });
+    await test('re-triage resets the reassessment clock', async () => {
+        await R.evaluate(() => { const e = currentEntry(); e.timestamp -= 60 * 60 * 1000; e.lastReassessed = null; });
+        assert.strictEqual(await R.evaluate(() => MITTLib.reassessmentStatus(currentEntry(), Date.now(), reassessIntervals).state), 'overdue');
+        await R.evaluate(() => { reTriage(); initiateTriage('TST'); handleAnswer(false); handleAnswer(true); });
+        assert.notStrictEqual(await R.evaluate(() => MITTLib.reassessmentStatus(currentEntry(), Date.now(), reassessIntervals).state), 'overdue');
+    });
+    await test('"Next patient" after opening an imported/MITT record uses the triager\'s own tool', async () => {
+        const N = await device('N');
+        await setup(N, 'PC Smith', 'NON_HCP');
+        await N.evaluate(() => { incidentLog.push({ id: 'X-1', uid: 'x1', category: 'P2', tool: 'MITT', triageHistory: [], interventions: {}, fts: {} }); editEntry(incidentLog.length - 1); nextPatient(); });
+        assert.strictEqual(await N.evaluate(() => currentTool), 'TST');
+        await N._ctx.close();
+    });
+    await test('accepting a transfer never switches the receiver to another screen', async () => {
+        await R.evaluate(() => { editEntry(0); resetToHome(); });
+        const t = await R.evaluate(() => MITTLib.toAsciiJSON(MITTLib.buildAllPatientsPayload([{ id: 'ZZ-1', uid: 'zz1', category: 'P2' }], {}, { sender: 'Other' })));
+        await scan(R, t);
+        await page_visible(R, '#bulk-receive-modal');
+        await R.evaluate(() => acceptBulkPreview());
+        assert.ok(await R.evaluate(() => document.getElementById('home-screen').classList.contains('active')));
+        await R.evaluate(() => closeQR());
+    });
+    await test('the patient timeline keeps events recorded before an ID change', async () => {
+        await R.evaluate(() => { editEntry(0); recordIntervention(document.querySelector('[data-type="Oxygen"]'), 'Oxygen'); });
+        const p = R.evaluate(() => editPatientId(true));
+        await answerDialog(R, true, 'RENAMED-1'); await p;
+        await R.evaluate(() => openTimelineForCurrent());
+        const labels = await R.evaluate(() => Array.from(document.querySelectorAll('#timeline-list .tl-label')).map(x => x.textContent));
+        assert.ok(labels.some(l => /Id Change/i.test(l)), labels.join(' | '));
+        assert.ok(labels.some(l => /Retriage Started|Re-triage|Triage/i.test(l)));
+        await R.evaluate(() => closeTimelineModal());
+    });
+    await test('a second copy of the app open on the same phone is detected and warned about', async () => {
+        const second = await R._ctx.newPage();
+        await second.goto(url);
+        await second.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true);
+        await second.waitForTimeout(300);
+        assert.match(await second.textContent('#storage-banner'), /open in another tab/);
+        assert.match(await R.textContent('#storage-banner'), /open in another tab/);
+        await second.close();
+    });
+    await R._ctx.close();
+
     await test('QR codes are identical to a standards-conformant reference encoder (versions 1-35)', async () => {
         const QR = require('qrcode');
         const samples = await A.evaluate(() => {

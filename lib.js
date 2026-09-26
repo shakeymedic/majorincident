@@ -1139,7 +1139,7 @@
                 const res = mergePatientRecordsDetailed(records[match.index], incoming, recordMeta);
                 records[match.index] = res.record;
                 merged++;
-                report.push({ id: res.record.id, action: 'merged', how: match.how, changes: res.changes, conflicts: res.conflicts });
+                report.push({ id: res.record.id, uid: res.record.uid, action: 'merged', how: match.how, changes: res.changes, conflicts: res.conflicts });
                 continue;
             }
             const entry = clonePatientRecord(incoming);
@@ -1151,13 +1151,14 @@
             }
             const cands = findDuplicateCandidates(entry, records, { threshold: 0.7 });
             if (cands.length) nearDuplicates.push({ incoming: entry, candidates: cands });
+            if (!entry.uid) entry.uid = makeUid(); // legacy senders: give the record a permanent identity here
             entry.handoverState = 'received';
             entry.receivedFrom = (meta && meta.sender) || '';
             entry.receivedAt = (meta && meta.now) || Date.now();
             entry._rev = (incoming._rev || 0) + 1;
             records.push(entry);
             imported++;
-            report.push({ id: entry.id, action: match.how === 'collision' ? 'imported-renamed' : 'imported', how: match.how });
+            report.push({ id: entry.id, uid: entry.uid, action: match.how === 'collision' ? 'imported-renamed' : 'imported', how: match.how });
         }
         return { records, imported, merged, nearDuplicates, collisions, report };
     }
@@ -1380,7 +1381,9 @@
         }
         if (Array.isArray(auditLog)) {
             for (const a of auditLog) {
-                if (!a || a.patientId !== entry.id) continue;
+                if (!a) continue;
+                // Match on the permanent uid where the audit row has one (survives ID changes); else on the ID.
+                if (a.patientUid ? a.patientUid !== entry.uid : a.patientId !== entry.id) continue;
                 if (['TRIAGE_COMPLETE','RETRIAGE_COMPLETE','TRIAGE_CORRECTED','INTERVENTION_ADDED','INTERVENTION_REMOVED','LOCATION_UPDATE','REASSESS'].includes(a.action)) continue; // already covered by record fields
                 events.push({
                     ts: a.clinTime || a.sysTime, kind: 'audit',
