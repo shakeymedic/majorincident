@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MITT quick reference</title>
+<style>
+    @page { size: A4; margin: 11mm; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111; background: #fff; margin: 0; padding: 16px; font-size: 15px; line-height: 1.35; }
+    h1 { font-size: 1.5rem; margin: 0 0 2px 0; color: #005EB8; }
+    .sub { margin: 0 0 12px 0; color: #444; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+    section { border: 2px solid #005EB8; border-radius: 8px; padding: 8px 10px; break-inside: avoid; }
+    section h2 { font-size: 1.05rem; margin: 0 0 4px 0; color: #005EB8; }
+    ol, ul { margin: 0; padding-left: 1.2em; }
+    li { margin: 2px 0; }
+    .wide { grid-column: 1 / -1; }
+    .cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .cat { padding: 4px 6px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .note { font-size: 0.8rem; color: #444; margin-top: 10px; }
+    .print { display: inline-block; margin: 0 0 12px 0; padding: 10px 16px; font-size: 1rem; font-weight: bold; color: #fff; background: #005EB8; border: none; border-radius: 8px; min-height: 44px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } .cats { grid-template-columns: 1fr 1fr; } }
+    @media print { body { padding: 0; font-size: 10.5pt; } .print { display: none; } }
+</style>
+</head>
+<body>
+<h1>MITT — Major Incident Triage Tool: quick reference</h1>
+<p class="sub">majorincident.netlify.app • works without signal once installed • print this for the kit bag</p>
+<button class="print" onclick="window.print()">🖨 Print this card</button>
+<div class="grid">
+    <section>
+        <h2>Before an incident</h2>
+        <ol>
+            <li>Open the app once with signal. Wait for <b>✓ Ready offline</b> in the blue bar.</li>
+            <li><b>iPhone:</b> Safari → Share → <b>Add to Home Screen</b>. <b>Android:</b> tap <b>Install</b> (or Chrome menu → Install app). Always open it from the home-screen icon.</li>
+            <li>iPhone: set Auto-Lock to <b>Never</b> while on scene.</li>
+            <li>Practise in <b>Training mode</b> (⚙ → Training mode). Orange banner = practice only; real records are untouched.</li>
+        </ol>
+    </section>
+    <section>
+        <h2>Start</h2>
+        <ol>
+            <li>Type your <b>name / call sign</b>.</li>
+            <li>Tap your <b>role</b> (healthcare professional, or non-clinical).</li>
+            <li>Optional: under <b>Options</b>, type the <b>incident code</b> — the same on every phone.</li>
+        </ol>
+    </section>
+    <section>
+        <h2>Triage a patient</h2>
+        <ol>
+            <li>Tap <b>START TRIAGE</b>. Answer <b>YES</b> / <b>NO</b>.</li>
+            <li>Not sure? Follow the yellow hint — it gives the safer answer.</li>
+            <li>Read the category and attach the matching label.</li>
+            <li>Tapped the wrong button? <b>↩ Change last answer</b>.</li>
+            <li><b>Next Patient →</b> for the next casualty.</li>
+        </ol>
+    </section>
+    <section>
+        <h2>Hand over one patient (two phones)</h2>
+        <ol>
+            <li><b>Sender:</b> open the patient → <b>📱 QR Handover</b>.</li>
+            <li><b>Receiver:</b> <b>📷 Receive patient</b> → scan → check → <b>Accept</b>.</li>
+            <li>Receiver's phone shows a <b>confirmation code</b>.</li>
+            <li><b>Sender:</b> <b>📷 Scan their confirmation code</b>. Done — both phones record it.</li>
+        </ol>
+    </section>
+    <section>
+        <h2>Send many patients</h2>
+        <ol>
+            <li><b>More → Send patients to another device</b> → choose all / sector / on scene.</li>
+            <li><b>Show QR codes</b>. Receiver: <b>📷 Receive patient</b> and keep the camera on the codes (any order).</li>
+            <li>No luck scanning? <b>Export transfer file</b> and send it by AirDrop / Nearby Share; receiver uses <b>Import transfer file</b>.</li>
+        </ol>
+    </section>
+    <section>
+        <h2>Records for debrief and inquiry</h2>
+        <ul>
+            <li><b>📋 Patient log</b> → Casualty Register (CSV), Audit Trail (CSV), Full Incident Archive (JSON).</li>
+            <li><b>Verify audit trail</b> shows a head hash — photograph it.</li>
+            <li><b>Close / Reset incident</b> needs a saved archive first.</li>
+        </ul>
+    </section>
+    <section class="wide">
+        <h2>If something goes wrong</h2>
+        <ul>
+            <li>Red <b>Saving failed</b> banner → tap <b>Export archive now</b>, then keep working.</li>
+            <li>Scanning is slow → screen brightness up, phones 20–30 cm apart, hold still; or use a transfer file.</li>
+            <li>"This is a TRAINING code" / "This is a REAL patient code" → one phone is in training mode. Switch it in ⚙.</li>
+        </ul>
+    </section>
+    <section class="wide">
+        <h2>Categories</h2>
+        <div class="cats">
+            <div class="cat" style="background:#DA291C; color:#fff;">P1 — Immediate</div>
+            <div class="cat" style="background:#FAE100; color:#000;">P2 — Urgent</div>
+            <div class="cat" style="background:#007F3B; color:#fff;">P3 — Delayed</div>
+            <div class="cat" style="background:#A7A9AC; color:#000;">Not breathing (TST) — healthcare reassessment ASAP</div>
+            <div class="cat" style="background:#000; color:#fff;">Dead (MITT)</div>
+            <div class="cat" style="background:#00AEEF; color:#fff;">P1 Hold — senior clinical decision</div>
+        </div>
+    </section>
+</div>
+<p class="note">Question wording follows the NHS England TST and NHS MITT cards (April 2023). The app supports, and does not replace, training and clinical judgement.</p>
+</body>
+</html>
