@@ -575,6 +575,184 @@ async function test(name, fn) {
         await C._ctx.close();
     });
 
+    console.log('\ne2e: usable in seconds (first use, training, incident code, handover guidance)');
+    await test('first launch needs only a name and a tap on a role; options stay tucked away', async () => {
+        const F = await device('First use', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+        assert.strictEqual(await F.evaluate(() => document.getElementById('intro-options').open), false);
+        await F.fill('#intro-triager', 'Medic F');
+        await F.click('text=I\'m non-clinical / first aid');
+        assert.ok(await F.evaluate(() => document.getElementById('home-screen').classList.contains('active')));
+        assert.strictEqual(await F.evaluate(() => userRole), 'NON_HCP');
+        await F._ctx.close();
+    });
+    await test('home screen: START TRIAGE is the first, biggest button and starts TST; the rest is under "More"', async () => {
+        const H = await device('Home', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+        await setup(H, 'Medic H');
+        const layout = await H.evaluate(() => {
+            const start = document.getElementById('btn-start-triage').getBoundingClientRect();
+            const btns = Array.from(document.querySelectorAll('#home-screen button')).filter(b => b.offsetParent !== null);
+            return { first: btns[0].id, startH: start.height, maxOtherH: Math.max(...btns.slice(1).map(b => b.getBoundingClientRect().height)), moreOpen: document.getElementById('home-more').open, top: start.top };
+        });
+        assert.strictEqual(layout.first, 'btn-start-triage');
+        assert.ok(layout.startH > layout.maxOtherH, JSON.stringify(layout));
+        assert.strictEqual(layout.moreOpen, false);
+        await H.click('#btn-start-triage');
+        assert.ok(await H.evaluate(() => document.getElementById('question-screen').classList.contains('active') && currentTool === 'TST'));
+        await H._ctx.close();
+    });
+    await test('each question shows its number, and "Not sure?" always points to the more urgent answer', async () => {
+        const Q = await device('Questions');
+        await setup(Q, 'Medic Q');
+        await Q.evaluate(() => initiateTriage('TST'));
+        assert.match(await Q.textContent('#q-progress'), /Question 1 of up to 4/);
+        await Q.evaluate(() => handleAnswer(false));
+        assert.match(await Q.textContent('#q-progress'), /Question 2 of up to 4/);
+        assert.match(await Q.textContent('#q-unsure'), /Tap YES/);
+        // For every question, the "unsure" answer must lead to an outcome at least as urgent as the other answer.
+        const bad = await Q.evaluate(() => {
+            const rank = { P1: 0, P2: 1, P3: 2, NOT_BREATHING: 3, DEAD: 4 };
+            const out = [];
+            [['TST', tstFlow], ['MITT', mittFlow]].forEach(([tool, flow]) => {
+                const best = (stepId, ans) => { const o = outcomeFor(tool, stepId, ans); return o.type === 'result' ? rank[o.category] : Math.min(best(o.step, true), best(o.step, false)); };
+                flow.forEach(st => { const safe = best(st.id, st.unsure === 'YES'), other = best(st.id, st.unsure !== 'YES'); if (safe > other) out.push(`${tool}:${st.id}`); });
+            });
+            return out;
+        });
+        assert.deepStrictEqual(bad, []);
+        await Q._ctx.close();
+    });
+    await test('training mode: separate records, orange banner, TRAIN- IDs, labelled exports; real records untouched', async () => {
+        const T = await device('Training');
+        await setup(T, 'Medic T');
+        await triage(T, 'TST', [true]);
+        const realUid = await T.evaluate(() => currentEntry().uid);
+        await T.evaluate(() => { resetToHome(); toggleTrainingMode(true); });
+        await answerDialog(T, true);
+        await T.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true && TRAINING === true, null, { timeout: 10000 });
+        assert.ok(await T.isVisible('.training-banner'));
+        assert.strictEqual(await T.evaluate(() => incidentLog.length), 0);
+        // The user and role carry over, so training opens straight on the home screen.
+        assert.ok(await T.evaluate(() => document.getElementById('home-screen').classList.contains('active') && triagerName === 'Medic T'));
+        await triage(T, 'TST', [true]);
+        assert.match(await T.evaluate(() => currentEntry().id), /^TRAIN-/);
+        let dlName = '';
+        const [dl] = await Promise.all([T.waitForEvent('download'), T.evaluate(() => downloadCSV('SNAPSHOT'))]);
+        dlName = dl.suggestedFilename();
+        assert.match(dlName, /^MITT_TRAINING_/);
+        T._trainingQr = await T.evaluate(async () => { currentEntry().notes = 'practice'; await generatePatientQR(); return document.getElementById('qr-modal').dataset.qrText; });
+        await T.evaluate(() => { closeQR(); closeHandoverFlow(); toggleTrainingMode(false); });
+        await answerDialog(T, true);
+        await T.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true && TRAINING === false, null, { timeout: 10000 });
+        assert.strictEqual(await T.isVisible('.training-banner'), false);
+        const ids = await T.evaluate(() => incidentLog.map(e => e.uid + '|' + e.id));
+        assert.strictEqual(ids.length, 1);
+        assert.ok(ids[0].startsWith(realUid) && !/TRAIN-/.test(ids[0]));
+        assert.ok(await T.evaluate(() => auditLog.some(a => a.action === 'TRAINING_MODE_ON') && auditLog.some(a => a.action === 'TRAINING_MODE_OFF')));
+        // A real-mode phone refuses the training QR.
+        await scan(T, T._trainingQr);
+        await page_visible(T, '#confirm-modal');
+        assert.match(await T.textContent('#confirm-title'), /TRAINING code/);
+        await T.evaluate(() => resolveConfirm(true));
+        assert.strictEqual(await T.evaluate(() => incidentLog.length), 1);
+        await T._ctx.close();
+    });
+    await test('a training-mode phone refuses real patient codes, and "Delete all training data" empties only the practice log', async () => {
+        const R2 = await device('Real sender'); const T2 = await device('Training receiver', { initScript: 'localStorage.setItem("mit_training", "1");' });
+        await setup(R2, 'Medic R'); await setup(T2, 'Medic T');
+        await triage(R2, 'TST', [false, true]);
+        const realQr = await R2.evaluate(async () => { currentEntry().notes = 'real'; await generatePatientQR(); return document.getElementById('qr-modal').dataset.qrText; });
+        await scan(T2, realQr);
+        await page_visible(T2, '#confirm-modal');
+        assert.match(await T2.textContent('#confirm-title'), /REAL patient code/);
+        await T2.evaluate(() => resolveConfirm(true));
+        await triage(T2, 'TST', [true]);
+        assert.strictEqual(await T2.evaluate(() => incidentLog.length), 1);
+        await T2.evaluate(() => { clearTrainingData(); });
+        await answerDialog(T2, true);
+        await T2.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        assert.strictEqual(await T2.evaluate(() => incidentLog.length), 0);
+        await R2._ctx.close(); await T2._ctx.close();
+    });
+    await test('incident code: set once on the start screen, stamped on records, exports and file names; a patient from another incident is flagged', async () => {
+        const I1 = await device('Incident A'), I2 = await device('Incident B');
+        await I1.evaluate(() => { document.getElementById('intro-options').open = true; });
+        await I1.fill('#intro-incident-code', 'mcr 0926!');
+        await setup(I1, 'Medic A');
+        assert.strictEqual(await I1.evaluate(() => incidentCode), 'MCR0926');
+        assert.match(await I1.textContent('#header-incident'), /Incident MCR0926/);
+        await triage(I1, 'TST', [true]);
+        assert.strictEqual(await I1.evaluate(() => currentEntry().incidentCode), 'MCR0926');
+        const [dl] = await Promise.all([I1.waitForEvent('download'), I1.evaluate(() => downloadCSV('SNAPSHOT'))]);
+        assert.match(dl.suggestedFilename(), /^MITT_MCR0926_casualty_register_/);
+        const csv = fs.readFileSync(await dl.path(), 'utf8');
+        assert.match(csv.split('\n')[0], /Incident_Code/);
+        assert.match(csv.split('\n')[1], /"MCR0926"/);
+        await I2.evaluate(() => { document.getElementById('intro-options').open = true; });
+        await I2.fill('#intro-incident-code', 'LDN-1');
+        await setup(I2, 'Medic B');
+        const qr = await I1.evaluate(async () => { currentEntry().notes = 'x'; await generatePatientQR(); return document.getElementById('qr-modal').dataset.qrText; });
+        await scan(I2, qr);
+        await page_visible(I2, '#preview-modal');
+        assert.match(await I2.textContent('#preview-warn'), /incident MCR0926.*incident LDN-1/);
+        assert.ok(await I1.evaluate(() => auditLog.some(a => a.action === 'INCIDENT_CODE_SET')));
+        await I1._ctx.close(); await I2._ctx.close();
+    });
+    await test('guided handover: both phones show numbered steps, and the sender is led to the final scan', async () => {
+        const S = await device('Guide sender'), R = await device('Guide receiver');
+        await setup(S, 'Medic S'); await setup(R, 'Medic R');
+        await triage(S, 'TST', [false, true]);
+        await S.evaluate(async () => { currentEntry().notes = 'guided'; await generatePatientQR(); });
+        const steps = await S.evaluate(() => Array.from(document.querySelectorAll('#qr-steps li')).map(li => li.className + ':' + li.textContent));
+        assert.strictEqual(steps.length, 3);
+        assert.match(steps[0], /^now:.*Receive patient/);
+        await scan(R, await qrText(S));
+        await page_visible(R, '#preview-modal');
+        await R.evaluate(() => acceptPreview());
+        const rsteps = await R.evaluate(() => Array.from(document.querySelectorAll('#qr-steps li')).map(li => li.className));
+        assert.deepStrictEqual(rsteps, ['done', 'now', '']);
+        await S.evaluate(() => closeQR());
+        await page_visible(S, '#handover-flow-modal');
+        assert.match(await S.textContent('#handover-flow-title'), /step 3 of 3/);
+        assert.ok(await S.isVisible('text=Scan their confirmation code'));
+        await S.evaluate(() => generateMyIdentityQR());
+        assert.strictEqual(await S.isVisible('#qr-steps'), false);
+        await S._ctx.close(); await R._ctx.close();
+    });
+    await test('"Ready offline" appears once every file the app needs is stored on the phone', async () => {
+        const O = await device('Offline', { serviceWorkers: 'allow' });
+        await O.waitForFunction(() => /Ready offline/.test(document.getElementById('offline-status').textContent), null, { timeout: 20000 });
+        assert.match(await O.getAttribute('#offline-status', 'class'), /ready/);
+        // And it really works offline: reload with the network cut.
+        await O._ctx.setOffline(true);
+        await O.reload();
+        await O.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        assert.ok(await O.isVisible('#intro-triager'));
+        await O._ctx.setOffline(false);
+        await O._ctx.close();
+    });
+    await test('Android install prompt: an Install button appears, calls the browser prompt, and "Later" is remembered', async () => {
+        const A2 = await device('Install');
+        await setup(A2, 'Medic I');
+        await A2.evaluate(() => { const e = new Event('beforeinstallprompt'); e.prompt = () => { window.__prompted = true; }; e.userChoice = Promise.resolve({ outcome: 'accepted' }); window.dispatchEvent(e); });
+        assert.ok(await A2.isVisible('#install-banner'));
+        await A2.click('#install-banner .btn-primary');
+        assert.ok(await A2.evaluate(() => window.__prompted === true));
+        await A2.evaluate(() => { const e = new Event('beforeinstallprompt'); e.prompt = () => {}; window.dispatchEvent(e); dismissInstallBanner(); const e2 = new Event('beforeinstallprompt'); e2.prompt = () => {}; window.dispatchEvent(e2); });
+        assert.strictEqual(await A2.isVisible('#install-banner'), false);
+        await A2._ctx.close();
+    });
+    await test('the printable quick-reference card loads, is linked from Settings and works offline', async () => {
+        const QR = await device('Quick ref');
+        assert.strictEqual(await QR.getAttribute('#modes-modal a[href="quick-reference.html"]', 'href'), 'quick-reference.html');
+        const page = await QR._ctx.newPage();
+        const res = await page.goto(url.replace('index.html', 'quick-reference.html'));
+        assert.strictEqual(res.status(), 200);
+        assert.match(await page.textContent('h1'), /quick reference/i);
+        assert.ok(await page.isVisible('text=START TRIAGE'));
+        assert.ok(fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8').includes("'./quick-reference.html'"));
+        await QR._ctx.close();
+    });
+
     console.log('\ne2e: iPhone / iPad compatibility');
     const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Mobile/15E148 Safari/604.1';
     const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';

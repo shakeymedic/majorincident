@@ -142,6 +142,17 @@ The end-to-end suite covers the two-phone handover, multi-part transfer, reload 
 
 ## Contributing / change log
 
+### v0.8.0 build 2026-09-27-first-use — usable in seconds by a first-time user
+
+- **Start screen:** only a name and a tap on a role are needed. The incident code, sector and patient-ID settings are under "Options".
+- **Home screen:** one large **START TRIAGE** (TST) button, then MITT (clinicians only), **Receive patient** and **Patient log**. Everything else is under "More".
+- **Questions:** each shows "Question N of up to 4" (TST) or "…of up to 7" (MITT), plus a "Not sure?" hint that always points to the answer giving the more urgent priority. A test checks this for every question. The hint wording needs clinical sign-off along with the questions.
+- **Training mode** (⚙ Settings): a separate practice log in its own database, with its own counters and backup storage. It shows an orange banner, and patient IDs start `TRAIN-`. Export file names start `MITT_TRAINING_`, and training QR codes are marked inside the integrity hash. A real-mode phone refuses training codes and a training phone refuses real ones. Switching mode in either direction is recorded in the real audit trail. "Delete all training data" clears only practice records.
+- **Incident code:** typed once per phone (start screen Options or Settings). It is stamped on every new record, shown in the status bar, included in transfers, the casualty register (`Incident_Code`), the archive and export file names. Receiving a patient from a different incident shows a warning.
+- **Ready offline:** the status bar shows "✓ Ready offline" only once the offline worker confirms every file the app needs is stored on the phone. On Android, an **Install** button appears when the browser offers installation.
+- **Guided handover:** the sender's QR, the receiver's confirmation code and the sender's final screen each show numbered steps (1–3) and what to tap next.
+- **Quick reference card** (`quick-reference.html`, linked from Settings, works offline): one printable A4 page for the kit bag.
+
 ### v0.8.0 build 2026-09-26-full-check — full line-by-line check
 
 - Handover: scanning the same ACK twice no longer reports "receiver has an older version"; the check now compares the record's clinical content, not its last-changed time.

@@ -92,7 +92,7 @@
     body.panic footer,
     body.panic #btn-mitt,
     body.panic #intro-screen .card label[for],
-    body.panic .home-secondary { display: none !important; }
+    body.panic .home-secondary, body.panic #home-more { display: none !important; }
     body.panic header { padding: 0.6rem; padding-top: calc(0.6rem + env(safe-area-inset-top, 0px)); }
     body.panic header .icon-btn { font-size: 0.85rem; padding: 6px 10px; }
     body.panic .instruction-card { font-size: 2rem; }
@@ -783,6 +783,37 @@
     .storage-banner button { margin-left:8px; background:#fff; color:#DA291C; border:none; border-radius:6px; padding:6px 10px; font-weight:bold; }
     .alert-card { border-left:6px solid var(--nhs-red); background: rgba(218,41,28,0.08); padding:0.8rem 1rem; border-radius:8px; margin-bottom:0.8rem; }
     .alert-card.info { border-left-color: var(--nhs-blue); background: rgba(0,94,184,0.08); }
+    /* ---- Usable in seconds: one obvious action per screen ---- */
+    .intro-hint { font-size: 1.05rem; margin: 0 0 1rem 0; }
+    .intro-options { margin-top: 0.6rem; }
+    .btn-start { background: var(--nhs-green); font-size: 2rem; letter-spacing: 1px; padding: 1.6rem 1rem; min-height: 130px; border: 4px solid #00592a; }
+    .btn-start span { display: block; font-size: 1rem; font-weight: normal; letter-spacing: 0; margin-top: 4px; }
+    body.gloved .btn-start { min-height: 160px; font-size: 2.3rem; }
+    .home-row { display: flex; gap: 10px; margin-bottom: 1rem; }
+    .home-row .btn { flex: 1; margin-bottom: 0; font-size: 1.05rem; padding: 1.1rem 0.5rem; }
+    .home-receive { background-color: var(--nhs-dark-blue); }
+    .home-more .rs-body .btn { font-size: 1.05rem; padding: 1rem; }
+    .install-banner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(0,94,184,0.08); border-left: 6px solid var(--nhs-blue); padding: 0.7rem; border-radius: 8px; margin-bottom: 0.8rem; }
+    .install-banner.show { display: flex; }
+    .install-banner span { flex: 1 1 180px; }
+    .install-banner .btn { width: auto; margin: 0; padding: 0.6rem 1rem; font-size: 1rem; min-height: 44px; }
+    .offline-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; font-weight: bold; margin-right: 8px; border: 1px solid rgba(255,255,255,0.5); }
+    .offline-status.ready { color: #ccffcc; border-color: #ccffcc; }
+    .offline-status.pending { color: #fff3a8; border-color: #fff3a8; }
+    .offline-status.none { color: #ffcccc; border-color: #ffcccc; }
+    /* Question screen: where am I, and what if I'm not sure? */
+    .q-progress { font-weight: bold; color: var(--nhs-grey); margin: 0 0 0.4rem 0; }
+    .q-unsure { background: #fff3cd; color: #664d03; border-left: 6px solid #ffbf00; padding: 0.7rem 0.9rem; border-radius: 8px; margin: 0 0 1rem 0; font-size: 1rem; }
+    body.night-mode .q-unsure { background: #3b3108; color: #ffe69c; }
+    /* Training mode: impossible to mistake for real use */
+    .training-banner { display: none; background: #E87722; color: #000; font-weight: 900; text-align: center; padding: 8px 10px; letter-spacing: 0.5px; }
+    body.training .training-banner { display: block; }
+    body.training header { background-color: #B35900; }
+    /* Guided two-phone handover */
+    .handover-steps { list-style: none; padding: 0; margin: 0 0 10px 0; width: 100%; }
+    .handover-steps li { padding: 6px 10px; border-radius: 8px; margin-bottom: 4px; background: rgba(0,0,0,0.05); font-size: 0.98rem; }
+    .handover-steps li.now { background: var(--nhs-blue); color: #fff; font-weight: bold; }
+    .handover-steps li.done { text-decoration: line-through; opacity: 0.6; }
     .alert-card h4 { margin:0 0 6px 0; }
     .conflict-row { padding:8px 0; border-bottom:1px solid rgba(0,0,0,0.1); }
     .conflict-row label { display:flex; align-items:center; gap:8px; padding:6px 0; font-weight:normal; }
@@ -851,26 +882,19 @@
 
 <div id="handover-flow-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="handover-flow-title">
     <div class="modal-box" style="max-width:520px;">
-        <h3 id="handover-flow-title" style="margin-top:0; color:var(--nhs-blue);">Two-Way Handover</h3>
-        <div class="handover-step" id="handover-step1">
-            <h3>Step 1 — Sender</h3>
-            <p style="margin:0 0 8px 0;">The receiver scans the patient QR, reviews it and accepts.</p>
-            <p class="qr-meta" id="handover-step1-state">Waiting for receiver acknowledgement…</p>
+        <h3 id="handover-flow-title" style="margin-top:0; color:var(--nhs-blue);">Handover — step 3 of 3</h3>
+        <ol class="handover-steps">
+            <li class="done">1. They scanned your patient QR and tapped Accept</li>
+            <li class="done">2. Their phone now shows a confirmation code</li>
+            <li class="now">3. You scan their confirmation code</li>
+        </ol>
+        <p class="qr-meta" id="handover-step1-state">Waiting for the receiver's confirmation…</p>
+        <button class="btn btn-primary" style="font-size:1.3rem; padding:1.3rem;" onclick="scanAckFromFlow()">📷 Scan their confirmation code</button>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="reshowLastPatientQr()">Show my QR again</button>
+            <button class="btn btn-secondary" onclick="closeHandoverFlow()">Close (handover still pending)</button>
         </div>
-        <div class="handover-step" id="handover-step2">
-            <h3>Step 2 — Receiver shows ACK</h3>
-            <p style="margin:0 0 8px 0;">The receiver's phone then shows an <strong>acknowledgement QR</strong>. Scan it here.</p>
-            <p class="qr-meta">The ACK says exactly which version they received. If you changed the record after showing the QR, you will be told to resend.</p>
-        </div>
-        <div class="handover-step" id="handover-step3">
-            <h3>Step 3 — Confirmation</h3>
-            <p style="margin:0;">Handover recorded as ACCEPTED in the audit trail. The physical triage label stays with the patient.</p>
-        </div>
-        <div class="modal-actions" style="margin-top:1rem;">
-            <button class="btn btn-primary" onclick="scanAckFromFlow()">📷 Scan receiver's ACK</button>
-            <button class="btn btn-secondary" onclick="reshowLastPatientQr()">Show QR again</button>
-            <button class="btn btn-secondary" onclick="closeHandoverFlow()">Close (still pending)</button>
-        </div>
+        <p class="qr-meta">The confirmation says exactly which version they received. If you changed the record after showing the QR, you will be told to show it again.</p>
     </div>
 </div>
 
@@ -927,6 +951,10 @@
         <label class="setting-row"><span><strong>One-Handed Mode</strong><br><small>Sticky bottom bar with key actions.</small></span><input type="checkbox" id="mode-onehand" style="width:24px; height:24px;" onchange="toggleOneHand()"></label>
         <label class="setting-row"><span><strong>Panic / Simple Mode</strong><br><small>Hides non-essentials; fastest TST path.</small></span><input type="checkbox" id="mode-panic" style="width:24px; height:24px;" onchange="togglePanic()"></label>
         <label class="setting-row"><span><strong>Keep screen on</strong><br><small>Uses more battery.</small></span><input type="checkbox" id="mode-wakelock" style="width:24px; height:24px;" onchange="toggleWakeLockSetting()"></label>
+        <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
+        <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
+        <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
+        <a class="btn btn-secondary" href="quick-reference.html" target="_blank" rel="noopener" style="margin-top:8px;">📄 Quick reference card (print for the kit bag)</a>
         <h4 style="margin:1rem 0 0.3rem;">Reassessment intervals</h4>
         <p class="qr-meta" style="text-align:left;">Local defaults — not specified by NHSE guidance. Agree with your clinical lead.</p>
         <div class="setting-row"><span>P1</span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
@@ -1057,6 +1085,7 @@
 <div id="qr-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="qr-title">
     <div class="modal-box" style="display:flex; flex-direction:column; align-items:center; max-width:600px;">
         <h3 id="qr-title">Patient Data</h3>
+        <ol id="qr-steps" class="handover-steps" style="display:none;"></ol>
         <p class="qr-meta" id="qr-summary"></p>
         <div id="qrcode"></div>
         <p id="qr-desc">Scan to transfer data. Increase brightness for best results.</p>
@@ -1122,6 +1151,7 @@
         </div>
     </header>
 
+    <div class="training-banner" role="status">TRAINING MODE — practice only. Nothing here is a real patient.</div>
     <div id="storage-banner" class="storage-banner" role="alert"></div>
     <div id="ios-install-banner" class="ios-install-banner" role="note">
         <strong>iPhone / iPad: add MITT to your Home Screen before an incident.</strong>
@@ -1132,9 +1162,11 @@
     </div>
 
     <div class="status-bar">
+        <span id="offline-status" class="offline-status pending" title="Whether this phone has everything it needs to work without signal">Checking offline…</span>
         <span class="status-item" id="header-user">User: -</span>
         <span class="status-item" id="header-role" style="font-weight:bold;"></span>
         <span class="status-item" id="header-sector" style="color:var(--nhs-yellow);"></span>
+        <span class="status-item" id="header-incident" style="font-weight:bold;"></span>
         <span class="status-item" id="header-device" title="Device code (default patient-ID prefix)"></span>
         <span id="gps-indicator" class="gps-status gps-inactive" style="margin-left: auto;">GPS: Searching...</span>
     </div>
@@ -1150,99 +1182,111 @@
     </div>
 
     <main>
-        <div id="intro-screen" class="screen" style="padding: 2rem;">
-            <h2 style="margin-bottom:1.5rem;">Configuration</h2>
-            <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin-bottom:2rem; border:2px solid var(--nhs-blue);" onclick="showLog()">
+        <div id="intro-screen" class="screen" style="padding: 1.2rem;">
+            <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin-bottom:1.2rem; border:2px solid var(--nhs-blue);" onclick="showLog()">
                 📋 View Existing Log (<span id="resume-count">0</span>)
             </button>
-            <div class="card">
-                <div class="input-group">
-                    <label for="intro-triager">Your name / call sign (required)</label>
-                    <input type="text" id="intro-triager" placeholder="e.g. Dr Smith, Medic 1" autocomplete="off">
-                </div>
-                <div class="input-group">
-                    <label>Patient ID Mode</label>
-                    <div style="display:flex; gap:10px;">
-                        <button class="btn btn-secondary id-mode-btn active" id="mode-auto" style="flex:1;" onclick="setIdMode('AUTO')">Auto-Generate</button>
-                        <button class="btn btn-secondary id-mode-btn" id="mode-manual" style="flex:1;" onclick="setIdMode('MANUAL')">Manual Entry</button>
-                    </div>
-                    <div id="prefix-container" style="margin-top:15px;">
-                        <label for="intro-device-prefix" style="font-size:0.9rem;">ID prefix (optional)</label>
-                        <input type="text" id="intro-device-prefix" placeholder="Default: this device's code" autocomplete="off">
-                        <p class="qr-meta" style="text-align:left;">IDs look like <strong id="id-example">K7QX-TST-001</strong>. The prefix stops two devices issuing the same ID.</p>
-                    </div>
-                </div>
-                <div class="input-group">
-                    <label for="intro-sector-select">Sector / Zone</label>
-                    <div style="display:flex; gap:5px;">
-                        <select id="intro-sector-select" onchange="updateSectorInput()">
-                            <option value="">Select or Type...</option>
-                            <option value="Inner Cordon">Inner Cordon</option>
-                            <option value="Casualty Clearing">Casualty Clearing</option>
-                            <option value="Loading Point">Loading Point</option>
-                            <option value="Triage Sieve">Triage Sieve</option>
-                            <option value="Decon">Decon</option>
-                        </select>
-                        <button class="btn btn-secondary" style="width:auto; min-width:52px; flex:0 0 52px; padding:0; margin:0;" onclick="addCustomSector()" aria-label="Add sector">+</button>
-                    </div>
-                    <input type="text" id="intro-sector" placeholder="Or type manually..." style="margin-top:8px;" autocomplete="off">
-                </div>
+            <h2 style="margin:0 0 0.6rem 0;">Start</h2>
+            <p class="intro-hint">Type your name, then tap your role. That's all you need to begin.</p>
+            <div class="input-group">
+                <label for="intro-triager">Your name / call sign</label>
+                <input type="text" id="intro-triager" placeholder="e.g. Dr Smith, Medic 1" autocomplete="off">
             </div>
-            <p style="margin-top:1rem; font-weight:bold;">Select Role:</p>
-            <button class="btn btn-primary" style="padding: 1.5rem;" onclick="setUserRole('HCP')">
-                Healthcare Professional<br><span style="font-size:0.9rem; font-weight:normal;">Doctor, Nurse, Paramedic</span>
+            <button class="btn btn-primary" style="padding: 1.3rem;" onclick="setUserRole('HCP')">
+                I'm a healthcare professional<br><span style="font-size:0.9rem; font-weight:normal;">Doctor, nurse, paramedic</span>
             </button>
-            <button class="btn btn-secondary" style="padding: 1.5rem;" onclick="setUserRole('NON_HCP')">
-                Non-Clinical / First Aid<br><span style="font-size:0.9rem; font-weight:normal;">Police, Fire, First Responder (TST only)</span>
+            <button class="btn btn-secondary" style="padding: 1.3rem;" onclick="setUserRole('NON_HCP')">
+                I'm non-clinical / first aid<br><span style="font-size:0.9rem; font-weight:normal;">Police, fire, first responder (TST only)</span>
             </button>
+            <details class="rs-sec intro-options" id="intro-options">
+                <summary>Options <span class="rs-sum">incident code, sector, patient IDs — all optional</span></summary>
+                <div class="rs-body">
+                    <div class="input-group">
+                        <label for="intro-incident-code">Incident code (same on every phone)</label>
+                        <input type="text" id="intro-incident-code" placeholder="e.g. MCR-0926" autocomplete="off" autocapitalize="characters">
+                        <p class="qr-meta" style="text-align:left;">Agree one code for the incident and type it on every phone. It groups records from different phones afterwards and warns if a patient from another incident is received.</p>
+                    </div>
+                    <div class="input-group">
+                        <label for="intro-sector-select">Sector / Zone</label>
+                        <div style="display:flex; gap:5px;">
+                            <select id="intro-sector-select" onchange="updateSectorInput()">
+                                <option value="">Select or Type...</option>
+                                <option value="Inner Cordon">Inner Cordon</option>
+                                <option value="Casualty Clearing">Casualty Clearing</option>
+                                <option value="Loading Point">Loading Point</option>
+                                <option value="Triage Sieve">Triage Sieve</option>
+                                <option value="Decon">Decon</option>
+                            </select>
+                            <button class="btn btn-secondary" style="width:auto; min-width:52px; flex:0 0 52px; padding:0; margin:0;" onclick="addCustomSector()" aria-label="Add sector">+</button>
+                        </div>
+                        <input type="text" id="intro-sector" placeholder="Or type manually..." style="margin-top:8px;" autocomplete="off">
+                    </div>
+                    <div class="input-group">
+                        <label>Patient ID Mode</label>
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn btn-secondary id-mode-btn active" id="mode-auto" style="flex:1;" onclick="setIdMode('AUTO')">Auto-Generate</button>
+                            <button class="btn btn-secondary id-mode-btn" id="mode-manual" style="flex:1;" onclick="setIdMode('MANUAL')">Manual Entry</button>
+                        </div>
+                        <div id="prefix-container" style="margin-top:15px;">
+                            <label for="intro-device-prefix" style="font-size:0.9rem;">ID prefix (optional)</label>
+                            <input type="text" id="intro-device-prefix" placeholder="Default: this device's code" autocomplete="off">
+                            <p class="qr-meta" style="text-align:left;">IDs look like <strong id="id-example">K7QX-TST-001</strong>. The prefix stops two devices issuing the same ID.</p>
+                        </div>
+                    </div>
+                </div>
+            </details>
         </div>
 
         <div id="home-screen" class="screen">
             <div id="home-alerts"></div>
-            <button class="btn btn-primary" onclick="initiateTriage('TST')">
-                Ten Second Triage (TST)<br><span style="font-size:0.9rem; font-weight:normal;">Rapid primary triage</span>
+            <div id="install-banner" class="install-banner">
+                <span>Install MITT on this phone so it opens without signal.</span>
+                <button type="button" class="btn btn-primary" onclick="installApp()">📲 Install</button>
+                <button type="button" class="btn btn-secondary" onclick="dismissInstallBanner()">Later</button>
+            </div>
+            <button id="btn-start-triage" class="btn btn-start" onclick="initiateTriage('TST')">
+                START TRIAGE<br><span>Ten Second Triage (TST)</span>
             </button>
             <button id="btn-mitt" class="btn btn-primary" onclick="initiateTriage('MITT')">
-                NHS Major Incident Triage Tool (MITT)<br><span style="font-size:0.9rem; font-weight:normal;">At the CCP / CCS when directed</span>
+                MITT triage<br><span style="font-size:0.9rem; font-weight:normal;">Clinicians at the CCP / CCS, when directed</span>
             </button>
-
-            <div class="all-transfer-card home-secondary">
-                <button class="btn btn-transfer-all" onclick="openAllPatientsTransfer()">
-                    Send patients to another device<br><span style="font-size:0.9rem; font-weight:normal;">All, one sector, or on-scene only • QR / file</span>
+            <div class="home-row">
+                <button class="btn btn-secondary home-receive" onclick="scanPatientQR()">
+                    📷 Receive patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan another phone's QR</span>
                 </button>
-                <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                    <button class="btn btn-secondary" style="flex:1; margin-bottom:0; background-color: var(--nhs-dark-blue); font-size:1rem;" onclick="scanPatientQR()">
-                        Receive (scan)<br><span style="font-size:0.8rem; font-weight:normal;">Any MITT QR, single or multi-part</span>
+                <button class="btn btn-secondary" onclick="showLog()">
+                    📋 Patient log<br><span style="font-size:0.8rem; font-weight:normal;">Records, alerts &amp; exports</span>
+                </button>
+            </div>
+            <details class="rs-sec home-more" id="home-more">
+                <summary>More <span class="rs-sum">send all patients, import file, map, METHANE, my ID</span></summary>
+                <div class="rs-body">
+                    <button class="btn btn-transfer-all" onclick="openAllPatientsTransfer()">
+                        Send patients to another device<br><span style="font-size:0.9rem; font-weight:normal;">All, one sector, or on-scene only • QR / file</span>
                     </button>
-                    <button class="btn btn-secondary" style="flex:1; margin-bottom:0; font-size:1rem;" onclick="openAllTransferFilePicker()">
+                    <button class="btn btn-secondary" onclick="openAllTransferFilePicker()">
                         Import transfer file<br><span style="font-size:0.8rem; font-weight:normal;">Offline JSON</span>
                     </button>
+                    <button class="btn btn-secondary" onclick="generateMyIdentityQR()">
+                        My ID<br><span style="font-size:0.8rem; font-weight:normal;">For a colleague taking over care</span>
+                    </button>
+                    <button class="btn btn-nfc nfc-only" style="display:none;" onclick="startNfcReceive()">
+                        Read NFC tag<br><span style="font-size:0.8rem; font-weight:normal;">Android Chrome only</span>
+                    </button>
+                    <button class="btn btn-secondary" style="background-color: var(--nhs-green); color: white;" onclick="showMap()">🗺️ View Patient Map</button>
+                    <button class="btn btn-secondary" onclick="showMethane()">METHANE Report<br><span style="font-size:0.9rem; font-weight:normal;">Major Incident Declaration</span></button>
+                    <button class="btn btn-secondary" style="background-color: #333;" onclick="resetApp()">Change User / Role</button>
                 </div>
-            </div>
-
-            <div style="display:flex; gap:10px; margin-bottom:1rem; flex-wrap: wrap;">
-                <button class="btn btn-secondary" style="flex:1; font-size:1rem;" onclick="generateMyIdentityQR()">
-                    My ID<br><span style="font-size:0.8rem; font-weight:normal;">For a colleague taking over care</span>
-                </button>
-                <button class="btn btn-nfc nfc-only" style="flex:1; font-size:1rem; display:none;" onclick="startNfcReceive()">
-                    Read NFC tag<br><span style="font-size:0.8rem; font-weight:normal;">Android Chrome only</span>
-                </button>
-            </div>
-
-            <button class="btn btn-secondary home-secondary" style="background-color: var(--nhs-green); color: white;" onclick="showMap()">🗺️ View Patient Map</button>
-            <button class="btn btn-secondary home-secondary" onclick="showMethane()">METHANE Report<br><span style="font-size:0.9rem; font-weight:normal;">Major Incident Declaration</span></button>
-
-            <div style="margin-top: auto;">
-                <button class="btn btn-secondary" onclick="showLog()">View Log, Dashboard &amp; Exports</button>
-                <button class="btn btn-secondary" style="background-color: #333;" onclick="resetApp()">Change User / Role</button>
-            </div>
+            </details>
         </div>
 
         <div id="question-screen" class="screen">
             <h2 id="question-header">Assessment</h2>
             <p style="font-size:1.1rem;">Patient: <strong id="q-patient-id" class="editable-id" onclick="editPatientId()">...</strong></p>
+            <p id="q-progress" class="q-progress"></p>
             <div id="clinical-instruction-box" class="clinical-note" style="display:none;"></div>
             <div class="instruction-card" id="question-text">Question goes here?</div>
+            <div id="q-unsure" class="q-unsure"></div>
             <div style="margin-top: auto;">
                 <button class="btn btn-yes" onclick="handleAnswer(true)">YES</button>
                 <button class="btn btn-no" onclick="handleAnswer(false)">NO</button>
@@ -1517,7 +1561,13 @@
 <script>
     // ---------- App version / build ----------
     const APP_VERSION = '0.8.0';
-    const APP_BUILD = '2026-09-26-full-check';
+    const APP_BUILD = '2026-09-27-first-use';
+    // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
+    // Switching mode always reloads the app, so a page can never mix real and practice records.
+    const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
+    const DB_NAME = TRAINING ? 'MITT_TRAINING_DB' : 'MITT_DB';
+    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code']);
+    function lsKey(key) { return TRAINING && TRAINING_SEPARATE_KEYS.has(key) ? 'trn_' + key : key; }
     const QR_DEFAULT_TTL_MS = MITTLib.QR_DEFAULT_TTL_MS;
     const GPS_FRESH_MS = 30 * 1000;       // fixes older than this are not used for "best fix"
     const GPS_STAMP_MAX_AGE_MS = 60 * 1000; // never stamp a patient with a position older than this
@@ -1549,13 +1599,14 @@
     }
     function announce(msg, assertive) { const e = $(assertive ? 'aria-alert-region' : 'toast'); if (e) e.textContent = msg; }
     function ls(key, value) {
+        key = lsKey(key);
         try {
             if (value === undefined) return localStorage.getItem(key);
             if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, String(value));
         } catch (e) { return null; }
         return null;
     }
-    function lsJSON(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } }
+    function lsJSON(key, fallback) { try { const v = localStorage.getItem(lsKey(key)); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } }
     function fmtTime(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''; }
     function fmtDateTime(ts) { return ts ? new Date(ts).toLocaleString('en-GB') : ''; }
     function catShort(c) { return MITTLib.categoryShort(c); }
@@ -1567,6 +1618,7 @@
     let devicePrefix = '';
     let deviceId = '';
     let currentSector = '';
+    let incidentCode = '';
     let currentTool = null;
     let patientCounter = 1;
     let incidentLog = [];
@@ -1599,7 +1651,7 @@
     let storageMode = 'pending'; // 'indexeddb' | 'localstorage' | 'memory'
     let auditLoaded = false;
     let pendingAudit = [];
-    const FALLBACK_KEY = 'mit_fallback_state_v1';
+    const FALLBACK_KEY = TRAINING ? 'mit_fallback_state_training_v1' : 'mit_fallback_state_v1';
 
     function setStorageBanner(message) {
         const b = $('storage-banner');
@@ -1619,7 +1671,7 @@
         };
         try {
             if (!('indexedDB' in window)) { fail('IndexedDB not supported'); return; }
-            const req = indexedDB.open('MITT_DB', 1);
+            const req = indexedDB.open(DB_NAME, 1);
             req.onupgradeneeded = (event) => { const d = event.target.result; if (!d.objectStoreNames.contains('logs')) d.createObjectStore('logs'); };
             req.onsuccess = (event) => { if (settled) return; settled = true; db = event.target.result; _watchDbConnection(); storageMode = 'indexeddb'; loadLogsFromDB(); };
             req.onerror = () => fail(req.error ? req.error.message : 'open failed');
@@ -1664,8 +1716,12 @@
         migrated.events.forEach(ev => logAudit(ev.action, ev.patientId, ev.details, Date.now()));
         const queued = pendingAudit; pendingAudit = [];
         queued.forEach(a => appendAudit(a));
+        if (!TRAINING) {
+            const left = parseInt(ls('mit_training_left_at'), 10);
+            if (left) { logAudit('TRAINING_MODE_OFF', '-', `Returned from training mode at ${MITTLib.isoWithOffset(left)}`, left); ls('mit_training_left_at', null); }
+        }
         const v = MITTLib.verifyAuditChain(auditLog);
-        logAudit('APP_START', '-', `MITT v${APP_VERSION} (${APP_BUILD}); storage ${storageMode}; ${incidentLog.length} records; audit chain ${v.ok ? 'verified' : 'BROKEN at entry ' + (v.brokenAt + 1) + ' (' + v.reason + ')'}; timezone offset ${-new Date().getTimezoneOffset()} min`, Date.now());
+        logAudit('APP_START', '-', `MITT v${APP_VERSION} (${APP_BUILD})${TRAINING ? '; TRAINING MODE' : ''}; storage ${storageMode}; ${incidentLog.length} records; audit chain ${v.ok ? 'verified' : 'BROKEN at entry ' + (v.brokenAt + 1) + ' (' + v.reason + ')'}; timezone offset ${-new Date().getTimezoneOffset()} min`, Date.now());
         if (!v.ok) showBlockingError('Audit trail integrity warning', `The stored audit trail failed verification at entry ${v.brokenAt + 1} (${v.reason}). The trail may have been altered outside the app. Export an archive and report this.`);
         if (incidentLog.length) { $('btn-resume-log').style.display = 'block'; setText('resume-count', incidentLog.length); }
         saveState();
@@ -1714,7 +1770,7 @@
         _reopenPromise = new Promise((resolve, reject) => {
             try { if (db) db.close(); } catch (e) {}
             try {
-                const req = indexedDB.open('MITT_DB', 1);
+                const req = indexedDB.open(DB_NAME, 1);
                 req.onsuccess = (event) => { db = event.target.result; _watchDbConnection(); resolve(); };
                 req.onerror = () => reject(req.error || new Error('reopen failed'));
                 req.onblocked = () => reject(new Error('database blocked by another tab'));
@@ -1776,7 +1832,7 @@
         if (cur && entry && cur.uid === entry.uid && $('result-screen').classList.contains('active')) renderResultScreen(cur);
     }
     function indexByUid(uid) { return incidentLog.findIndex(e => e.uid === uid); }
-    function idPrefix() { return devicePrefix || deviceId; }
+    function idPrefix() { return (TRAINING ? 'TRAIN-' : '') + (devicePrefix || deviceId); }
     function duplicateIdSet() {
         const counts = {}; incidentLog.forEach(r => { counts[r.id] = (counts[r.id] || 0) + 1; });
         return new Set(Object.keys(counts).filter(k => counts[k] > 1));
@@ -2099,6 +2155,9 @@
         if (savedTriager) { triagerName = savedTriager; $('intro-triager').value = triagerName; setText('header-user', `User: ${triagerName}`); }
         const savedPrefix = ls('mit_device_prefix');
         if (savedPrefix) { devicePrefix = savedPrefix; $('intro-device-prefix').value = devicePrefix; }
+        incidentCode = MITTLib.normaliseIncidentCode(ls('mit_incident_code'));
+        $('intro-incident-code').value = incidentCode;
+        updateIncidentHeader();
         const savedSector = ls('mit_sector');
         if (savedSector) { currentSector = savedSector; $('intro-sector').value = currentSector; setText('header-sector', currentSector); }
         const savedIdMode = ls('mit_id_mode');
@@ -2114,7 +2173,7 @@
         const savedRole = ls('mit_user_role');
         if (savedRole && triagerName) applyRole(savedRole, false);
     }
-    function updateIdExample() { setText('id-example', `${($('intro-device-prefix').value.trim().toUpperCase() || deviceId)}-TST-001`); }
+    function updateIdExample() { setText('id-example', `${TRAINING ? 'TRAIN-' : ''}${($('intro-device-prefix').value.trim().toUpperCase() || deviceId)}-TST-001`); }
     function applyRole(role, isNewSession) {
         userRole = role;
         setText('header-user', `User: ${triagerName}`);
@@ -2140,12 +2199,26 @@
         devicePrefix = inputPrefix;
         const inputSec = $('intro-sector').value.trim();
         if (inputSec) currentSector = inputSec;
+        const inputCode = MITTLib.normaliseIncidentCode($('intro-incident-code').value);
+        if (inputCode !== incidentCode) setIncidentCode(inputCode, 'start screen');
         if (prevUser !== triagerName || prevRole !== role) {
             logAudit(prevUser && prevUser !== triagerName ? 'USER_CHANGED' : 'USER_SESSION_START', '-', `${triagerName} (${role === 'HCP' ? 'clinician' : 'non-clinical'}) on device ${deviceId}${prevUser && prevUser !== triagerName ? `; previous user ${prevUser}` : ''}; sector ${currentSector || '-'}; ID prefix ${idPrefix()}`, Date.now());
         }
         saveState();
         applyRole(role, true);
     }
+    function updateIncidentHeader() { setText('header-incident', incidentCode ? `Incident ${incidentCode}` : ''); }
+    function setIncidentCode(value, where) {
+        const code = MITTLib.normaliseIncidentCode(value);
+        if (code === incidentCode) return;
+        const prev = incidentCode;
+        incidentCode = code;
+        ls('mit_incident_code', code || null);
+        logAudit('INCIDENT_CODE_SET', '-', `${prev || '(none)'} -> ${code || '(none)'} (${where})`, Date.now());
+        updateIncidentHeader();
+        saveState();
+    }
+    function saveIncidentCode(value) { setIncidentCode(value, 'settings'); $('set-incident-code').value = incidentCode; $('intro-incident-code').value = incidentCode; }
     function updateSectorInput() { const val = $('intro-sector-select').value; if (val) $('intro-sector').value = val; }
     async function addCustomSector() {
         const newSec = await inAppPrompt({ title: 'Add Sector', message: 'Enter new sector name:' });
@@ -2205,22 +2278,26 @@
 
     // ---------- Triage flows (question text mirrors the NHS England TST / NHS MITT cards, April 2023) ----------
     // Outcomes come from MITTLib.tstNext / mittNext so the app and the tested logic can never disagree.
+    // unsure: the answer that gives the MORE urgent priority (over-triage is the safer error).
+    // Needs clinical sign-off together with the question wording.
     const tstFlow = [
-        { id: 'walking', question: 'Walking?', instruction: '' },
-        { id: 'bleeding', question: 'Severe bleeding?', instruction: 'If YES: pressure, tourniquet, packing.' },
-        { id: 'talking', question: 'Talking?', instruction: '' },
-        { id: 'penetrating', question: 'Penetrating injury to the torso — front or back?', instruction: 'Check the front and back of the torso.' },
-        { id: 'breathing', question: 'Breathing?', instruction: 'Open the airway if able.' },
+        { id: 'walking', question: 'Walking?', instruction: '', unsure: 'NO' },
+        { id: 'bleeding', question: 'Severe bleeding?', instruction: 'If YES: pressure, tourniquet, packing.', unsure: 'YES' },
+        { id: 'talking', question: 'Talking?', instruction: '', unsure: 'NO' },
+        { id: 'penetrating', question: 'Penetrating injury to the torso — front or back?', instruction: 'Check the front and back of the torso.', unsure: 'YES' },
+        { id: 'breathing', question: 'Breathing?', instruction: 'Open the airway if able.', unsure: 'YES', unsureText: 'If you see any sign of breathing, tap YES.' },
     ];
     const mittFlow = [
-        { id: 'cat_bleed', question: 'Catastrophic bleeding?', instruction: 'If YES: pressure dressing, tourniquet, haemostatic packing.' },
-        { id: 'walking', question: 'Walking?', instruction: '' },
-        { id: 'breathing', question: 'Breathing?', instruction: 'Open the airway if required. Children (<12) not breathing: if resources allow, consider 5 rescue breaths if submersion / immersion / smoke inhalation.' },
-        { id: 'voice', question: 'Responds to voice?', instruction: '' },
-        { id: 'age', question: 'Aged over 2 years?', instruction: 'Estimate if unknown.' },
-        { id: 'rr', question: 'Breathing rate 12 – 23?', instruction: 'Count breaths per minute.' },
-        { id: 'hr', question: 'Heart rate 100 or more?', instruction: 'Count the pulse.' },
+        { id: 'cat_bleed', question: 'Catastrophic bleeding?', instruction: 'If YES: pressure dressing, tourniquet, haemostatic packing.', unsure: 'YES' },
+        { id: 'walking', question: 'Walking?', instruction: '', unsure: 'NO' },
+        { id: 'breathing', question: 'Breathing?', instruction: 'Open the airway if required. Children (<12) not breathing: if resources allow, consider 5 rescue breaths if submersion / immersion / smoke inhalation.', unsure: 'YES', unsureText: 'If you see any sign of breathing, tap YES.' },
+        { id: 'voice', question: 'Responds to voice?', instruction: '', unsure: 'NO' },
+        { id: 'age', question: 'Aged over 2 years?', instruction: 'Estimate if unknown.', unsure: 'NO' },
+        { id: 'rr', question: 'Breathing rate 12 – 23?', instruction: 'Count breaths per minute.', unsure: 'NO' },
+        { id: 'hr', question: 'Heart rate 100 or more?', instruction: 'Count the pulse.', unsure: 'YES' },
     ];
+    // Longest possible path through each flow (TST ends after penetrating OR breathing).
+    const FLOW_MAX_QUESTIONS = { TST: 4, MITT: 7 };
     const OUTCOME_ACTIONS = {
         'TST|Walking': 'P3 — walking. Direct to the casualty collection point as instructed.',
         'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing.',
@@ -2320,6 +2397,8 @@
         setText('question-text', stepObj.question);
         const box = $('clinical-instruction-box');
         if (stepObj.instruction) { box.style.display = 'block'; box.textContent = stepObj.instruction; } else box.style.display = 'none';
+        setText('q-progress', `Question ${stepHistory.length + 1} of up to ${FLOW_MAX_QUESTIONS[currentTool] || flowFor(currentTool).length}`);
+        setText('q-unsure', stepObj.unsureText ? `Not sure? ${stepObj.unsureText}` : `Not sure? Tap ${stepObj.unsure} — the safer choice.`);
         $('btn-back').style.display = stepHistory.length > 0 ? 'block' : 'none';
     }
     function handleAnswer(answer) {
@@ -2398,7 +2477,7 @@
             triageHistory: [hist], tod: tod || '',
             location: null, initialLocation: null, currentLocation: null, locationHistory: [],
             locationConfidence: pos ? (MITTLib.classifyLocationAccuracy(pos.acc).warning ? 'gps-approximate' : 'gps-exact') : (currentSector ? 'sector-only' : 'unknown'),
-            sector: currentSector, landmark: '', floor: '', area: '',
+            sector: currentSector, landmark: '', floor: '', area: '', incidentCode,
             demos: '', allergies: '', notes: '', highRisk: false, interventions: {}, injuries: [],
             evacuated: false, evacDest: '', evacVehicle: '', hospitalId: '', handoverState: '', _rev: 1,
         };
@@ -2844,7 +2923,7 @@
 
     // ================= HANDOVER: single patient =================
     function buildPatientPayload(entry, opts) {
-        return MITTLib.buildPatientPayload(entry, opts || {}, { sender: triagerName || '', appVersion: APP_VERSION });
+        return MITTLib.buildPatientPayload(entry, opts || {}, { sender: triagerName || '', appVersion: APP_VERSION, training: TRAINING });
     }
     function qrSize() { return Math.min(360, Math.max(280, Math.floor(window.innerWidth * 0.78))); }
     // The QR library only computes the code; we draw it ourselves with whole-pixel modules and a
@@ -2871,6 +2950,14 @@
         canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'QR code');
         target.appendChild(canvas);
         return canvas;
+    }
+    // Numbered steps above a QR code, so both people know exactly what happens next.
+    function setQrSteps(steps, now) {
+        const ol = $('qr-steps');
+        clearChildren(ol);
+        if (!steps) { ol.style.display = 'none'; return; }
+        steps.forEach((t, i) => ol.appendChild(el('li', { className: i < now ? 'done' : (i === now ? 'now' : ''), text: t })));
+        ol.style.display = 'block';
     }
     function _setCurrentQrText(text) { try { $('qr-modal').dataset.qrText = text || ''; } catch (e) {} }
     function copyCurrentQrText() {
@@ -2909,7 +2996,8 @@
         try { _renderQR($('qrcode'), text, qrSize()); }
         catch (e) { console.error(e); showBlockingError('QR could not be generated', `${e.message}. Use "Send patients to another device" → Export transfer file.`); logAudit('QR_FAILED', entry.id, e.message, Date.now(), { uid: entry.uid }); return; }
         _setCurrentQrText(text);
-        setText('qr-title', `Patient ${entry.id} — ${catShort(entry.category)}`);
+        setText('qr-title', `${TRAINING ? 'TRAINING — ' : ''}Patient ${entry.id} — ${catShort(entry.category)}`);
+        setQrSteps(['1. The receiver taps 📷 Receive patient and scans this code', '2. They check the details and tap Accept', '3. Their phone shows a confirmation code — you scan it'], 0);
         setText('qr-summary', _summariseEntry(entry));
         setText('qr-desc', `Show to the receiver. Brightness up. Generated ${fmtTime(wrapper.g)}.`);
         setText('qr-expiry', `Check code ${MITTLib.shortCodeFromHash(wrapper.h)} • version ${wrapper.rv} • app v${APP_VERSION}`);
@@ -2938,6 +3026,7 @@
         try { _renderQR($('qrcode'), text, 280); } catch (e) { showBlockingError('QR could not be generated', e.message); return; }
         _setCurrentQrText(text);
         setText('qr-title', 'My ID');
+        setQrSteps(null);
         setText('qr-summary', `${triagerName} (${userRole === 'HCP' ? 'clinician' : 'non-clinical'}) • device ${deviceId}`);
         setText('qr-desc', 'A colleague handing a patient over to you scans this.');
         setText('qr-expiry', `Generated ${fmtTime(Date.now())}`);
@@ -2952,7 +3041,7 @@
             modal.dataset.handoverUid = '';
             const idx = indexByUid(uid);
             setTimeout(() => {
-                setText('handover-step1-state', `Patient ${idx > -1 ? incidentLog[idx].id : ''} — waiting for the receiver's acknowledgement.`);
+                setText('handover-step1-state', `Patient ${idx > -1 ? incidentLog[idx].id : ''} — waiting for the receiver's confirmation code.`);
                 $('handover-flow-modal').style.display = 'flex';
             }, 80);
         }
@@ -3111,7 +3200,16 @@
 
     // ---------- Receiver: preview & accept ----------
     let _pendingImport = null; // { wrapper, data, meta, match, dryRun }
+    // Training and real data never mix: a practice code is refused by a real-mode phone, and vice versa.
+    function refuseTrainingMismatch(payloadIsTraining, what) {
+        if (!!payloadIsTraining === TRAINING) return false;
+        logAudit('QR_REJECTED', '-', `${what}: ${payloadIsTraining ? 'training code on a real-mode phone' : 'real code on a training-mode phone'}`, Date.now());
+        if (payloadIsTraining) showBlockingError('This is a TRAINING code', 'It was made on a phone in training mode, so it cannot go into real patient records. Nothing was imported.');
+        else showBlockingError('This is a REAL patient code', 'This phone is in training mode. To receive real patients, switch training mode off in Settings (⚙) first. Nothing was imported.');
+        return true;
+    }
     function handlePatientWrapper(wrapper) {
+        if (refuseTrainingMismatch(!!wrapper.trn, 'Patient QR')) return;
         if (wrapper.type === 'MIT_FULL_PATIENT' && !wrapper.t) {
             const data = MITTLib.sanitisePatientRecord(wrapper.data || {});
             const meta = { schemaVersion: 1, recordVersion: 0, sender: (data && data.triager) || '', integrityOk: null, warnings: ['Legacy format — no integrity check.'] };
@@ -3143,6 +3241,7 @@
             return;
         }
         const d = result.data, m = result.meta;
+        if (d.incidentCode && incidentCode && d.incidentCode !== incidentCode) warnings.unshift(`This patient belongs to incident ${d.incidentCode}, but this phone is set to incident ${incidentCode}. Check they are part of this incident before accepting.`);
         if (m.integrityOk === false) warnings.unshift('Integrity check FAILED — the data may be corrupted. Ask the sender to show the QR again before accepting.');
         const match = MITTLib.matchIncomingRecord(d, incidentLog);
         let dryRun = null;
@@ -3304,6 +3403,7 @@
         try { _renderQR($('qrcode'), text, 260); } catch (e) { showBlockingError('ACK QR failed', e.message); return; }
         _setCurrentQrText(text);
         setText('qr-title', `Received ${entry.id} — show this to the sender`);
+        setQrSteps(['1. Patient accepted on this phone', '2. Show this confirmation code to the sender', '3. The sender scans it — then you are both done'], 1);
         setText('qr-summary', `Receiver: ${ack.rcv} • device ${deviceId}`);
         setText('qr-desc', 'The sender scans this to confirm the handover.');
         setText('qr-expiry', `Generated ${fmtTime(ack.g)}`);
@@ -3432,9 +3532,9 @@
         const opts = {
             ttlMs: QR_DEFAULT_TTL_MS, scope,
             auditLog: includeAudit ? auditLog : [],
-            incident: { sector: currentSector, generatedBy: triagerName, generatedRole: userRole || '', device: deviceId, appVersion: APP_VERSION },
+            incident: { sector: currentSector, incidentCode, training: TRAINING, generatedBy: triagerName, generatedRole: userRole || '', device: deviceId, appVersion: APP_VERSION },
         };
-        return { scope, includeAudit, records, contentKey, opts, ctx: { sender: triagerName, appVersion: APP_VERSION, device: deviceId } };
+        return { scope, includeAudit, records, contentKey, opts, ctx: { sender: triagerName, appVersion: APP_VERSION, device: deviceId, training: TRAINING } };
     }
     function _cachedTransfer(req) {
         // Re-opening an unchanged transfer shows the SAME codes, so a receiver's partial progress stays valid.
@@ -3490,7 +3590,7 @@
         const n = _allTransfer.payload.n;
         setText('all-transfer-title', total === 1 ? 'Send patients' : `Send patients — QR ${idx} of ${total}`);
         setText('all-transfer-meta', `${scopeLabel(_allTransfer.payload.scope)} • ${n} record${n === 1 ? '' : 's'} • transfer ${_allTransfer.transferId}`);
-        setText('all-transfer-desc', total === 1 ? 'Receiver: tap "Receive (scan)" and scan this code.' : 'Receiver: tap "Receive (scan)" and keep the camera on these codes. Order does not matter; repeats are ignored.');
+        setText('all-transfer-desc', (total === 1 ? '1. The receiver taps 📷 Receive patient and scans this code. ' : '1. The receiver taps 📷 Receive patient and keeps the camera on these codes (any order; repeats are ignored). ') + '2. They tap Accept and show you a confirmation code. 3. You tap "Scan receiver\'s confirmation" below.');
         setText('all-transfer-progress', total === 1 ? `Check code ${MITTLib.shortCodeFromHash(_allTransfer.payload.h)}` : `Part ${idx} of ${total} • check code ${MITTLib.shortCodeFromHash(_allTransfer.payload.h)}`);
         $('all-transfer-bar').style.width = `${Math.round(idx / total * 100)}%`;
         $('btn-auto-cycle').style.display = total > 1 ? '' : 'none';
@@ -3543,18 +3643,20 @@
         }
         _anchorDownload(filename, text, type);
     }
+    // Export file names say which incident they belong to, and TRAINING files can never pass for real ones.
+    function filePrefix() { return 'MITT_' + (TRAINING ? 'TRAINING_' : '') + (incidentCode ? incidentCode + '_' : ''); }
     function stamp() { return MITTLib.isoWithOffset(Date.now()).replace(/[:.]/g, '-'); }
     function exportAllPatientsFile() {
         const t = buildTransferFileForScope();
         if (!t) return;
-        downloadBlob(`MITT_transfer_${deviceId}_${t.transferId}_${stamp()}.json`, t.text, 'application/json');
+        downloadBlob(`${filePrefix()}transfer_${deviceId}_${t.transferId}_${stamp()}.json`, t.text, 'application/json');
         logAudit('TRANSFER_FILE_EXPORTED', '-', `Transfer ${t.transferId}, ${t.payload.n} record(s), hash ${t.payload.h}`, Date.now());
         showToast('Transfer file saved. Move it to the other device and use "Import transfer file".', { long: true });
     }
     async function shareAllPatientsFile() {
         const t = buildTransferFileForScope();
         if (!t) return;
-        const file = new File([t.text], `MITT_transfer_${deviceId}_${t.transferId}.json`, { type: 'application/json' });
+        const file = new File([t.text], `${filePrefix()}transfer_${deviceId}_${t.transferId}.json`, { type: 'application/json' });
         if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
             try { await navigator.share({ files: [file], title: 'MITT patient transfer' }); logAudit('TRANSFER_FILE_SHARED', '-', `Transfer ${t.transferId}`, Date.now()); }
             catch (e) { if (e && e.name !== 'AbortError') showBlockingError('Share failed', `${e.message}. Use "Export transfer file".`); }
@@ -3580,7 +3682,7 @@
 
     // ---------- Receiving multi-part QR (camera stays on between parts) ----------
     let _allChunkStore = lsJSON('mit_chunk_store', null) || { transferId: null, payloadHash: null, totalChunks: 0, chunks: {} };
-    function persistChunkStore() { try { localStorage.setItem('mit_chunk_store', JSON.stringify(_allChunkStore)); } catch (e) {} }
+    function persistChunkStore() { try { localStorage.setItem(lsKey('mit_chunk_store'), JSON.stringify(_allChunkStore)); } catch (e) {} }
     function resetChunkStore() { _allChunkStore = { transferId: null, payloadHash: null, totalChunks: 0, chunks: {} }; persistChunkStore(); }
     function renderScanProgress() {
         const total = _allChunkStore.totalChunks || 0;
@@ -3637,12 +3739,14 @@
     let _pendingBulkImport = null;
     function handleBulkWrapper(wrapper) {
         // Legacy single-QR sector handover from older app versions: routed through the same safe import.
+        if (refuseTrainingMismatch(!!wrapper.trn, 'Bulk QR')) return;
         const r = MITTLib.validateBulkWrapper(wrapper);
         if (!r.ok) { showBlockingError('Cannot import', r.reason); logAudit('BULK_HANDOVER_REJECTED', '-', r.reason, Date.now()); return; }
         if (r.meta.integrityOk === false) r.meta.warnings.push('Integrity check FAILED — data may be corrupted. Ask the sender to show it again.');
         renderMultiImportPreview({ ok: true, data: r.data, audit: [], meta: Object.assign({ transferId: 'legacy-bulk', scope: { type: 'sector', sector: r.meta.sector || 'ALL' } }, r.meta) });
     }
     function handleAllPatientsWrapper(wrapper) {
+        if (refuseTrainingMismatch(!!(wrapper && wrapper.trn), 'Transfer')) return;
         const r = MITTLib.validateAllPatientsWrapper(wrapper);
         if (!r.ok) { logAudit('TRANSFER_REJECTED', '-', r.reason, Date.now()); showBlockingError('Cannot import', r.reason); return; }
         renderMultiImportPreview(r);
@@ -3655,6 +3759,8 @@
         const warn = $('bulk-receive-warn');
         clearChildren(warn);
         const warnings = (meta.warnings || []).slice();
+        const otherIncident = r.data.filter(d => d.incidentCode && incidentCode && d.incidentCode !== incidentCode);
+        if (otherIncident.length) warnings.unshift(`${otherIncident.length} patient(s) belong to a different incident (${Array.from(new Set(otherIncident.map(d => d.incidentCode))).join(', ')}); this phone is set to ${incidentCode}. Check before accepting.`);
         if (plan.collisions.length) warnings.push(`${plan.collisions.length} patient(s) have the same ID as a DIFFERENT patient here and will be imported under new IDs: ${plan.collisions.map(c => `${c.originalId} → ${c.newId}`).join(', ')}.`);
         const conflicts = plan.report.filter(x => x.conflicts && x.conflicts.length);
         if (conflicts.length) warnings.push(`${conflicts.length} patient(s) have differences that will NOT be applied automatically (e.g. a lower category). They will be flagged for review.`);
@@ -3718,6 +3824,7 @@
         try { _renderQR($('qrcode'), text, 260); } catch (e) { showToast(`Imported ${plan.imported} new, ${plan.merged} updated.`); return; }
         _setCurrentQrText(text);
         setText('qr-title', `Received ${r.data.length} patient(s) — show this to the sender`);
+        setQrSteps(['1. Patients accepted on this phone', '2. Show this confirmation code to the sender', '3. The sender scans it — then you are both done'], 1);
         setText('qr-summary', `${plan.imported} new • ${plan.merged} updated • receiver ${triagerName}`);
         setText('qr-desc', 'The sender scans this to confirm the transfer arrived.');
         setText('qr-expiry', `Transfer ${r.meta.transferId || '-'}`);
@@ -3879,7 +3986,7 @@
         let csv = '';
         let name;
         if (type === 'SNAPSHOT') {
-            const cols = ['Patient_ID', 'Record_UID', 'Created_ISO', 'Created_By', 'Created_On_Device', 'Last_Triage_ISO', 'Tool', 'Category', 'Category_Label', 'Reason', 'Action', 'Last_Triager', 'Triage_History', 'Time_Of_Death', 'Sector', 'Landmark', 'Floor', 'Area', 'Location_Confidence', 'Lat', 'Lng', 'GPS_Accuracy_m', 'Location_Timestamp_ISO', 'Location_History_Count', 'Hospital_ID', 'Age_Sex', 'Allergies', 'Clinical_Notes', 'Interventions', 'Injuries', 'High_Risk', 'Evacuated', 'Destination', 'Vehicle', 'Handover_State', 'Handover_To', 'Handover_At_ISO', 'Received_From', 'Last_Reassessed_ISO', 'Reassess_Outcome', 'Open_Import_Differences', 'Duplicate_ID_Warning', 'Last_Updated_ISO', 'Export_Device', 'Exported_ISO'];
+            const cols = ['Patient_ID', 'Record_UID', 'Incident_Code', 'Created_ISO', 'Created_By', 'Created_On_Device', 'Last_Triage_ISO', 'Tool', 'Category', 'Category_Label', 'Reason', 'Action', 'Last_Triager', 'Triage_History', 'Time_Of_Death', 'Sector', 'Landmark', 'Floor', 'Area', 'Location_Confidence', 'Lat', 'Lng', 'GPS_Accuracy_m', 'Location_Timestamp_ISO', 'Location_History_Count', 'Hospital_ID', 'Age_Sex', 'Allergies', 'Clinical_Notes', 'Interventions', 'Injuries', 'High_Risk', 'Evacuated', 'Destination', 'Vehicle', 'Handover_State', 'Handover_To', 'Handover_At_ISO', 'Received_From', 'Last_Reassessed_ISO', 'Reassess_Outcome', 'Open_Import_Differences', 'Duplicate_ID_Warning', 'Last_Updated_ISO', 'Export_Device', 'Exported_ISO'];
             csv += cols.join(',') + '\n';
             const dups = duplicateIdSet();
             const exportedAt = iso(Date.now());
@@ -3888,10 +3995,10 @@
                 const th = (r.triageHistory || []).map(t => `${iso(t.ts)} ${t.kind || 'triage'} ${catShort(t.category)} (${t.reason || ''}) by ${t.by || '?'}`).join(' | ');
                 const ints = Object.entries(r.interventions || {}).map(([k, v]) => `${k} @ ${v && v.ts ? iso(v.ts) : (v && v.time) || '?'}${v && v.by ? ' by ' + v.by : ''}`).join('; ');
                 const conflicts = (r.importConflicts || []).filter(c => !c.resolved).map(c => `${c.field}: local ${c.local} / incoming ${c.incoming} from ${c.from}`).join('; ');
-                const vals = [r.id, r.uid, iso(r.createdAt || r.timestamp), r.createdBy || r.triager, r.deviceId, iso(r.timestamp), r.tool, r.category, catLabel(r.category), r.reason, r.action, r.triager, th, r.tod, r.sector, r.landmark, r.floor, r.area, r.locationConfidence, loc.lat, loc.lng, loc.acc, iso(loc.timestamp), (r.locationHistory || []).length, r.hospitalId, r.demos, r.allergies, r.notes, ints, MITTLib.injuriesToText(r.injuries || []), r.highRisk ? 'YES' : 'NO', r.evacuated ? 'YES' : 'NO', r.evacDest, r.evacVehicle, r.handoverState, r.handoverTo, iso(r.handoverAt), r.receivedFrom, iso(r.lastReassessed), r.reassessOutcome, conflicts, dups.has(r.id) ? 'YES' : '', iso(r.updatedAt), deviceId, exportedAt];
+                const vals = [r.id, r.uid, r.incidentCode, iso(r.createdAt || r.timestamp), r.createdBy || r.triager, r.deviceId, iso(r.timestamp), r.tool, r.category, catLabel(r.category), r.reason, r.action, r.triager, th, r.tod, r.sector, r.landmark, r.floor, r.area, r.locationConfidence, loc.lat, loc.lng, loc.acc, iso(loc.timestamp), (r.locationHistory || []).length, r.hospitalId, r.demos, r.allergies, r.notes, ints, MITTLib.injuriesToText(r.injuries || []), r.highRisk ? 'YES' : 'NO', r.evacuated ? 'YES' : 'NO', r.evacDest, r.evacVehicle, r.handoverState, r.handoverTo, iso(r.handoverAt), r.receivedFrom, iso(r.lastReassessed), r.reassessOutcome, conflicts, dups.has(r.id) ? 'YES' : '', iso(r.updatedAt), deviceId, exportedAt];
                 csv += vals.map(C).join(',') + '\n';
             });
-            name = `MITT_casualty_register_${deviceId}_${stamp()}.csv`;
+            name = `${filePrefix()}casualty_register_${deviceId}_${stamp()}.csv`;
         } else {
             const v = MITTLib.verifyAuditChain(auditLog);
             const cols = ['Source', 'Device_ID', 'Seq', 'System_Time_ISO', 'System_Time_Epoch_ms', 'Clinical_Time_ISO', 'User', 'Role', 'Action', 'Patient_ID', 'Record_UID', 'Details', 'Sector', 'Device_Lat', 'Device_Lng', 'Device_GPS_Accuracy_m', 'App_Version', 'Prev_Hash', 'Hash', 'Imported_Via'];
@@ -3902,7 +4009,7 @@
             };
             auditLog.forEach(a => { csv += row(a, 'this device'); });
             importedAudit.forEach(a => { csv += row(a, 'imported'); });
-            name = `MITT_audit_${deviceId}_${stamp()}_head-${(v.headHash || '').slice(0, 12)}.csv`;
+            name = `${filePrefix()}audit_${deviceId}_${stamp()}_head-${(v.headHash || '').slice(0, 12)}.csv`;
             logAudit('AUDIT_EXPORTED', '-', `CSV: ${auditLog.length} own + ${importedAudit.length} imported rows; chain ${v.ok ? 'verified' : 'BROKEN'}; head ${v.headHash}`, Date.now());
             showToast(`Audit exported. Chain ${v.ok ? 'verified' : 'BROKEN'} — head hash ${v.headHash.slice(0, 12)}…`, { long: true, alert: !v.ok });
         }
@@ -3915,18 +4022,18 @@
         const C = MITTLib.csvCell, iso = MITTLib.isoWithOffset;
         let csv = 'Version,Saved_ISO,Saved_By,Device,M_Declared,E_Exact_Location,T_Type,H_Hazards,A_Access,N_Casualties,E_Services\n';
         methaneHistory.forEach((m, i) => { csv += [i + 1, iso(m.timestamp), m.by || '', m.device || deviceId, m.m, m.e, m.t, m.h, m.a, m.n, m.e_svc].map(C).join(',') + '\n'; });
-        downloadBlob(`MITT_METHANE_${deviceId}_${stamp()}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
+        downloadBlob(`${filePrefix()}METHANE_${deviceId}_${stamp()}.csv`, '﻿' + csv, 'text/csv;charset=utf-8');
         logAudit('METHANE_EXPORTED', '-', `${methaneHistory.length} version(s)`, Date.now());
     }
     function buildArchive() {
         const v = MITTLib.verifyAuditChain(auditLog);
         return {
-            format: 'MITT_ARCHIVE', v: 1, app: APP_VERSION, build: APP_BUILD,
+            format: 'MITT_ARCHIVE', v: 1, app: APP_VERSION, build: APP_BUILD, training: TRAINING, incidentCode,
             exportedAt: Date.now(), exportedAtISO: MITTLib.isoWithOffset(Date.now()), tzOffsetMin: -new Date().getTimezoneOffset(),
             device: deviceId, exportedBy: triagerName, role: userRole, storageMode,
             auditVerification: v,
             records: incidentLog, audit: auditLog, importedAudit, methaneHistory, wipeHistory,
-            settings: { idMode, idPrefix: idPrefix(), sector: currentSector, reassessIntervalsMin: reassessIntervals },
+            settings: { idMode, idPrefix: idPrefix(), sector: currentSector, incidentCode, reassessIntervalsMin: reassessIntervals },
         };
     }
     function downloadArchive() {
@@ -3934,7 +4041,7 @@
         const archive = buildArchive();
         const text = JSON.stringify(archive, null, 1);
         const digest = MITTLib.sha256Hex(text);
-        downloadBlob(`MITT_archive_${deviceId}_${stamp()}.json`, text, 'application/json');
+        downloadBlob(`${filePrefix()}archive_${deviceId}_${stamp()}.json`, text, 'application/json');
         logAudit('ARCHIVE_EXPORTED', '-', `${incidentLog.length} records, ${auditLog.length} audit entries; audit head ${archive.auditVerification.headHash}; file SHA-256 ${digest}`, Date.now());
         saveState();
         showToast(`Archive saved. File SHA-256 ${digest.slice(0, 16)}…`, { long: true });
@@ -4080,11 +4187,38 @@
         $('mode-onehand').checked = document.body.classList.contains('one-hand');
         $('mode-panic').checked = document.body.classList.contains('panic');
         $('mode-wakelock').checked = ls('mit_wakelock') !== 'false';
+        $('mode-training').checked = TRAINING;
+        $('btn-clear-training').style.display = TRAINING ? 'block' : 'none';
+        $('set-incident-code').value = incidentCode;
         ['P1', 'P2', 'P3'].forEach(c => { $('interval-' + c).value = String(Math.round((reassessIntervals[c] || MITTLib.REASSESS_INTERVALS[c]) / 60000)); });
         setText('device-info', `Device code ${deviceId} • ID prefix ${idPrefix()} • storage: ${storageMode} • app v${APP_VERSION} (${APP_BUILD})`);
         $('modes-modal').style.display = 'flex';
     }
     function closeModesMenu() { $('modes-modal').style.display = 'none'; }
+    async function toggleTrainingMode(on) {
+        const ok = await inAppConfirm(on
+            ? { title: 'Switch to training mode?', message: 'The app restarts with a separate, empty practice log. Real patient records are not touched, and come back when you switch training off.\n\nWhile in training, the screen shows an orange TRAINING banner, and codes made here cannot be received by a phone in real use (or the other way round).', okLabel: 'Start training' }
+            : { title: 'Leave training mode?', message: 'The app restarts with your real patient records. Training data is kept until you delete it.', okLabel: 'Back to real use' });
+        if (!ok) { $('mode-training').checked = TRAINING; return; }
+        commitDirtyFields('Mode change');
+        logAudit(on ? 'TRAINING_MODE_ON' : 'TRAINING_MODE_OFF', '-', on ? 'Switched to training mode (separate practice records)' : 'Left training mode', Date.now());
+        await saveState();
+        try {
+            if (on) localStorage.setItem('mit_training', '1');
+            else { localStorage.removeItem('mit_training'); localStorage.setItem('mit_training_left_at', String(Date.now())); }
+        } catch (e) {}
+        location.reload();
+    }
+    async function clearTrainingData() {
+        if (!TRAINING) return;
+        const ok = await inAppConfirm({ title: 'Delete all training data?', message: 'Removes every practice patient and the practice log from this phone. Real records are not affected.', okLabel: 'Delete training data', danger: true });
+        if (!ok) return;
+        try { if (db) db.close(); } catch (e) {}
+        db = null; dbReady = false; // nothing may be saved back while deleting
+        try { Object.keys(localStorage).filter(k => k.indexOf('trn_') === 0).forEach(k => localStorage.removeItem(k)); localStorage.removeItem(FALLBACK_KEY); } catch (e) {}
+        const done = () => location.reload();
+        try { const req = indexedDB.deleteDatabase('MITT_TRAINING_DB'); req.onsuccess = req.onerror = req.onblocked = done; setTimeout(done, 3000); } catch (e) { done(); }
+    }
     function toggleGloved() { document.body.classList.toggle('gloved', $('mode-gloved').checked); ls('mit_mode_gloved', $('mode-gloved').checked); }
     function toggleOneHand() { document.body.classList.toggle('one-hand', $('mode-onehand').checked); ls('mit_mode_onehand', $('mode-onehand').checked); }
     function togglePanic() { document.body.classList.toggle('panic', $('mode-panic').checked); ls('mit_mode_panic', $('mode-panic').checked); }
@@ -4119,17 +4253,60 @@
         try { if (_swReg && _swReg.waiting) _swReg.waiting.postMessage({ type: 'SKIP_WAITING' }); else location.reload(); } catch (e) { location.reload(); }
         $('sw-update-banner').classList.remove('show');
     }
+    // ---------- "Ready offline" indicator ----------
+    let _offlineTimer = null;
+    function setOfflineStatus(state, text) {
+        const e = $('offline-status');
+        if (!e) return;
+        e.className = 'offline-status ' + state;
+        e.textContent = text;
+    }
+    function checkOfflineReady() {
+        if (!('serviceWorker' in navigator) || !('caches' in window)) { setOfflineStatus('none', '⚠ No offline support'); return; }
+        const c = navigator.serviceWorker.controller;
+        if (!c) { setOfflineStatus('pending', '⏳ Saving for offline…'); return; }
+        c.postMessage({ type: 'OFFLINE_STATUS' });
+    }
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', ev => {
+            const m = ev.data || {};
+            if (m.type !== 'OFFLINE_STATUS') return;
+            clearTimeout(_offlineTimer);
+            if (m.ready) setOfflineStatus('ready', '✓ Ready offline');
+            else { setOfflineStatus('pending', `⏳ Saving for offline (${m.missing.length} left)`); _offlineTimer = setTimeout(checkOfflineReady, 3000); }
+        });
+        navigator.serviceWorker.addEventListener('controllerchange', () => checkOfflineReady());
+    } else setOfflineStatus('none', '⚠ No offline support');
+
+    // ---------- Install prompt (Android / desktop Chrome; iPhone uses the Home Screen tip) ----------
+    let _installEvt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        _installEvt = e;
+        if (ls('mit_install_dismissed') !== '1') $('install-banner').classList.add('show');
+    });
+    window.addEventListener('appinstalled', () => { _installEvt = null; $('install-banner').classList.remove('show'); logAudit('APP_INSTALLED', '-', 'Installed to this phone', Date.now()); });
+    function installApp() {
+        if (!_installEvt) { $('install-banner').classList.remove('show'); return; }
+        const evt = _installEvt; _installEvt = null;
+        evt.prompt();
+        Promise.resolve(evt.userChoice).then(() => $('install-banner').classList.remove('show')).catch(() => {});
+    }
+    function dismissInstallBanner() { ls('mit_install_dismissed', '1'); $('install-banner').classList.remove('show'); }
+
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./sw.js').then(reg => {
+                if (!reg) throw new Error('registration unavailable');
                 _swReg = reg;
+                navigator.serviceWorker.ready.then(checkOfflineReady);
                 if (reg.waiting && navigator.serviceWorker.controller) showSwUpdateBanner();
                 reg.addEventListener('updatefound', () => {
                     const sw = reg.installing;
                     if (sw) sw.addEventListener('statechange', () => { if (sw.state === 'installed' && navigator.serviceWorker.controller) showSwUpdateBanner(); });
                 });
                 setInterval(() => { try { reg.update(); } catch (e) {} }, 30 * 60 * 1000);
-            }).catch(err => console.warn('Service worker not registered:', err));
+            }).catch(err => { console.warn('Service worker not registered:', err); setOfflineStatus('none', '⚠ Not saved for offline'); });
         });
         // Only reload when the user asked for the update (the first install must not reload mid-triage).
         navigator.serviceWorker.addEventListener('controllerchange', () => { if (_swUpdateRequested) { _swUpdateRequested = false; location.reload(); } });
@@ -4158,6 +4335,7 @@
         ch.postMessage({ type: 'hello', from: me });
     }
 
+    if (TRAINING) { document.body.classList.add('training'); document.title = 'TRAINING — ' + document.title; }
     loadModePrefs();
     loadLocalSettings();
     openDatabase();

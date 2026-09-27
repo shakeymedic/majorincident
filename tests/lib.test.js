@@ -796,6 +796,28 @@ group('review: tamper-evident audit', () => {
         assert.ok(all.meta.warnings.some(x => /shortened: notes/.test(x)));
         Object.keys(lib.FIELD_INPUT_LIMITS).forEach(k => assert.ok(lib.FIELD_INPUT_LIMITS[k] <= lib.FIELD_LIMITS[k], k));
     });
+    test('training codes are marked inside the integrity hash, so the mark cannot be stripped unnoticed', () => {
+        const w = lib.buildPatientPayload({ id: 'TRAIN-1', uid: 't1', category: 'P2' }, {}, { now: 1, training: true });
+        assert.strictEqual(w.trn, 1);
+        const v = lib.validatePatientWrapper(JSON.parse(JSON.stringify(w)), { now: 2 });
+        assert.strictEqual(v.meta.training, true);
+        assert.strictEqual(v.meta.integrityOk, true);
+        const stripped = JSON.parse(JSON.stringify(w)); delete stripped.trn;
+        assert.strictEqual(lib.validatePatientWrapper(stripped, { now: 2 }).meta.integrityOk, false);
+        assert.strictEqual(lib.validatePatientWrapper(lib.buildPatientPayload({ id: 'R-1', uid: 'r1', category: 'P2' }, {}, { now: 1 }), { now: 2 }).meta.training, false);
+        const all = lib.buildAllPatientsPayload([{ id: 'TRAIN-2', uid: 't2', category: 'P1' }], { incident: { incidentCode: 'EX-1' } }, { now: 1, training: true });
+        const va = lib.validateAllPatientsWrapper(all, { now: 2 });
+        assert.strictEqual(va.meta.training, true);
+        assert.strictEqual(va.meta.incidentCode, 'EX-1');
+    });
+    test('incident code: normalised, carried in a patient QR, kept by sanitising, and filled in by a merge', () => {
+        assert.strictEqual(lib.normaliseIncidentCode(' mcr 0926! '), 'MCR0926');
+        assert.strictEqual(lib.normaliseIncidentCode('a'.repeat(40)).length, 20);
+        const w = lib.buildPatientPayload({ id: 'I-1', uid: 'i1', category: 'P3', incidentCode: 'MCR-0926' }, {}, { now: 1 });
+        assert.strictEqual(lib.validatePatientWrapper(w, { now: 2 }).data.incidentCode, 'MCR-0926');
+        const merged = lib.mergePatientRecords({ id: 'I-1', uid: 'i1', category: 'P3' }, { id: 'I-1', uid: 'i1', category: 'P3', incidentCode: 'MCR-0926' }, {});
+        assert.strictEqual(merged.incidentCode, 'MCR-0926');
+    });
     test('isoWithOffset includes a UTC offset', () => {
         assert.match(lib.isoWithOffset(1700000000000), /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}[+-]\d\d:\d\d$/);
     });

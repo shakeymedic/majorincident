@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v13-2026-09-26-full-check';
+const CACHE_NAME = 'mit-triage-v14-2026-09-27-first-use';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 const TILE_CACHE_MAX = 600;
@@ -11,6 +11,7 @@ const PRECACHE_URLS = [
     './icon-192.png',
     './icon-512.png',
     './icon-maskable-512.png',
+    './quick-reference.html',
     './lib.js',
     './vendor/qrcode.min.js',
     './vendor/html5-qrcode.min.js',
@@ -38,6 +39,15 @@ self.addEventListener('install', event => {
 self.addEventListener('message', event => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
+    }
+    // The page asks: is every file needed to work without signal stored on this phone?
+    if (event.data && event.data.type === 'OFFLINE_STATUS') {
+        event.waitUntil(caches.open(CACHE_NAME)
+            .then(cache => Promise.all(PRECACHE_URLS.map(u => cache.match(u).then(hit => hit ? null : u))))
+            .then(results => {
+                const missing = results.filter(Boolean);
+                if (event.source) event.source.postMessage({ type: 'OFFLINE_STATUS', ready: missing.length === 0, missing, cache: CACHE_NAME });
+            }));
     }
 });
 

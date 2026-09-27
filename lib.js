@@ -124,6 +124,7 @@
             triager: _str(rec.triager, L.triager),
             locationConfidence: _str(rec.locationConfidence, 40),
             sector: _str(rec.sector, L.sector), landmark: _str(rec.landmark, L.landmark), floor: _str(rec.floor, L.floor), area: _str(rec.area, L.area),
+            incidentCode: _str(rec.incidentCode, 20),
             demos: _str(rec.demos, L.demos),
             allergies: _str(rec.allergies, L.allergies),
             notes: _str(rec.notes, L.notes),
@@ -225,6 +226,7 @@
         if (entry.floor) short.fl = entry.floor;
         if (entry.area) short.ar = entry.area;
         if (entry.sector) short.s = entry.sector;
+        if (entry.incidentCode) short.icd = entry.incidentCode;
         if (entry.demos) short.d = entry.demos;
         if (entry.allergies) short.al = entry.allergies;
         if (entry.notes) short.n = entry.notes;
@@ -250,6 +252,7 @@
             app: ctx.appVersion || '',
             d: short,
         };
+        if (ctx.training) wrapper.trn = 1; // practice data: a real-mode device refuses it
         const canonical = canonicalJSON(wrapper);
         wrapper.h = fnv1a(canonical);
         return wrapper;
@@ -285,6 +288,7 @@
             floor: short.fl || '',
             area: short.ar || '',
             sector: short.s || '',
+            incidentCode: short.icd || '',
             demos: short.d || '',
             allergies: short.al || '',
             notes: short.n || '',
@@ -303,6 +307,8 @@
         };
         return sanitisePatientRecord(raw, truncated);
     }
+    // Incident code: short, typeable, same on every phone (e.g. "MCR-0926"). Letters, digits and dashes only.
+    function normaliseIncidentCode(v) { return String(v || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20); }
     function _truncationWarning(fields) {
         if (!fields.length) return null;
         const uniq = fields.filter((f, i) => fields.indexOf(f) === i);
@@ -336,6 +342,7 @@
             expiresAt: wrapper.x || null,
             sender: wrapper.sndr || '',
             app: wrapper.app || '',
+            training: !!wrapper.trn,
             integrityOk: null,
         };
         if (wrapper.h) {
@@ -367,7 +374,7 @@
     //  * Notes never nest: if one side already contains the other, the superset is kept.
     //  * Every change and conflict is reported so the app can audit it field by field.
     const CATEGORY_URGENCY = { P1: 0, P2: 1, P3: 2 };
-    const LOW_RISK_TEXT_FIELDS = ['sector', 'landmark', 'floor', 'area', 'evacDest', 'evacVehicle', 'hospitalId', 'locationConfidence', 'tod'];
+    const LOW_RISK_TEXT_FIELDS = ['sector', 'landmark', 'floor', 'area', 'evacDest', 'evacVehicle', 'hospitalId', 'locationConfidence', 'tod', 'incidentCode'];
 
     function resolveCategoryMerge(localCat, incCat, resolution) {
         if (!incCat || incCat === localCat) return { take: false };
@@ -655,6 +662,7 @@
             sender: wrapper.sndr || '',
             sector: wrapper.sec || '',
             count: wrapper.n || 0,
+            training: !!wrapper.trn,
             integrityOk: null,
         };
         if (wrapper.h) {
@@ -688,7 +696,7 @@
         'id','time','timestamp','tool','category','action','reason','triager','location','initialLocation','currentLocation','locationHistory','locationConfidence','sector','landmark','floor','area',
         'demos','allergies','notes','highRisk','interventions','evacuated','evacDest','evacVehicle',
         'injuries','lastReassessed','reassessOutcome','lastDeteriorationAt','handoverState','handoverAt','handoverTo','_rev',
-        'uid','createdAt','createdBy','deviceId','updatedAt','fts','triageHistory','hospitalId','tod','importConflicts'
+        'uid','createdAt','createdBy','deviceId','updatedAt','fts','triageHistory','hospitalId','tod','importConflicts','incidentCode'
     ];
 
     function jsonClone(value) {
@@ -969,6 +977,7 @@
         };
         if (opts.scope) wrapper.scope = jsonClone(opts.scope);
         if (ctx.device) wrapper.dev = ctx.device;
+        if (ctx.training) wrapper.trn = 1;
         const canonical = canonicalJSON(wrapper);
         wrapper.h = fnv1a(canonical);
         return wrapper;
@@ -990,6 +999,8 @@
             count: wrapper.n || 0,
             scope: wrapper.scope || null,
             payloadHash: wrapper.h || '',
+            training: !!wrapper.trn,
+            incidentCode: (wrapper.incident && typeof wrapper.incident.incidentCode === 'string') ? wrapper.incident.incidentCode.slice(0, 20) : '',
             auditCount: Array.isArray(wrapper.audit) ? wrapper.audit.length : 0,
             integrityOk: null,
             warnings: [],
@@ -1630,7 +1641,7 @@
         similarityScore, findDuplicateCandidates,
         nextReassessmentDue, reassessmentStatus, applyReassessment,
         categoryWorsened, buildPatientTimeline, shortCodeFromHash,
-        FIELD_LIMITS, FIELD_INPUT_LIMITS,
+        FIELD_LIMITS, FIELD_INPUT_LIMITS, normaliseIncidentCode,
         CATEGORIES, CATEGORY_INFO, PATIENT_QR_MAX_CHARS, PATIENT_QR_LOCATION_HISTORY_MAX, AUDIT_GENESIS,
         isValidCategory, categoryShort, categoryLabel, toAsciiJSON, makeUid, makeDeviceCode, nextAutoId,
         sanitisePatientRecord, sanitiseInterventions, mergePatientRecordsDetailed, matchIncomingRecord, collisionSafeId,
