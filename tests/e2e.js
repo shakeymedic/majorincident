@@ -64,8 +64,19 @@ async function test(name, fn) {
         if (!host) { host = document.createElement('div'); host.id = 'dec-host'; document.body.appendChild(host); }
         host.style.cssText = 'position:absolute; left:-9000px; top:0; width:' + c.width + 'px;';
         const blob = await new Promise(r => c.toBlob(r));
-        return new Html5Qrcode('dec-host').scanFile(new File([blob], 'q.png', { type: 'image/png' }), false);
-    }, sel);
+        try { return await new Html5Qrcode('dec-host').scanFile(new File([blob], 'q.png', { type: 'image/png' }), false); }
+        catch (e) { return { zxingFailed: String(e && e.message || e), png: c.toDataURL('image/png') }; }
+    }, sel).then(r => {
+        if (typeof r === 'string') return r;
+        // ZXing (html5-qrcode) cannot find some valid codes in a static image: about 1 in 8 patient QRs in a
+        // local test, on main as well. The same images match a reference encoder module-for-module and decode
+        // with jsQR, so check the image with jsQR as a second, independent standard decoder.
+        const { PNG } = require('pngjs'); const jsQR = require('jsqr');
+        const png = PNG.sync.read(Buffer.from(r.png.split(',')[1], 'base64'));
+        const out = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
+        if (!out) throw new Error('Neither ZXing nor jsQR could decode the QR image (ZXing: ' + r.zxingFailed + ')');
+        return out.data;
+    });
     // Check every module drawn on the canvas matches the QR model for that text (whole-pixel rendering).
     const canvasMatchesModel = (page, sel, text) => page.evaluate(([sel, text]) => {
         const c = document.querySelector(sel);
@@ -599,6 +610,80 @@ async function test(name, fn) {
         await H.click('#btn-start-triage');
         assert.ok(await H.evaluate(() => document.getElementById('question-screen').classList.contains('active') && currentTool === 'TST'));
         await H._ctx.close();
+    });
+    await test('on a small phone (375x667 and 360x740) YES and NO are fully on screen for every TST and MITT question', async () => {
+        for (const vp of [{ width: 375, height: 667 }, { width: 360, height: 740 }]) {
+            const S = await device('Small ' + vp.width, { viewport: vp, isMobile: true, hasTouch: true });
+            await setup(S, 'Medic S');
+            for (const [tool, answers] of [['TST', [false, false, true, false]], ['MITT', [false, false, true, true, true, true, false]]]) {
+                await S.evaluate(t => initiateTriage(t), tool);
+                for (const ans of answers) {
+                    const r = await S.evaluate(() => {
+                        const box = sel => document.querySelector(sel).getBoundingClientRect();
+                        const y = box('#question-screen .btn-yes'), n = box('#question-screen .btn-no'), q = box('#question-text');
+                        return { step: document.getElementById('question-screen').dataset.stepId, ok: y.top >= 0 && n.top >= 0 && y.bottom <= innerHeight && n.bottom <= innerHeight && q.top >= 0, header: document.querySelector('header').getBoundingClientRect().height };
+                    });
+                    assert.ok(r.ok, `${vp.width}x${vp.height} ${tool}:${r.step} ` + JSON.stringify(r));
+                    assert.ok(r.header < 80, 'header stays on one row: ' + r.header);
+                    await S.evaluate(a => handleAnswer(a), ans);
+                }
+            }
+            await S._ctx.close();
+        }
+    });
+    await test('MITT counting help suggests the answer from a typed or counted rate, and the measured rate is kept with the result', async () => {
+        const M = await device('Count');
+        await setup(M, 'Medic C');
+        await M.evaluate(() => { initiateTriage('MITT'); [false, false, true, true, true].forEach(a => handleAnswer(a)); });
+        assert.strictEqual(await M.evaluate(() => document.getElementById('question-screen').dataset.stepId), 'rr');
+        assert.ok(await M.isVisible('#q-count'));
+        await M.fill('#q-count-input', '28');
+        assert.match(await M.textContent('#q-count-result'), /RR 28\/min.*suggests NO/);
+        await M.fill('#q-count-input', '16');
+        assert.match(await M.textContent('#q-count-result'), /suggests YES/);
+        await M.evaluate(() => handleAnswer(true));
+        assert.ok(await M.isVisible('#q-count'));
+        await M.fill('#q-count-input', '96');
+        assert.match(await M.textContent('#q-count-result'), /HR 96\/min.*suggests NO/);
+        await M.evaluate(() => handleAnswer(false));
+        const e = await M.evaluate(() => currentEntry());
+        assert.strictEqual(e.category, 'P2');
+        assert.match(e.action, /Measured: RR 16\/min, HR 96\/min\./);
+        // Not shown on questions without counting.
+        await M.evaluate(() => initiateTriage('TST'));
+        assert.strictEqual(await M.isVisible('#q-count'), false);
+        await M._ctx.close();
+    });
+    await test('"MITT this patient now" re-triages the same TST record with MITT; TST handover needs no extra confirmation', async () => {
+        const T = await device('MITT now');
+        await setup(T, 'Medic N');
+        await triage(T, 'TST', [false, false, true, false]);
+        assert.ok(await T.isVisible('#btn-mitt-now'));
+        assert.match(await T.textContent('#action-box'), /Reassess with MITT as soon as possible/);
+        const uid = await T.evaluate(() => currentEntry().uid);
+        await T.click('#btn-mitt-now');
+        assert.strictEqual(await T.evaluate(() => currentTool), 'MITT');
+        await T.evaluate(() => [false, false, true, true, true, true, true].forEach(a => handleAnswer(a)));
+        const e = await T.evaluate(() => ({ n: incidentLog.length, uid: currentEntry().uid, cat: currentEntry().category, tool: currentEntry().tool, hist: currentEntry().triageHistory.length }));
+        assert.deepStrictEqual(e, { n: 1, uid, cat: 'P1', tool: 'MITT', hist: 2 });
+        assert.strictEqual(await T.isVisible('#btn-mitt-now'), false);
+        await triage(T, 'TST', [true]);
+        await T.evaluate(() => generatePatientQR());
+        await page_visible(T, '#qr-modal');
+        assert.strictEqual(await T.isVisible('#confirm-modal'), false);
+        await T._ctx.close();
+    });
+    await test('non-clinical users get a simpler result screen and a readable role label', async () => {
+        const P = await device('Police');
+        await setup(P, 'PC Jones', 'NON_HCP');
+        assert.strictEqual(await P.textContent('#header-role'), 'Non-clinical');
+        assert.strictEqual(await P.evaluate(() => getComputedStyle(document.getElementById('header-role')).color), 'rgb(255, 255, 255)');
+        await triage(P, 'TST', [false, true]);
+        for (const sel of ['#btn-reassess', '#btn-atmist', '#btn-mitt-now', '.int-btn[data-type="TXA"]', '.int-btn[data-type="Needle Decomp"]', '.int-btn[data-type="IO Access"]']) {
+            assert.strictEqual(await P.evaluate(s => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0; }, sel), false, sel + ' should be hidden');
+        }
+        assert.ok(await P.evaluate(() => { document.getElementById('sec-interventions').open = true; return document.querySelector('.int-btn[data-type="Tourniquet"]').getClientRects().length > 0; }));
+        await P._ctx.close();
     });
     await test('each question shows its number, and "Not sure?" always points to the more urgent answer', async () => {
         const Q = await device('Questions');
