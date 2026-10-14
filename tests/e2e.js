@@ -64,8 +64,19 @@ async function test(name, fn) {
         if (!host) { host = document.createElement('div'); host.id = 'dec-host'; document.body.appendChild(host); }
         host.style.cssText = 'position:absolute; left:-9000px; top:0; width:' + c.width + 'px;';
         const blob = await new Promise(r => c.toBlob(r));
-        return new Html5Qrcode('dec-host').scanFile(new File([blob], 'q.png', { type: 'image/png' }), false);
-    }, sel);
+        try { return await new Html5Qrcode('dec-host').scanFile(new File([blob], 'q.png', { type: 'image/png' }), false); }
+        catch (e) { return { zxingFailed: String(e && e.message || e), png: c.toDataURL('image/png') }; }
+    }, sel).then(r => {
+        if (typeof r === 'string') return r;
+        // ZXing (html5-qrcode) cannot find some valid codes in a static image: about 1 in 8 patient QRs in a
+        // local test, on main as well. The same images match a reference encoder module-for-module and decode
+        // with jsQR, so check the image with jsQR as a second, independent standard decoder.
+        const { PNG } = require('pngjs'); const jsQR = require('jsqr');
+        const png = PNG.sync.read(Buffer.from(r.png.split(',')[1], 'base64'));
+        const out = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
+        if (!out) throw new Error('Neither ZXing nor jsQR could decode the QR image (ZXing: ' + r.zxingFailed + ')');
+        return out.data;
+    });
     // Check every module drawn on the canvas matches the QR model for that text (whole-pixel rendering).
     const canvasMatchesModel = (page, sel, text) => page.evaluate(([sel, text]) => {
         const c = document.querySelector(sel);
