@@ -1,6 +1,6 @@
 {
   "name": "mitt",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "description": "Major Incident Triage Tool — offline PWA. No build step; dependencies below are for tests only.",
   "scripts": {

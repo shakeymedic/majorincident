@@ -1,4 +1,6 @@
-# Major Incident Triage Tool (MITT)
+# Major Incident Triage
+
+The app was previously called "MITT". It was renamed so it is not confused with the NHS Major Incident Triage Tool (MITT), which is one of the two triage flows it runs. Internal names (database, QR prefixes, export file names) are unchanged.
 
 A mobile-first, offline-first **progressive web app** for documenting major-incident triage and handover. Built as a single-page vanilla JavaScript app — no build step.
 
@@ -141,6 +143,19 @@ The end-to-end suite covers the two-phone handover, multi-part transfer, reload 
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.8.1 build 2026-10-14-usability — usability review
+
+- **YES / NO always on screen:** the answer buttons are pinned to the bottom of the question screen, side by side, with Back / Cancel under them. Previously NO was below the bottom of the screen on every question on iPhone SE-sized and common Android phones. The counters are hidden while a question is showing. A test checks every TST and MITT question at 375×667 and 360×740.
+- **Question first:** the question card comes first, with the instruction under it in plain text, then the "Not sure?" hint.
+- **Header on one row:** Night mode and Blackout moved into ⚙ Settings with labels (Blackout shows "Tap to wake").
+- **MITT counting help:** on the breathing-rate and heart-rate questions, a 15-second timer with an optional tap counter, or a typed rate. It suggests YES or NO; the clinician still answers. Measured rates are added to the result's action text (e.g. "Measured: RR 28/min").
+- **MITT this patient now:** clinicians get a one-tap button on any TST result to run MITT on the same record, and TST results remind clinicians to reassess with MITT as soon as possible (NHS England guidance).
+- **Handover:** the "Handover details look thin" confirmation now appears only for a clinician's MITT patient, not for every TST handover.
+- **Non-clinical role:** Reassess, ATMIST, thoracostomy, TXA and IO access buttons are hidden for non-clinical users.
+- **Readability:** the role is shown as a white-on-colour pill before the user name; the counters show patients still on scene with a one-line legend (totals remain in the Patient log).
+- **Result screen:** Next Patient and QR Handover sit directly under the category; MITT P3 result reminds that walking patients may be compensating.
+- **Quick reference card:** now includes the TST and MITT flowcharts.
 
 ### v0.8.0 build 2026-09-27-first-use — usable in seconds by a first-time user
 

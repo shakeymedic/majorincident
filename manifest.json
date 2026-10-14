@@ -1,6 +1,6 @@
 {
-  "name": "Major Incident Triage Tool",
-  "short_name": "MITT",
+  "name": "Major Incident Triage",
+  "short_name": "MI Triage",
   "description": "Emergency triage logging and handover tool",
   "start_url": "./index.html",
   "scope": "./",
