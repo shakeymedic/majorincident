@@ -838,6 +838,179 @@ group('review: acknowledgements', () => {
     });
 });
 
+group('review v0.9.0: OS grid references', () => {
+    test('OS worked example: OSGB36 52°39′27.2531″N 1°43′4.5177″E -> E 651409.903 N 313177.270', () => {
+        const en = lib.osgb36ToEastNorth(52 + 39 / 60 + 27.2531 / 3600, 1 + 43 / 60 + 4.5177 / 3600);
+        assert.ok(Math.abs(en.E - 651409.903) < 0.01, 'E ' + en.E);
+        assert.ok(Math.abs(en.N - 313177.270) < 0.01, 'N ' + en.N);
+        assert.strictEqual(lib.eastNorthToGridRef(en.E, en.N), 'TG 51409 13177');
+    });
+    test('WGS84 -> grid ref matches the Movable Type reference (TG 51409 13177)', () => {
+        assert.strictEqual(lib.toOsGridRef(52.65798, 1.71605), 'TG 51409 13177');
+    });
+    test('Manchester, London and Edinburgh land in the right 100 km squares', () => {
+        assert.ok(/^SJ /.test(lib.toOsGridRef(53.4808, -2.2426)));
+        assert.ok(/^TQ /.test(lib.toOsGridRef(51.5074, -0.1278)));
+        assert.ok(/^NT /.test(lib.toOsGridRef(55.9533, -3.1883)));
+    });
+    test('digits option gives 6-figure and letters-only references', () => {
+        assert.strictEqual(lib.toOsGridRef(52.65798, 1.71605, 3), 'TG 514 131');
+        assert.strictEqual(lib.toOsGridRef(52.65798, 1.71605, 0), 'TG');
+    });
+    test('outside the grid returns null (Paris, Reykjavik, nonsense)', () => {
+        assert.strictEqual(lib.toOsGridRef(48.8566, 2.3522), null);
+        assert.strictEqual(lib.toOsGridRef(64.1466, -21.9426), null);
+        assert.strictEqual(lib.toOsGridRef('x', 1), null);
+        assert.strictEqual(lib.toOsGridRef(null, null), null);
+    });
+    test('formatCoords uses 5 decimal places and tolerates bad input', () => {
+        assert.strictEqual(lib.formatCoords(53.480812345, -2.2426), '53.48081, -2.24260');
+        assert.strictEqual(lib.formatCoords(undefined, 1), '');
+    });
+});
+
+group('review v0.9.0: maps links and routes', () => {
+    const pts = [
+        { id: 'A', lat: 53.4800, lng: -2.2400 },
+        { id: 'B', lat: 53.4900, lng: -2.2400 },
+        { id: 'C', lat: 53.4810, lng: -2.2400 },
+    ];
+    test('mapsLinks builds Google, Apple, OSM and geo links for one point', () => {
+        const l = lib.mapsLinks(53.4808, -2.2426, 'P1 <001>');
+        assert.ok(l.google.indexOf('https://www.google.com/maps/search/?api=1&query=53.480800,-2.242600') === 0);
+        assert.ok(l.googleDirections.indexOf('destination=53.480800,-2.242600') > 0);
+        assert.ok(l.apple.indexOf('https://maps.apple.com/?ll=53.480800,-2.242600&q=P1%20%3C001%3E') === 0);
+        assert.ok(l.osm.indexOf('mlat=53.480800&mlon=-2.242600') > 0);
+        assert.ok(l.geo.indexOf('geo:53.480800,-2.242600') === 0);
+        assert.strictEqual(lib.mapsLinks(null, 1), null);
+    });
+    test('orderNearest is greedy nearest-first from the given start', () => {
+        const o = lib.orderNearest(pts, { lat: 53.4895, lng: -2.24 });
+        assert.deepStrictEqual(o.map(p => p.id), ['B', 'C', 'A']);
+        assert.deepStrictEqual(lib.orderNearest(pts).map(p => p.id), ['A', 'C', 'B']);
+        assert.deepStrictEqual(lib.orderNearest([{ lat: 'x' }, null]), []);
+    });
+    test('googleMapsRouteUrl uses the user as origin and the farthest as destination', () => {
+        const r = lib.googleMapsRouteUrl(pts, { lat: 53.4795, lng: -2.24 });
+        assert.ok(r.url.indexOf('origin=53.479500,-2.240000') > 0);
+        assert.ok(r.url.indexOf('destination=53.490000,-2.240000') > 0);
+        assert.ok(r.url.indexOf('waypoints=53.480000,-2.240000|53.481000,-2.240000') > 0);
+        assert.strictEqual(r.omitted.length, 0);
+    });
+    test('without a start point the first casualty is the origin', () => {
+        const r = lib.googleMapsRouteUrl(pts);
+        assert.ok(r.url.indexOf('origin=53.480000,-2.240000') > 0);
+        assert.ok(r.url.indexOf('destination=53.490000,-2.240000') > 0);
+        assert.ok(r.url.indexOf('waypoints=53.481000,-2.240000&') > 0);
+        const one = lib.googleMapsRouteUrl([pts[0]]);
+        assert.ok(one.url.indexOf('origin=') === -1 && one.url.indexOf('destination=53.480000,-2.240000') > 0);
+        assert.strictEqual(lib.googleMapsRouteUrl([]), null);
+    });
+    test('more than 10 points: the nearest 10 are included and the rest reported as omitted', () => {
+        const many = Array.from({ length: 14 }, (_, i) => ({ id: 'P' + i, lat: 53.48 + i * 0.001, lng: -2.24 }));
+        const r = lib.googleMapsRouteUrl(many, { lat: 53.4799, lng: -2.24 });
+        assert.strictEqual(lib.GOOGLE_ROUTE_MAX_POINTS, 10);
+        assert.strictEqual(r.included.length, 10);
+        assert.strictEqual(r.omitted.length, 4);
+        assert.deepStrictEqual(r.omitted.map(p => p.id), ['P10', 'P11', 'P12', 'P13']);
+        assert.strictEqual((r.url.match(/\|/g) || []).length, 8); // 9 waypoints
+    });
+});
+
+group('review v0.9.0: location exports', () => {
+    const now = 1760000000000;
+    const recs = [
+        { uid: 'u1', id: 'DEV-TST-001', category: 'P1', sector: 'Platform 2 & "North"', floor: '1', currentLocation: { lat: 53.4808, lng: -2.2426, acc: 12, timestamp: now - 60000 }, locationConfidence: 'gps-good' },
+        { uid: 'u2', id: 'DEV-TST-002', category: 'P3', location: { lat: 53.4810, lng: -2.2430, acc: 70 }, evacuated: true, highRisk: true },
+        { uid: 'u3', id: 'DEV-TST-003', category: 'P2' }, // no location: left out
+        { uid: 'u4', id: 'DEV-TST-004', category: 'Dead', currentLocation: { lat: 'x' } },
+    ];
+    test('locationPoints keeps only records with coordinates and builds the place text', () => {
+        const p = lib.locationPoints(recs);
+        assert.strictEqual(p.length, 2);
+        assert.strictEqual(p[0].place, 'Platform 2 & "North", Floor 1');
+        assert.strictEqual(p[0].acc, 12);
+        assert.strictEqual(p[0].confidence, 'gps-good');
+        assert.strictEqual(p[1].evacuated, true);
+        assert.strictEqual(p[1].timestamp, null);
+        assert.deepStrictEqual(lib.locationPoints(null), []);
+    });
+    test('GPX has one <wpt> per located casualty plus the CCS, with XML escaping', () => {
+        const gpx = lib.buildGpx(recs, { now, ccs: { lat: 53.49, lng: -2.25 } });
+        assert.ok(gpx.indexOf('<?xml version="1.0"') === 0);
+        assert.strictEqual((gpx.match(/<wpt /g) || []).length, 3);
+        assert.ok(gpx.indexOf('<wpt lat="53.4808000" lon="-2.2426000">') > 0);
+        assert.ok(gpx.indexOf('Platform 2 &amp; &quot;North&quot;') > 0);
+        assert.ok(gpx.indexOf('<time>2025-10-09T08:52:20.000Z</time>') > 0);
+        assert.ok(gpx.indexOf('<name>CCS</name>') > 0);
+        assert.ok(gpx.indexOf('P3 HIGH RISK') > 0 && gpx.indexOf('EVACUATED') > 0);
+        assert.ok(/<\/gpx>\n$/.test(gpx));
+    });
+    test('KML has a style per category, one Placemark per casualty and lon,lat order', () => {
+        const kml = lib.buildKml(recs, { now });
+        assert.strictEqual((kml.match(/<Style id="cat-/g) || []).length, lib.CATEGORIES.length);
+        assert.strictEqual((kml.match(/<Placemark>/g) || []).length, 2);
+        assert.ok(kml.indexOf('<coordinates>-2.2426000,53.4808000,0</coordinates>') > 0);
+        assert.ok(kml.indexOf('<styleUrl>#cat-P1</styleUrl>') > 0);
+        assert.ok(kml.indexOf('&amp; &quot;North&quot;') > 0);
+    });
+    test('GeoJSON is valid JSON with [lng, lat] coordinates and grid refs', () => {
+        const gj = JSON.parse(lib.buildGeoJson(recs, { now, name: 'Test', ccs: { lat: 53.49, lng: -2.25 } }));
+        assert.strictEqual(gj.type, 'FeatureCollection');
+        assert.strictEqual(gj.name, 'Test');
+        assert.strictEqual(gj.features.length, 3);
+        assert.deepStrictEqual(gj.features[0].geometry.coordinates, [-2.2426, 53.4808]);
+        assert.strictEqual(gj.features[0].properties.osGridRef, 'SJ 83997 98258');
+        assert.strictEqual(gj.features[0].properties.recordedAt, new Date(now - 60000).toISOString());
+        assert.strictEqual(gj.features[1].properties.highRisk, true);
+        assert.strictEqual(gj.features[2].properties.id, 'CCS');
+    });
+});
+
+group('review v0.9.0: reading a device fix', () => {
+    const now = 1760000000000;
+    test('a tight fix with altitude is probably satellite', () => {
+        const c = lib.classifyLocationFix({ lat: 53.48, lng: -2.24, acc: 8, altitude: 40, timestamp: now - 5000 }, now);
+        assert.strictEqual(c.ok, true);
+        assert.strictEqual(c.likelySource, 'gps');
+        assert.strictEqual(c.ageState, 'fresh');
+        assert.strictEqual(c.ageMs, 5000);
+        assert.strictEqual(c.indoorHint, false);
+    });
+    test('a wide fix with no altitude is probably Wi-Fi / mast (indoors)', () => {
+        const c = lib.classifyLocationFix({ lat: 53.48, lng: -2.24, acc: 85, timestamp: now - 120000 }, now);
+        assert.strictEqual(c.likelySource, 'network');
+        assert.strictEqual(c.indoorHint, true);
+        assert.strictEqual(c.ageState, 'stale');
+    });
+    test('age states: old after five minutes, unknown without a timestamp', () => {
+        assert.strictEqual(lib.classifyLocationFix({ lat: 1, lng: 1, acc: 20, timestamp: now - 6 * 60000 }, now).ageState, 'old');
+        const u = lib.classifyLocationFix({ lat: 1, lng: 1, acc: 20 }, now);
+        assert.strictEqual(u.ageState, 'unknown');
+        assert.strictEqual(u.likelySource, 'unknown');
+    });
+    test('no fix at all', () => {
+        const n = lib.classifyLocationFix(null, now);
+        assert.strictEqual(n.ok, false);
+        assert.strictEqual(n.likelySource, 'none');
+        assert.strictEqual(lib.classifyLocationFix({}, now).ok, false);
+    });
+    test('describeGeoError explains each code and tailors the fix to the phone', () => {
+        const ios = lib.describeGeoError(1, 'ios');
+        assert.strictEqual(ios.kind, 'denied');
+        assert.strictEqual(ios.retry, false);
+        assert.ok(ios.help.indexOf('iPhone') >= 0);
+        const and = lib.describeGeoError(1, 'android');
+        assert.ok(and.help.indexOf('Android') >= 0);
+        assert.strictEqual(lib.describeGeoError(2).kind, 'unavailable');
+        assert.strictEqual(lib.describeGeoError(2).retry, true);
+        assert.strictEqual(lib.describeGeoError(3).kind, 'timeout');
+        assert.ok(lib.describeGeoError(3).help.indexOf('pin') >= 0);
+        assert.strictEqual(lib.describeGeoError(99).kind, 'unsupported');
+        assert.strictEqual(lib.describeGeoError(undefined).retry, false);
+    });
+});
+
 (async () => {
     console.log('\nreview: compressed multi-part transfer (async)');
     async function atest(name, fn) {

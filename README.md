@@ -133,7 +133,7 @@ node tests/syntax-compat.js     # fails on JavaScript syntax too new for older i
 npm install && node tests/e2e.js # real app in headless Chromium, simulating two phones
 ```
 
-The end-to-end suite covers the two-phone handover, multi-part transfer, reload persistence, audit tamper detection, legacy migration, storage failure, reset, iPhone behaviour (old-iOS decompression, share-sheet export, notch layout, no zoom-on-tap, database reconnection), and checks the app's QR codes against a reference encoder. CI runs both on every push (see `.github/workflows/test.yml`).
+The end-to-end suite covers the two-phone handover, the map and location features (pin on map, same place as last patient, exports, blocked-location help, 360 px layout), multi-part transfer, reload persistence, audit tamper detection, legacy migration, storage failure, reset, iPhone behaviour (old-iOS decompression, share-sheet export, notch layout, no zoom-on-tap, database reconnection), and checks the app's QR codes against a reference encoder. CI runs both on every push (see `.github/workflows/test.yml`).
 
 ## Intended-use limitations
 
@@ -143,6 +143,18 @@ The end-to-end suite covers the two-phone handover, multi-part transfer, reload 
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.9.0 build 2026-10-15-location-map — location, map and phone layout
+
+- **Location engine:** two position watches (satellite and coarse) plus a 20-second heartbeat, so a phone standing still indoors keeps a current position instead of "GPS unavailable". A position is reused for up to 2 minutes. The blue-bar pill now says what the phone knows (e.g. "±8 m", "±60 m Wi-Fi", "Location off") and tapping it explains the state in plain English, with the iPhone / Android steps to allow location and a Try again button.
+- **Indoor fallbacks:** "Pin on map" (tap exactly where the patient is; stored as manually corrected), "Same place as last patient", and the floor / room fields. Rough fixes are labelled as such.
+- **OS grid references:** every position is also shown as an Ordnance Survey grid reference (e.g. SJ 83997 98258) for radio and control-room use. The conversion follows the OS transformation (Helmert WGS84→OSGB36, Airy 1830), checked against the OS worked example; accuracy is a few metres, which is fine for this purpose.
+- **Map screen:** reachable from the home screen. Clustered colour-coded markers with accuracy circles, your own position, an On scene / All switch, a legend, a nearest-first casualty list with distance and bearing, and Set CCS. Tapping a marker offers Open record, Move pin and walking directions. Map tiles seen while online are cached for offline use.
+- **Open in Google Maps / other apps:** one casualty opens as a pin in Google Maps, Apple Maps, OpenStreetMap or the phone's default maps app, or as walking directions. Several casualties open as a Google Maps walking route through the nearest 10 (Google cannot show plain pins from a link), or save as a GPX, KML or GeoJSON file for OsmAnd, Organic Maps, Google Earth / My Maps, Garmin or control-room GIS. "Copy list" copies ID, category, grid reference and coordinates for every casualty.
+- **METHANE:** "Add my position" fills the exact-location line with the grid reference and coordinates.
+- **ATMIST:** Copy text and Share… (phone share sheet) buttons.
+- **Calmer result screen:** detail sections start closed for each new patient; location moves (found here, moved, at CCS, loaded) are folded away; the Log screen's exports and reset are under one heading; Settings is grouped into Display, Incident & training, Reassessment and About.
+- **Phones:** the status bar wraps instead of pushing the location pill off-screen; the user name is hidden on narrow screens; map chips fit a 360 px screen. 20 new unit tests and 11 new end-to-end tests cover the above.
 
 ### v0.8.1 build 2026-10-14-usability — usability review
 

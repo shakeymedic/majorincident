@@ -1625,6 +1625,229 @@
         return { records, events };
     }
 
+
+    // ---------- Location: UK grid references, map links and exports ----------
+    // WGS84 (what phones report) -> OSGB36 (Ordnance Survey) by the standard 7-parameter Helmert
+    // transformation, then the OS National Grid Transverse Mercator projection
+    // (OS, "A guide to coordinate systems in Great Britain"). Helmert is accurate to ~5 m,
+    // which is far better than any phone fix. Returns null outside the National Grid.
+    const _DEG = Math.PI / 180;
+    function _toCartesian(lat, lon, a, b) {
+        const e2 = 1 - (b * b) / (a * a);
+        const sinP = Math.sin(lat), cosP = Math.cos(lat);
+        const nu = a / Math.sqrt(1 - e2 * sinP * sinP);
+        return { x: nu * cosP * Math.cos(lon), y: nu * cosP * Math.sin(lon), z: (1 - e2) * nu * sinP };
+    }
+    function _toLatLon(c, a, b) {
+        const e2 = 1 - (b * b) / (a * a);
+        const p = Math.sqrt(c.x * c.x + c.y * c.y);
+        let lat = Math.atan2(c.z, p * (1 - e2)), prev = 2 * Math.PI;
+        for (let i = 0; i < 20 && Math.abs(lat - prev) > 1e-12; i++) {
+            prev = lat;
+            const nu = a / Math.sqrt(1 - e2 * Math.sin(lat) * Math.sin(lat));
+            lat = Math.atan2(c.z + e2 * nu * Math.sin(lat), p);
+        }
+        return { lat, lon: Math.atan2(c.y, c.x) };
+    }
+    function wgs84ToOsgb36(latDeg, lonDeg) {
+        const w = _toCartesian(latDeg * _DEG, lonDeg * _DEG, 6378137.000, 6356752.314245);
+        const tx = -446.448, ty = 125.157, tz = -542.060, s1 = 1 + 20.4894e-6;
+        const rx = -0.1502 / 3600 * _DEG, ry = -0.2470 / 3600 * _DEG, rz = -0.8421 / 3600 * _DEG;
+        const o = {
+            x: tx + s1 * w.x - rz * w.y + ry * w.z,
+            y: ty + rz * w.x + s1 * w.y - rx * w.z,
+            z: tz - ry * w.x + rx * w.y + s1 * w.z,
+        };
+        const ll = _toLatLon(o, 6377563.396, 6356256.909);
+        return { lat: ll.lat / _DEG, lon: ll.lon / _DEG };
+    }
+    // OSGB36 latitude/longitude (degrees) -> National Grid easting/northing (metres).
+    function osgb36ToEastNorth(latDeg, lonDeg) {
+        const a = 6377563.396, b = 6356256.909, F0 = 0.9996012717;
+        const lat0 = 49 * _DEG, lon0 = -2 * _DEG, N0 = -100000, E0 = 400000;
+        const lat = latDeg * _DEG, lon = lonDeg * _DEG;
+        const e2 = 1 - (b * b) / (a * a), n = (a - b) / (a + b), n2 = n * n, n3 = n * n * n;
+        const sinP = Math.sin(lat), cosP = Math.cos(lat), tanP = Math.tan(lat);
+        const nu = a * F0 / Math.sqrt(1 - e2 * sinP * sinP);
+        const rho = a * F0 * (1 - e2) / Math.pow(1 - e2 * sinP * sinP, 1.5);
+        const eta2 = nu / rho - 1;
+        const M = b * F0 * ((1 + n + 1.25 * n2 + 1.25 * n3) * (lat - lat0)
+            - (3 * n + 3 * n2 + 21 / 8 * n3) * Math.sin(lat - lat0) * Math.cos(lat + lat0)
+            + (15 / 8 * n2 + 15 / 8 * n3) * Math.sin(2 * (lat - lat0)) * Math.cos(2 * (lat + lat0))
+            - 35 / 24 * n3 * Math.sin(3 * (lat - lat0)) * Math.cos(3 * (lat + lat0)));
+        const cos3 = cosP * cosP * cosP, cos5 = cos3 * cosP * cosP, tan2 = tanP * tanP, tan4 = tan2 * tan2;
+        const I = M + N0;
+        const II = nu / 2 * sinP * cosP;
+        const III = nu / 24 * sinP * cos3 * (5 - tan2 + 9 * eta2);
+        const IIIA = nu / 720 * sinP * cos5 * (61 - 58 * tan2 + tan4);
+        const IV = nu * cosP;
+        const V = nu / 6 * cos3 * (nu / rho - tan2);
+        const VI = nu / 120 * cos5 * (5 - 18 * tan2 + tan4 + 14 * eta2 - 58 * tan2 * eta2);
+        const dL = lon - lon0, dL2 = dL * dL, dL3 = dL2 * dL, dL4 = dL3 * dL, dL5 = dL4 * dL, dL6 = dL5 * dL;
+        return { E: E0 + IV * dL + V * dL3 + VI * dL5, N: I + II * dL2 + III * dL4 + IIIA * dL6 };
+    }
+    // Formats easting/northing as a grid reference with letters: "SJ 83999 98041" (digits per axis, default 5 = 1 m).
+    function eastNorthToGridRef(E, N, digits) {
+        if (!isFinite(E) || !isFinite(N) || E < 0 || E >= 700000 || N < 0 || N >= 1300000) return null;
+        digits = digits === undefined ? 5 : digits;
+        const e100k = Math.floor(E / 100000), n100k = Math.floor(N / 100000);
+        let l1 = (19 - n100k) - (19 - n100k) % 5 + Math.floor((e100k + 10) / 5);
+        let l2 = (19 - n100k) * 5 % 25 + e100k % 5;
+        if (l1 > 7) l1++;
+        if (l2 > 7) l2++;
+        const letters = String.fromCharCode(l1 + 65) + String.fromCharCode(l2 + 65);
+        if (!digits) return letters;
+        const scale = Math.pow(10, 5 - digits);
+        const e = String(Math.floor((E % 100000) / scale)).padStart(digits, '0');
+        const n = String(Math.floor((N % 100000) / scale)).padStart(digits, '0');
+        return `${letters} ${e} ${n}`;
+    }
+    // WGS84 -> "TQ 30081 80204" (null outside Great Britain's grid, e.g. Northern Ireland, Ireland, abroad).
+    function toOsGridRef(lat, lng, digits) {
+        const la = _numOrNull(lat), lo = _numOrNull(lng);
+        if (la === null || lo === null || Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+        if (la < 49 || la > 61.5 || lo < -9 || lo > 2.5) return null; // outside the grid's useful area
+        const o = wgs84ToOsgb36(la, lo);
+        const en = osgb36ToEastNorth(o.lat, o.lon);
+        return eastNorthToGridRef(en.E, en.N, digits);
+    }
+    // Coordinates for people: 5 decimal places (about 1 m), no trailing noise.
+    function formatCoords(lat, lng) {
+        const la = _numOrNull(lat), lo = _numOrNull(lng);
+        if (la === null || lo === null) return '';
+        return `${la.toFixed(5)}, ${lo.toFixed(5)}`;
+    }
+    // Links that open one point in the phone's maps apps (each is a plain https URL except geo:, which Android routes to the default maps app).
+    function mapsLinks(lat, lng, label) {
+        const la = _numOrNull(lat), lo = _numOrNull(lng);
+        if (la === null || lo === null) return null;
+        const ll = `${la.toFixed(6)},${lo.toFixed(6)}`;
+        const q = encodeURIComponent(_stringOrEmpty(label || '', 80));
+        return {
+            google: `https://www.google.com/maps/search/?api=1&query=${ll}`,
+            googleDirections: `https://www.google.com/maps/dir/?api=1&destination=${ll}&travelmode=walking`,
+            apple: `https://maps.apple.com/?ll=${ll}&q=${q || 'Casualty'}`,
+            osm: `https://www.openstreetmap.org/?mlat=${la.toFixed(6)}&mlon=${lo.toFixed(6)}#map=18/${la.toFixed(6)}/${lo.toFixed(6)}`,
+            geo: `geo:${ll}?q=${ll}${q ? '(' + q + ')' : ''}`,
+        };
+    }
+    // Greedy nearest-neighbour order starting from `from` ({lat,lng}) or from the first point.
+    function orderNearest(points, from) {
+        const left = (points || []).filter(p => p && _numOrNull(p.lat) !== null && _numOrNull(p.lng) !== null).slice();
+        const out = [];
+        let cur = from && _numOrNull(from.lat) !== null ? { lat: Number(from.lat), lng: Number(from.lng) } : null;
+        while (left.length) {
+            let bi = 0;
+            if (cur) {
+                let bd = Infinity;
+                left.forEach((p, i) => { const d = distanceMeters(cur, p); if (d < bd) { bd = d; bi = i; } });
+            }
+            const next = left.splice(bi, 1)[0];
+            out.push(next);
+            cur = { lat: Number(next.lat), lng: Number(next.lng) };
+        }
+        return out;
+    }
+    // Google Maps can show several points only as a route: origin + up to 9 waypoints + destination.
+    // Points are ordered nearest-first from `from` (the user's own position) when given.
+    const GOOGLE_ROUTE_MAX_POINTS = 10;
+    function googleMapsRouteUrl(points, from) {
+        const ordered = orderNearest(points, from);
+        const included = ordered.slice(0, GOOGLE_ROUTE_MAX_POINTS);
+        if (!included.length) return null;
+        const f = (p) => `${Number(p.lat).toFixed(6)},${Number(p.lng).toFixed(6)}`;
+        const parts = ['https://www.google.com/maps/dir/?api=1'];
+        const hasFrom = from && _numOrNull(from.lat) !== null && _numOrNull(from.lng) !== null;
+        if (hasFrom) parts.push('origin=' + f(from));
+        else if (included.length > 1) parts.push('origin=' + f(included[0]));
+        const rest = hasFrom ? included : (included.length > 1 ? included.slice(1) : included);
+        const dest = rest[rest.length - 1];
+        parts.push('destination=' + f(dest));
+        const way = rest.slice(0, -1);
+        if (way.length) parts.push('waypoints=' + way.map(f).join('|'));
+        parts.push('travelmode=walking');
+        return { url: parts.join('&'), included, omitted: ordered.slice(GOOGLE_ROUTE_MAX_POINTS) };
+    }
+    function _xml(s) { return String(s === undefined || s === null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    // Points for export: one per record with coordinates.
+    function locationPoints(records) {
+        return (records || []).map(r => {
+            const loc = normaliseLocation(r.currentLocation || r.location);
+            if (!loc || loc.lat === undefined || loc.lng === undefined) return null;
+            const place = [r.sector, r.landmark, r.floor ? 'Floor ' + r.floor : '', r.area].filter(Boolean).join(', ');
+            return { uid: r.uid, id: r.id, category: r.category, lat: Number(loc.lat), lng: Number(loc.lng), acc: _numOrNull(loc.acc), timestamp: _numOrNull(loc.timestamp), place, evacuated: !!r.evacuated, highRisk: !!r.highRisk, confidence: r.locationConfidence || loc.confidence || '' };
+        }).filter(Boolean);
+    }
+    function _pointDesc(p) {
+        return [categoryShort(p.category) + (p.highRisk ? ' HIGH RISK' : ''), p.place, p.acc !== null ? `±${Math.round(p.acc)} m` : '', p.timestamp ? 'recorded ' + isoWithOffset(p.timestamp) : '', p.evacuated ? 'EVACUATED' : 'on scene', p.confidence ? 'confidence ' + p.confidence : ''].filter(Boolean).join(' • ');
+    }
+    function buildGpx(records, opts) {
+        opts = opts || {};
+        const pts = locationPoints(records);
+        const name = _xml(opts.name || 'Major Incident Triage casualties');
+        let out = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Major Incident Triage" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${name}</name><time>${new Date(opts.now || Date.now()).toISOString()}</time></metadata>\n`;
+        pts.forEach(p => {
+            out += `<wpt lat="${p.lat.toFixed(7)}" lon="${p.lng.toFixed(7)}">${p.timestamp ? `<time>${new Date(p.timestamp).toISOString()}</time>` : ''}<name>${_xml(p.id)} ${_xml(categoryShort(p.category))}</name><desc>${_xml(_pointDesc(p))}</desc><type>${_xml(p.category)}</type></wpt>\n`;
+        });
+        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) out += `<wpt lat="${Number(opts.ccs.lat).toFixed(7)}" lon="${Number(opts.ccs.lng).toFixed(7)}"><name>CCS</name><desc>Casualty Clearing Station</desc><type>CCS</type></wpt>\n`;
+        return out + '</gpx>\n';
+    }
+    function buildKml(records, opts) {
+        opts = opts || {};
+        const pts = locationPoints(records);
+        const name = _xml(opts.name || 'Major Incident Triage casualties');
+        let out = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document><name>${name}</name>\n`;
+        CATEGORIES.forEach(c => {
+            const col = CATEGORY_INFO[c].colour.replace('#', '');
+            const abgr = 'ff' + col.slice(4, 6) + col.slice(2, 4) + col.slice(0, 2);
+            out += `<Style id="cat-${c}"><IconStyle><color>${abgr}</color><scale>1.2</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>\n`;
+        });
+        pts.forEach(p => {
+            out += `<Placemark><name>${_xml(p.id)} ${_xml(categoryShort(p.category))}</name><description>${_xml(_pointDesc(p))}</description><styleUrl>#cat-${_xml(p.category)}</styleUrl>${p.timestamp ? `<TimeStamp><when>${new Date(p.timestamp).toISOString()}</when></TimeStamp>` : ''}<Point><coordinates>${p.lng.toFixed(7)},${p.lat.toFixed(7)},0</coordinates></Point></Placemark>\n`;
+        });
+        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) out += `<Placemark><name>CCS</name><description>Casualty Clearing Station</description><Point><coordinates>${Number(opts.ccs.lng).toFixed(7)},${Number(opts.ccs.lat).toFixed(7)},0</coordinates></Point></Placemark>\n`;
+        return out + '</Document>\n</kml>\n';
+    }
+    function buildGeoJson(records, opts) {
+        opts = opts || {};
+        const features = locationPoints(records).map(p => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [Number(p.lng.toFixed(7)), Number(p.lat.toFixed(7))] },
+            properties: { id: p.id, uid: p.uid, category: p.category, categoryShort: categoryShort(p.category), colour: (CATEGORY_INFO[p.category] || {}).colour || '#005EB8', place: p.place, accuracyM: p.acc, recordedAt: p.timestamp ? new Date(p.timestamp).toISOString() : null, evacuated: p.evacuated, highRisk: p.highRisk, confidence: p.confidence, osGridRef: toOsGridRef(p.lat, p.lng) },
+        }));
+        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [Number(opts.ccs.lng), Number(opts.ccs.lat)] }, properties: { id: 'CCS', category: 'CCS', categoryShort: 'CCS', place: 'Casualty Clearing Station' } });
+        return JSON.stringify({ type: 'FeatureCollection', name: opts.name || 'Major Incident Triage casualties', generated: new Date(opts.now || Date.now()).toISOString(), features }, null, 1);
+    }
+    // How to read a device fix: is it fresh, and did it probably come from satellites or from Wi-Fi / cell towers?
+    // (Browsers never say which. Satellite fixes usually carry an altitude and are within ~30 m; Wi-Fi fixes
+    // have no altitude and are often 30–150 m, which is what a phone gets indoors.)
+    function classifyLocationFix(fix, now) {
+        const n = normaliseLocation(fix);
+        if (!n || n.lat === undefined) return { ok: false, likelySource: 'none', ageMs: null, ageState: 'none', accuracy: null, indoorHint: false };
+        now = now || Date.now();
+        const acc = _numOrNull(n.acc);
+        const ageMs = n.timestamp !== undefined ? Math.max(0, now - n.timestamp) : null;
+        const ageState = ageMs === null ? 'unknown' : ageMs <= 60 * 1000 ? 'fresh' : ageMs <= 5 * 60 * 1000 ? 'stale' : 'old';
+        let likelySource = 'unknown';
+        if (n.altitude !== undefined && acc !== null && acc <= 35) likelySource = 'gps';
+        else if (acc !== null && acc <= 15) likelySource = 'gps';
+        else if (acc !== null && acc >= 40) likelySource = 'network';
+        return { ok: true, likelySource, ageMs, ageState, accuracy: acc, indoorHint: likelySource === 'network' || (acc !== null && acc > 50) };
+    }
+    // Plain-English explanation of a Geolocation API error, with the fix for the phone in hand.
+    function describeGeoError(code, platform) {
+        platform = platform || 'other';
+        const enable = platform === 'ios'
+            ? 'On iPhone: Settings → Privacy & Security → Location Services must be on, then allow Safari Websites (or this app, if installed to the Home Screen) "While Using the App". Also allow it when the browser asks.'
+            : platform === 'android'
+                ? 'On Android: tap the padlock next to the web address → Permissions → Location → Allow (or Settings → Site settings → Location). Phone-wide location must also be on.'
+                : 'Allow location for this site in the browser\'s site settings, and make sure location is switched on for the device.';
+        if (code === 1) return { kind: 'denied', title: 'Location is blocked for this app', help: enable, retry: false };
+        if (code === 2) return { kind: 'unavailable', title: 'Location unavailable right now', help: 'The phone could not work out where it is. Indoors, GPS cannot see satellites; the phone falls back to Wi-Fi and mobile masts, which can take a minute and is less precise. Move near a window or doorway if you can, and record the floor and room.', retry: true };
+        if (code === 3) return { kind: 'timeout', title: 'Still finding your location', help: 'No fix yet. Indoors this can take a minute or more. Wi-Fi being on helps even without a network connection. Record the floor and room, or pin the position on the map.', retry: true };
+        return { kind: 'unsupported', title: 'Location not supported', help: 'This browser cannot report a position. Record the sector, floor and room, or pin the position on the map.', retry: false };
+    }
+
     const api = {
         QR_SCHEMA_VERSION, QR_DEFAULT_TTL_MS, QR_MAX_FUTURE_SKEW_MS,
         BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
@@ -1650,6 +1873,8 @@
         encodeTransportText, decodeTransportText, isCompressedTransport, compressionSupported, bytesToBase64, base64ToBytes,
         sha256Hex, sealAuditEntry, verifyAuditChain, sealLegacyAudit, mergeImportedAudit, auditKey,
         csvCell, isoWithOffset, migrateLegacyRecords,
+        wgs84ToOsgb36, osgb36ToEastNorth, eastNorthToGridRef, toOsGridRef, formatCoords, mapsLinks, orderNearest, googleMapsRouteUrl, GOOGLE_ROUTE_MAX_POINTS,
+        locationPoints, buildGpx, buildKml, buildGeoJson, classifyLocationFix, describeGeoError,
     };
 
     if (typeof module !== 'undefined' && module.exports) {
