@@ -537,7 +537,9 @@
         white-space: nowrap; border: 0;
     }
     
-    #body-map-modal svg { max-height: 70vh; max-width: 90vw; background: white; border-radius: 10px; }
+    #body-map-modal svg { width: min(92vw, 320px); height: auto; max-height: calc(100vh - 290px); background: white; border-radius: 10px; }
+    #bodymap-form select { flex: 1 1 40%; min-height: 44px; }
+    #body-map-modal .btn-done { width: min(92vw, 320px); margin-top: 12px; }
     #scanner-reader { width: 100%; max-width: 500px; border-radius: 8px; overflow: hidden; background: black; }
 
     #toast {
@@ -790,7 +792,9 @@
     .btn-start span { display: block; font-size: 1rem; font-weight: normal; letter-spacing: 0; margin-top: 4px; }
     body.gloved .btn-start { min-height: 160px; font-size: 2.3rem; }
     .home-row { display: flex; gap: 10px; margin-bottom: 1rem; }
-    .home-row .btn { flex: 1; margin-bottom: 0; font-size: 1.05rem; padding: 1.1rem 0.5rem; }
+    .home-row .btn { flex: 1 1 0; min-width: 0; margin-bottom: 0; font-size: 1.05rem; padding: 1.1rem 0.5rem; }
+    body.gloved .home-row .btn { padding: 1.3rem 0.3rem; font-size: 1.15rem; min-height: 100px; }
+    body.gloved .rs-row .btn { padding: 1.3rem 0.5rem; font-size: 1.2rem; }
     .home-receive { background-color: var(--nhs-dark-blue); }
     .home-more .rs-body .btn { font-size: 1.05rem; padding: 1rem; }
     .install-banner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(0,94,184,0.08); border-left: 6px solid var(--nhs-blue); padding: 0.7rem; border-radius: 8px; margin-bottom: 0.8rem; }
@@ -884,15 +888,15 @@
     .modal-actions { display:flex; gap:10px; flex-wrap:wrap; }
     .modal-actions .btn { flex:1; min-width:120px; }
     .setting-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid #ccc; }
-    .setting-row select { padding:8px; font-size:16px; }
+    .setting-row select { padding:8px; font-size:16px; min-height:44px; }
     /* ---- v0.9.0 location + map (15 Oct 2026) ---- */
     /* Location pill: a button that explains itself when tapped */
-    .gps-status { border:1px solid rgba(255,255,255,0.5); cursor:pointer; font-family:inherit; line-height:1.2; white-space:nowrap; }
+    .gps-status { border:1px solid rgba(255,255,255,0.5); cursor:pointer; font-family:inherit; line-height:1.2; white-space:nowrap; min-height:32px; padding:4px 10px; display:inline-flex; align-items:center; }
     .gps-status.loc-good { color:#ccffcc; border-color:#ccffcc; }
     .gps-status.loc-coarse, .gps-status.loc-stale { color:#fff3a8; border-color:#fff3a8; }
     .gps-status.loc-searching { color:#dbe7ff; border-color:#dbe7ff; }
     .gps-status.loc-denied, .gps-status.loc-none { color:#ffcccc; border-color:#ffcccc; }
-    @media (max-width: 520px) { #header-device, #header-incident:empty { display:none; } .status-bar { padding:0.4rem 0.7rem; font-size:0.8rem; flex-wrap:wrap; row-gap:0.3rem; overflow-x:hidden; } .status-bar .status-item { margin-right:10px; } #gps-indicator { flex-shrink:0; } }
+    @media (max-width: 520px) { #header-device, #header-incident:empty { display:none; } .status-bar { padding:0.4rem 0.7rem; font-size:0.8rem; flex-wrap:wrap; row-gap:0.3rem; overflow-x:hidden; } .status-bar .status-item { margin-right:10px; } #gps-indicator, .status-pills { flex-shrink:0; } }
     @media (max-width: 420px) { #header-user { display:none; } }
     .home-row .home-map { background-color: var(--nhs-green); }
     @media (max-width: 380px) { .home-row .btn { font-size:0.95rem; padding:0.9rem 0.3rem; } .home-row .btn span { font-size:0.72rem !important; } }
@@ -977,7 +981,7 @@
             <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
             <g id="bodymap-marks"></g>
         </svg>
-        <button class="btn btn-secondary" style="width: auto; margin-top: 14px;" onclick="closeBodyMap()">Done</button>
+        <button class="btn btn-primary btn-done" onclick="closeBodyMap()">Done</button>
     </div>
 </div>
 
@@ -999,6 +1003,49 @@
     </div>
 </div>
 
+<div id="cmd-link-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-link-title">
+    <div class="modal-box" style="max-width:420px;">
+        <h3 id="cmd-link-title" style="margin-top:0;">Is there an incident commander?</h3>
+        <p class="qr-meta" style="text-align:left;">If someone has started the incident on the commander screen, link this phone now. Everything you do is then sent to them in the background whenever there is signal (no names or NHS numbers). You can also do this later from ⚙ Settings.</p>
+        <button type="button" class="btn btn-primary" onclick="cmdScanJoin()">📷 Scan the commander's code</button>
+        <button type="button" class="btn btn-secondary" onclick="closeCmdLink(); cmdOpenJoin();">Type the code and PIN</button>
+        <button type="button" class="btn btn-secondary" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue);" onclick="cmdDismissLink()">No commander / not now</button>
+    </div>
+</div>
+<div id="cmd-join-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-join-title">
+    <div class="modal-box" style="max-width:420px;">
+        <h3 id="cmd-join-title" style="margin-top:0;">Join an incident</h3>
+        <p class="qr-meta" style="text-align:left;">Scan the join code on the commander's screen, or type the code and PIN they give you.</p>
+        <button type="button" class="btn btn-primary" onclick="cmdScanJoin()">📷 Scan the commander's code</button>
+        <div class="input-group"><label for="cmd-join-code">Incident code</label><input type="text" id="cmd-join-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="6 letters / digits"></div>
+        <div class="input-group"><label for="cmd-join-pin">PIN</label><input type="text" id="cmd-join-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 digits"></div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="cmdJoin()">Join</button>
+            <button type="button" class="btn btn-secondary" onclick="closeCmdJoin()">Cancel</button>
+        </div>
+    </div>
+</div>
+<div id="cmd-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-title">
+    <div class="modal-box" style="max-width:460px; max-height:90vh; overflow-y:auto;">
+        <h3 id="cmd-title" style="margin-top:0;">Live sharing</h3>
+        <div class="location-status-card good" style="text-align:center;">
+            <div class="qr-meta">Incident code</div>
+            <div id="cmd-code" style="font-size:2.2rem; font-weight:900; letter-spacing:0.15em; font-family:ui-monospace, Menlo, monospace;"></div>
+            <div class="qr-meta" style="margin-top:6px;">PIN</div>
+            <div id="cmd-pin" style="font-size:1.8rem; font-weight:900; letter-spacing:0.2em; font-family:ui-monospace, Menlo, monospace;"></div>
+        </div>
+        <p class="qr-meta" style="text-align:left;" id="cmd-detail-status"></p>
+        <div id="cmd-qr" style="display:flex; justify-content:center; margin:0.5rem 0;"></div>
+        <p class="qr-meta" id="cmd-detail-hint">Triagers: tap "Link to commander" on their start screen and scan this code. The commander screen opens below on this phone; on a laptop or big screen, open the link and enter the PIN.</p>
+        <a id="cmd-open-btn" class="btn btn-primary" href="commander.html" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none;">🖥 Open the commander screen</a>
+        <p style="word-break:break-all; font-size:0.85rem;"><a id="cmd-link" href="commander.html" target="_blank" rel="noopener"></a></p>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="cmdCopyLink()">Copy link and PIN</button>
+            <button type="button" class="btn btn-secondary" id="cmd-end-btn" style="display:none; flex:1 1 100%;" onclick="cmdEndIncident()">End incident for everyone (deletes the server copy)</button>
+            <button type="button" class="btn btn-primary" onclick="closeCmdDetails()">Close</button>
+        </div>
+    </div>
+</div>
 <div id="ack-success-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="ack-success-title">
     <div class="modal-box" style="text-align:center; max-width:460px;">
         <div id="ack-success-icon" style="font-size:3rem; line-height:1;">✓</div>
@@ -1064,9 +1111,23 @@
         <details class="rs-sec settings-sec">
             <summary>Incident &amp; training <span class="rs-sum">incident code, training mode</span></summary>
             <div class="rs-body">
-                <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
+                <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px; min-height:44px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
                 <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
                 <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
+                <div class="setting-row" style="display:block; border-bottom:none;">
+                    <strong>Share live with an incident commander</strong><br>
+                    <small>Sends this phone's triage records (no names or NHS numbers) to a commander screen whenever there is signal. Protected by a code and PIN; the server copy is deleted 24 hours after the last update. The phone keeps working offline as normal.</small>
+                    <p class="qr-meta" id="cmd-status" style="text-align:left; margin:8px 0;">Not sharing.</p>
+                    <div id="cmd-off">
+                        <button type="button" class="btn btn-primary" onclick="cmdStart()">Start sharing<br><span style="font-size:0.8rem; font-weight:normal;">This phone creates the incident</span></button>
+                        <button type="button" class="btn btn-secondary" onclick="cmdOpenJoin()">Join an incident<br><span style="font-size:0.8rem; font-weight:normal;">Code and PIN from another phone</span></button>
+                    </div>
+                    <div id="cmd-on" style="display:none;">
+                        <button type="button" class="btn btn-primary" onclick="cmdShowDetails()">Show code, PIN and link</button>
+                        <button type="button" class="btn btn-secondary" onclick="cmdPush(true)">Send now</button>
+                        <button type="button" class="btn btn-secondary" onclick="cmdStop()">Stop sharing from this phone</button>
+                    </div>
+                </div>
             </div>
         </details>
         <details class="rs-sec settings-sec">
@@ -1221,7 +1282,7 @@
         <p class="qr-meta" id="qr-expiry"></p>
         <button class="btn btn-secondary" style="width:100%; padding:0.8rem; font-size:0.95rem;" onclick="copyCurrentQrText()">Copy QR text</button>
         <div class="modal-actions" style="width:100%;">
-            <button class="btn btn-secondary" style="margin-bottom:0;" onclick="toggleQrFullscreen()" id="btn-qr-full">⛶ Full Screen</button>
+            <button class="btn btn-secondary" style="margin-bottom:0;" onclick="toggleQrFullscreen()" id="btn-qr-full" style="white-space:nowrap;">⛶ Full screen</button>
             <button class="btn btn-secondary" style="margin-bottom:0;" onclick="closeQR()">Close</button>
         </div>
     </div>
@@ -1260,7 +1321,7 @@
         <h3 id="loc-title" style="margin-top:0;">Your location</h3>
         <div id="loc-help-body"></div>
         <div class="modal-actions" style="margin-top:1rem;">
-            <button class="btn btn-primary" onclick="retryLocation()">↻ Try again</button>
+            <button class="btn btn-primary" style="white-space:nowrap;" onclick="retryLocation()">↻ Try again</button>
             <button class="btn btn-secondary" onclick="closeLocationHelp(); showMap();">🗺 Map</button>
             <button class="btn btn-secondary" onclick="closeLocationHelp()">Close</button>
         </div>
@@ -1317,7 +1378,10 @@
         <span class="status-item" id="header-sector" style="color:var(--nhs-yellow);"></span>
         <span class="status-item" id="header-incident" style="font-weight:bold;"></span>
         <span class="status-item" id="header-device" title="Device code (default patient-ID prefix)"></span>
-        <button type="button" id="gps-indicator" class="gps-status loc-searching" style="margin-left: auto;" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
+        <span class="status-pills" style="margin-left:auto; display:inline-flex; gap:6px; flex-shrink:0;">
+            <button type="button" id="cmd-pill" class="gps-status loc-searching" style="display:none;" onclick="cmdShowDetails()" title="Live sharing with the incident commander">☁ Commander</button>
+            <button type="button" id="gps-indicator" class="gps-status loc-searching" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
+        </span>
     </div>
 
     <div id="global-dashboard" class="dashboard">
@@ -1348,6 +1412,10 @@
             <button class="btn btn-secondary" style="padding: 1.3rem;" onclick="setUserRole('NON_HCP')">
                 I'm non-clinical / first aid<br><span style="font-size:0.9rem; font-weight:normal;">Police, fire, first responder (TST only)</span>
             </button>
+            <button class="btn btn-primary" id="btn-role-commander" style="padding: 1.3rem; background:var(--nhs-dark-blue);" onclick="startAsCommander()">
+                🎖 I'm the incident commander<br><span style="font-size:0.9rem; font-weight:normal;">Creates the incident. Triagers link their phones to it and everything they do appears on the commander screen.</span>
+            </button>
+            <p class="qr-meta" id="intro-cmd-status" style="text-align:left; margin:-4px 0 12px;"></p>
             <details class="rs-sec intro-options" id="intro-options">
                 <summary>Options <span class="rs-sum">incident code, sector, patient IDs — all optional</span></summary>
                 <div class="rs-body">
@@ -1702,7 +1770,7 @@
             <h2>Patient Log <small style="font-weight:normal; font-size:0.9rem;">(tap a row to open)</small></h2>
             <div id="alert-strip" style="margin-bottom:10px;"></div>
             <div class="log-tools">
-                <input type="search" id="log-search" placeholder="Search ID, notes, sector, hospital no…" oninput="renderLogTable()" aria-label="Search patients">
+                <input type="search" id="log-search" placeholder="Search patients…" oninput="renderLogTable()" aria-label="Search patients">
                 <select id="log-filter" onchange="renderLogTable()" aria-label="Filter by category">
                     <option value="">All categories</option>
                     <option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option>
@@ -1748,13 +1816,13 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.9.0';
-    const APP_BUILD = '2026-10-15-location-map';
+    const APP_VERSION = '0.10.0';
+    const APP_BUILD = '2026-10-15-commander';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
     const DB_NAME = TRAINING ? 'MITT_TRAINING_DB' : 'MITT_DB';
-    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code']);
+    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander']);
     function lsKey(key) { return TRAINING && TRAINING_SEPARATE_KEYS.has(key) ? 'trn_' + key : key; }
     const QR_DEFAULT_TTL_MS = MITTLib.QR_DEFAULT_TTL_MS;
     const GPS_FRESH_MS = 30 * 1000;       // fixes older than this are not used for "best fix"
@@ -1901,6 +1969,7 @@
         auditLog = storedAudit;
         auditLoaded = true;
         dbReady = true;
+        setTimeout(cmdInit, 0);
         migrated.events.forEach(ev => logAudit(ev.action, ev.patientId, ev.details, Date.now()));
         const queued = pendingAudit; pendingAudit = [];
         queued.forEach(a => appendAudit(a));
@@ -1919,6 +1988,7 @@
     }
     let _lastSaveError = null;
     function saveState() {
+        cmdScanChanges();
         ls('mit_patient_counter', patientCounter);
         ls('mit_triager', triagerName);
         ls('mit_device_prefix', devicePrefix);
@@ -2097,6 +2167,9 @@
             case 'modes-modal': closeModesMenu(); break;
             case 'loc-modal': closeLocationHelp(); break;
             case 'maps-modal': closeMapsChooser(); break;
+            case 'cmd-join-modal': closeCmdJoin(); break;
+            case 'cmd-link-modal': closeCmdLink(); break;
+            case 'cmd-modal': closeCmdDetails(); break;
             default: m.style.display = 'none';
         }
         return true;
@@ -2552,7 +2625,7 @@
         showScreen('home-screen');
         if (isNewSession) renderHomeAlerts();
     }
-    function setUserRole(role) {
+    function setUserRole(role, asCommander) {
         const name = $('intro-triager').value.trim();
         if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
         const prevUser = triagerName, prevRole = userRole;
@@ -2564,11 +2637,27 @@
         const inputCode = MITTLib.normaliseIncidentCode($('intro-incident-code').value);
         if (inputCode !== incidentCode) setIncidentCode(inputCode, 'start screen');
         if (prevUser !== triagerName || prevRole !== role) {
-            logAudit(prevUser && prevUser !== triagerName ? 'USER_CHANGED' : 'USER_SESSION_START', '-', `${triagerName} (${role === 'HCP' ? 'clinician' : 'non-clinical'}) on device ${deviceId}${prevUser && prevUser !== triagerName ? `; previous user ${prevUser}` : ''}; sector ${currentSector || '-'}; ID prefix ${idPrefix()}`, Date.now());
+            logAudit(prevUser && prevUser !== triagerName ? 'USER_CHANGED' : 'USER_SESSION_START', '-', `${triagerName} (${asCommander ? 'incident commander' : role === 'HCP' ? 'clinician' : 'non-clinical'}) on device ${deviceId}${prevUser && prevUser !== triagerName ? `; previous user ${prevUser}` : ''}; sector ${currentSector || '-'}; ID prefix ${idPrefix()}`, Date.now());
         }
         saveState();
         applyRole(role, true);
+        // Triagers link to the commander at the start, so everything they do reaches the commander screen.
+        if (!asCommander && !cmdActive() && !cmdLinkDismissed()) setTimeout(cmdOfferLink, 150);
     }
+    // The incident commander picks that role on the first screen: it creates the incident and opens the screen.
+    async function startAsCommander() {
+        const name = $('intro-triager').value.trim();
+        if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
+        if (cmdActive()) { setUserRole('HCP', true); cmdShowDetails(); return; }
+        if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showBlockingError('No connection', 'Creating the incident needs a signal once. Try again when you have Wi-Fi or mobile data.'); return; }
+        setUserRole('HCP', true);
+        await cmdStart({ quiet: true, commander: true });
+    }
+    function cmdLinkDismissed() { try { return sessionStorage.getItem('mit_cmd_link_dismissed') === '1'; } catch (e) { return false; } }
+    function cmdOfferLink() { if (cmdActive()) return; $('cmd-link-modal').style.display = 'flex'; }
+    function closeCmdLink() { $('cmd-link-modal').style.display = 'none'; }
+    function cmdDismissLink() { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); } catch (e) {} closeCmdLink(); renderHomeAlerts(); }
+    function cmdScanJoin() { closeCmdLink(); closeCmdJoin(); closeModesMenu(); scanMode = 'JOIN'; startScanner(); }
     function updateIncidentHeader() { setText('header-incident', incidentCode ? `Incident ${incidentCode}` : ''); }
     function setIncidentCode(value, where) {
         const code = MITTLib.normaliseIncidentCode(value);
@@ -3523,7 +3612,7 @@
         box.style.height = _qrFullscreen ? window.innerHeight + 'px' : ''; // 100vh overshoots the visible area in iOS Safari
         box.style.justifyContent = _qrFullscreen ? 'center' : '';
         box.style.background = _qrFullscreen ? '#fff' : '';
-        setText('btn-qr-full', _qrFullscreen ? '↙ Exit Full Screen' : '⛶ Full Screen');
+        setText('btn-qr-full', _qrFullscreen ? '↙ Exit' : '⛶ Full screen');
     }
 
     // ---------- NFC tags (Android Chrome only; tag read/write — not phone-to-phone) ----------
@@ -3569,6 +3658,7 @@
             HANDOVER: ['Scan colleague identity', "Scan the colleague's “My ID” QR."],
             ACK: ["Scan receiver's acknowledgement", "Scan the ACK QR on the receiver's phone."],
             TACK: ["Scan receiver's confirmation", "Scan the confirmation QR on the receiver's phone."],
+            JOIN: ["Link to the incident commander", "Scan the join code on the commander's phone or screen."],
         };
         const t = titles[scanMode] || ['Receive (scan)', 'Any Major Incident Triage QR. For multi-part transfers keep scanning — the camera stays on and parts can be in any order.'];
         setText('scan-title', t[0]); setText('scan-instruction', t[1]);
@@ -3635,6 +3725,7 @@
             stopScanner();
             if (parsed.t === 'MIT_P' || parsed.type === 'MIT_FULL_PATIENT') { handlePatientWrapper(parsed); return; }
             if (parsed.t === 'MIT_USER') { handleIdentityScan(parsed); return; }
+            if (parsed.t === 'MIT_JOIN') { handleJoinScan(parsed); return; }
             if (parsed.t === 'MIT_ACK') { handleAck(parsed); return; }
             if (parsed.t === 'MIT_TACK') { handleTransferAck(parsed); return; }
             if (parsed.t === 'MIT_BULK') { handleBulkWrapper(parsed); return; }
@@ -4367,8 +4458,8 @@
         const rt = pendingReTriageUid ? indexByUid(pendingReTriageUid) : -1;
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));
         const parts = alertSummary(patientAlerts(Date.now()));
-        if (!parts.length) return;
-        box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
+        if (parts.length) box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
+        if (typeof cmdActive === 'function' && !cmdActive() && !cmdLinkDismissed()) box.appendChild(el('div', { className: 'alert-card info', id: 'home-cmd-link', onclick: cmdOfferLink }, [el('strong', { text: '☁ Not linked to an incident commander. ' }), 'Tap to scan their code or type the code and PIN.']));
     }
     function showLog() {
         commitDirtyFields('Opening log');
@@ -4997,6 +5088,221 @@
         // Only reload when the user asked for the update (the first install must not reload mid-triage).
         navigator.serviceWorker.addEventListener('controllerchange', () => { if (_swUpdateRequested) { _swUpdateRequested = false; location.reload(); } });
     }
+
+    // ================= INCIDENT COMMANDER (live sharing over the internet) =================
+    // Records go to /api/incident (Netlify function + Blobs) whenever something changes and there is signal.
+    // Nothing here blocks triage: pushes run in the background, retry on failure, and the phone stays the record of truth.
+    const CMD_PUSH_DEBOUNCE_MS = 3000, CMD_HEARTBEAT_MS = 60 * 1000, CMD_FETCH_TIMEOUT_MS = 15 * 1000, CMD_BATCH = 200;
+    const CMD = { cfg: null, dirty: new Set(), seen: {}, timer: null, heartbeat: null, inflight: false, lastSentAt: 0, lastError: '', failStreak: 0, sentTotal: 0 };
+    function cmdActive() { return !!(CMD.cfg && CMD.cfg.code && CMD.cfg.pin); }
+    function cmdSaveCfg() { ls('mit_commander', CMD.cfg ? JSON.stringify(CMD.cfg) : null); }
+    function cmdInit() {
+        CMD.cfg = lsJSON('mit_commander', null);
+        if (!cmdActive()) { CMD.cfg = null; cmdRenderStatus(); return; }
+        cmdQueueAll();
+        cmdStartHeartbeat();
+        cmdSchedule(500);
+        cmdRenderStatus();
+    }
+    function cmdStartHeartbeat() { if (CMD.heartbeat) clearInterval(CMD.heartbeat); CMD.heartbeat = setInterval(() => { if (cmdActive()) cmdPush(); }, CMD_HEARTBEAT_MS); }
+    // Called on every save: anything new or changed since the last scan is queued (covers new patients, edits, imports and merges).
+    function cmdScanChanges() {
+        if (!cmdActive()) return;
+        let changed = false;
+        const live = new Set();
+        incidentLog.forEach(e => {
+            if (!e || !e.uid) return;
+            live.add(e.uid);
+            const sig = `${e._rev || 0}:${e.updatedAt || 0}:${e.timestamp || 0}:${e.category}:${e.evacuated ? 1 : 0}:${e.lastReassessed || 0}`;
+            if (CMD.seen[e.uid] !== sig) { CMD.seen[e.uid] = sig; CMD.dirty.add(e.uid); changed = true; }
+        });
+        Object.keys(CMD.seen).forEach(u => { if (!live.has(u)) delete CMD.seen[u]; });
+        if (changed) { cmdSchedule(CMD_PUSH_DEBOUNCE_MS); cmdRenderStatus(); }
+    }
+    function cmdQueueAll() { CMD.seen = {}; cmdScanChanges(); incidentLog.forEach(e => { if (e && e.uid) CMD.dirty.add(e.uid); }); }
+    function cmdSchedule(ms) { if (CMD.timer) clearTimeout(CMD.timer); CMD.timer = setTimeout(() => { CMD.timer = null; cmdPush(); }, ms); }
+    async function cmdFetch(path, opts) {
+        opts = opts || {};
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const to = ctrl ? setTimeout(() => ctrl.abort(), CMD_FETCH_TIMEOUT_MS) : null;
+        const headers = { 'Content-Type': 'application/json' };
+        if (opts.pin) headers['x-incident-pin'] = opts.pin;
+        try {
+            const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+            let body = null;
+            try { body = await r.json(); } catch (e) { body = null; }
+            return { status: r.status, body: body || {} };
+        } finally { if (to) clearTimeout(to); }
+    }
+    async function cmdPush(manual) {
+        if (!cmdActive()) return;
+        if (CMD.inflight) { cmdSchedule(CMD_PUSH_DEBOUNCE_MS); return; }
+        if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { CMD.lastError = 'offline'; cmdRenderStatus(); if (manual) showToast('No connection. Changes are queued and will be sent when signal returns.'); return; }
+        const uids = Array.from(CMD.dirty);
+        const batch = uids.map(u => incidentLog[indexByUid(u)]).filter(Boolean).slice(0, CMD_BATCH).map(e => { const c = MITTLib.clonePatientRecord(e); c.uid = e.uid; return c; });
+        uids.forEach(u => { if (indexByUid(u) === -1) CMD.dirty.delete(u); });
+        CMD.inflight = true;
+        try {
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined } });
+            if (r.status === 200) {
+                batch.forEach(x => CMD.dirty.delete(x.uid));
+                CMD.lastSentAt = Date.now();
+                CMD.sentTotal += r.body.accepted || 0;
+                if (CMD.failStreak) logAudit('COMMANDER_RECONNECTED', '-', `Sending to commander ${CMD.cfg.code} resumed after ${CMD.failStreak} failed attempt(s)`, Date.now());
+                CMD.failStreak = 0; CMD.lastError = '';
+                if (batch.length) logAudit('COMMANDER_PUSH', '-', `${batch.length} record(s) sent to commander ${CMD.cfg.code}: ${r.body.accepted || 0} accepted, ${r.body.kept || 0} already newer, ${(r.body.rejected || []).length} rejected`, Date.now(), { uids: batch.map(x => x.uid) });
+                if (manual) showToast(batch.length ? `Sent ${batch.length} record(s) to the commander.` : 'Commander is up to date.');
+                if (CMD.dirty.size) cmdSchedule(300);
+            } else if (r.status === 401 || r.status === 404 || r.status === 410) {
+                const why = r.status === 410 ? 'the incident expired on the server (24 hours with no updates)' : r.status === 404 ? 'the incident was ended' : 'the PIN was refused';
+                cmdStopLocal(`Sharing stopped: ${why}.`);
+                showToast(`Live sharing stopped: ${why}.`, { alert: true, long: true });
+            } else {
+                throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
+            }
+        } catch (e) {
+            CMD.failStreak++;
+            CMD.lastError = e && e.name === 'AbortError' ? 'timed out' : ((e && e.message) || 'network error');
+            if (CMD.failStreak === 1) logAudit('COMMANDER_PUSH_FAILED', '-', `Could not send to commander ${CMD.cfg.code}: ${CMD.lastError}. Will retry.`, Date.now());
+            if (manual) showToast(`Could not reach the server (${CMD.lastError}). Will keep trying.`, { alert: true });
+            if (cmdActive()) cmdSchedule(Math.min(5 * 60 * 1000, CMD_HEARTBEAT_MS * Math.min(CMD.failStreak, 5)));
+        } finally {
+            CMD.inflight = false;
+            cmdRenderStatus();
+        }
+    }
+    function cmdRenderStatus() {
+        const pill = $('cmd-pill');
+        const active = cmdActive();
+        const intro = $('intro-cmd-status');
+        if (intro) intro.textContent = active ? `This phone is ${CMD.cfg.commander ? 'the commander of' : 'linked to'} incident ${CMD.cfg.code}.` : '';
+        if (pill) {
+            pill.style.display = active ? '' : 'none';
+            if (active) {
+                const pending = CMD.dirty.size;
+                const state = CMD.lastError ? 'stale' : pending ? 'searching' : 'good';
+                pill.className = 'gps-status loc-' + state;
+                pill.textContent = CMD.lastError ? `☁ ${CMD.cfg.code} ✗` : pending ? `☁ ${CMD.cfg.code} …` : `☁ ${CMD.cfg.code} ✓`;
+                pill.title = CMD.lastError ? `Commander: not sent (${CMD.lastError}). Retrying.` : pending ? 'Commander: sending…' : `Commander: up to date${CMD.lastSentAt ? ' ' + fmtTime(CMD.lastSentAt) : ''}`;
+            }
+        }
+        const off = $('cmd-off'), on = $('cmd-on');
+        if (off) off.style.display = active ? 'none' : '';
+        if (on) on.style.display = active ? '' : 'none';
+        const txt = !active ? 'Not sharing.' : `Sharing as ${CMD.cfg.role === 'creator' ? 'the phone that started' : 'a member of'} incident ${CMD.cfg.code}. ${CMD.lastError ? `Last attempt failed (${CMD.lastError}); ${CMD.dirty.size} change(s) waiting.` : CMD.dirty.size ? `${CMD.dirty.size} change(s) waiting to send.` : CMD.lastSentAt ? `Up to date, last sent ${fmtTime(CMD.lastSentAt)}.` : 'Nothing sent yet.'}`;
+        setText('cmd-status', txt);
+        setText('cmd-detail-status', txt);
+    }
+    async function cmdStart(opts) {
+        opts = opts || {};
+        if (cmdActive()) { cmdShowDetails(); return; }
+        if (!opts.quiet) {
+            const ok = await inAppConfirm({ title: 'Start live sharing?', message: `This phone's triage records (category, timings, interventions, location, notes; no names or NHS numbers) will be sent over the internet to a commander screen protected by a code and PIN.${TRAINING ? '\n\nTRAINING mode: the commander screen will be marked as training.' : ''}\n\nThe server copy is deleted 24 hours after the last update. You can stop at any time.`, okLabel: 'Start sharing' });
+            if (!ok) return;
+        }
+        if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showBlockingError('No connection', 'Starting needs a signal once, to create the incident. Try again when you have Wi-Fi or mobile data; after that, records are queued and sent whenever signal returns.'); return; }
+        try {
+            const r = await cmdFetch('/api/incident', { method: 'POST', body: { deviceId, triager: triagerName, name: '', incidentCode, training: TRAINING, app: APP_VERSION } });
+            if (r.status !== 201 || !r.body.code) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
+            CMD.cfg = { code: r.body.code, pin: r.body.pin, role: 'creator', commander: !!opts.commander, startedAt: Date.now() };
+            cmdSaveCfg();
+            logAudit('COMMANDER_SHARE_START', '-', `Started live sharing: incident ${CMD.cfg.code} created by this phone${opts.commander ? ' (incident commander)' : ''}`, Date.now());
+            cmdQueueAll();
+            cmdStartHeartbeat();
+            cmdSchedule(300);
+            cmdRenderStatus();
+            renderHomeAlerts();
+            closeModesMenu();
+            cmdShowDetails();
+        } catch (e) {
+            showBlockingError(opts.commander ? 'Could not create the incident' : 'Could not start sharing', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Triage carries on as normal; try again later.`);
+        }
+    }
+    function cmdOpenJoin() { $('cmd-join-code').value = ''; $('cmd-join-pin').value = ''; $('cmd-join-modal').style.display = 'flex'; setTimeout(() => $('cmd-join-code').focus(), 50); }
+    function closeCmdJoin() { $('cmd-join-modal').style.display = 'none'; }
+    async function cmdJoin(codeIn, pinIn) {
+        const code = String(codeIn !== undefined ? codeIn : $('cmd-join-code').value).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+        const pin = String(pinIn !== undefined ? pinIn : $('cmd-join-pin').value).replace(/\D/g, '').slice(0, 6);
+        if (code.length !== 6 || pin.length !== 6) { showToast('The code is 6 letters or digits and the PIN is 6 digits.', { alert: true }); return false; }
+        try {
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(code)}/join`, { method: 'POST', pin, body: { deviceId, triager: triagerName, app: APP_VERSION } });
+            if (r.status !== 200) { showBlockingError('Could not join', r.body && r.body.message ? r.body.message : `Server replied ${r.status}.`); return false; }
+            if (!!r.body.training !== TRAINING) { showBlockingError('Training mismatch', r.body.training ? 'That incident is a training incident, and this phone is in real use.' : 'That incident is real, and this phone is in training mode.'); return false; }
+            CMD.cfg = { code, pin, role: 'member', startedAt: Date.now() };
+            cmdSaveCfg();
+            logAudit('COMMANDER_JOINED', '-', `Joined live sharing for incident ${code}`, Date.now());
+            if (r.body.incidentCode && !incidentCode) setIncidentCode(r.body.incidentCode, 'commander join');
+            cmdQueueAll();
+            cmdStartHeartbeat();
+            cmdSchedule(300);
+            cmdRenderStatus();
+            closeCmdJoin(); closeCmdLink(); closeModesMenu();
+            renderHomeAlerts();
+            showToast(`Linked to incident ${code}. Everything you record is sent to the commander in the background.`);
+            return true;
+        } catch (e) {
+            showBlockingError('Could not join', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Check the signal and try again.`);
+            return false;
+        }
+    }
+    async function handleJoinScan(parsed) {
+        const code = String(parsed.c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6), pin = String(parsed.p || '').replace(/\D/g, '').slice(0, 6);
+        if (code.length !== 6 || pin.length !== 6) { showBlockingError('Not a valid join code', 'The scanned code is damaged. Ask for the code and PIN and type them in Settings.'); return; }
+        if (cmdActive() && CMD.cfg.code === code) { showToast(`Already sharing with incident ${code}.`); return; }
+        const ok = await inAppConfirm({ title: `Join incident ${code}?`, message: `This phone's triage records (no names or NHS numbers) will be sent to that incident's commander screen whenever there is signal.${cmdActive() ? `\n\nThis replaces the current sharing with incident ${CMD.cfg.code}.` : ''}`, okLabel: 'Join' });
+        if (!ok) return;
+        await cmdJoin(code, pin);
+    }
+    function cmdShowDetails() {
+        if (!cmdActive()) { openModesMenu(); return; }
+        setText('cmd-code', CMD.cfg.code);
+        setText('cmd-pin', CMD.cfg.pin);
+        const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}commander.html#${CMD.cfg.code}`;
+        const a = $('cmd-link'); a.href = link; a.textContent = link;
+        $('cmd-open-btn').href = link;
+        setText('cmd-title', CMD.cfg.commander ? 'Incident commander' : 'Live sharing');
+        setText('cmd-detail-hint', CMD.cfg.role === 'creator'
+            ? 'Triagers: on their start screen, pick a role, then "Scan the commander\'s code" and point the camera at this QR. The commander screen opens below on this phone with no sign-in; on a laptop or big screen, open the link and enter the PIN.'
+            : 'Show this QR to another triager so they can link too. The commander screen opens below on this phone with no sign-in.');
+        $('cmd-end-btn').style.display = CMD.cfg.role === 'creator' ? '' : 'none';
+        try { _renderQR($('cmd-qr'), JSON.stringify({ t: 'MIT_JOIN', c: CMD.cfg.code, p: CMD.cfg.pin }), Math.min(220, qrSize())); } catch (e) { clearChildren($('cmd-qr')); }
+        cmdRenderStatus();
+        $('cmd-modal').style.display = 'flex';
+    }
+    function closeCmdDetails() { $('cmd-modal').style.display = 'none'; }
+    function cmdCopyLink() { if (!cmdActive()) return; copyText(`Incident commander view: ${$('cmd-link').href}\nCode ${CMD.cfg.code}  PIN ${CMD.cfg.pin}`, 'Link, code and PIN copied.'); }
+    function cmdStopLocal(reason) {
+        const code = CMD.cfg ? CMD.cfg.code : '';
+        CMD.cfg = null; cmdSaveCfg();
+        CMD.dirty.clear(); CMD.lastError = ''; CMD.failStreak = 0;
+        if (CMD.timer) { clearTimeout(CMD.timer); CMD.timer = null; }
+        if (CMD.heartbeat) { clearInterval(CMD.heartbeat); CMD.heartbeat = null; }
+        logAudit('COMMANDER_STOPPED', '-', `${reason || 'Stopped live sharing'} (incident ${code})`, Date.now());
+        cmdRenderStatus();
+        renderHomeAlerts();
+    }
+    async function cmdStop() {
+        if (!cmdActive()) return;
+        const ok = await inAppConfirm({ title: 'Stop sharing from this phone?', message: `Records already sent stay on the commander screen until the incident expires or is ended. Other phones are not affected.`, okLabel: 'Stop sharing' });
+        if (!ok) return;
+        cmdStopLocal('Stopped live sharing from this phone');
+        showToast('Live sharing stopped.');
+    }
+    async function cmdEndIncident() {
+        if (!cmdActive()) return;
+        const ok = await inAppConfirm({ title: 'End the incident for everyone?', message: `Deletes the server copy now. Every phone stops sending and the commander screen shows nothing more. Phones keep their own records.`, okLabel: 'End incident', danger: true });
+        if (!ok) return;
+        try {
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/close`, { method: 'POST', pin: CMD.cfg.pin, body: {} });
+            if (r.status !== 200 && r.status !== 404 && r.status !== 410) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
+            logAudit('COMMANDER_ENDED', '-', `Ended incident ${CMD.cfg.code} on the server (${r.body.deleted || 0} items deleted)`, Date.now());
+            closeCmdDetails();
+            cmdStopLocal('Ended the incident for everyone');
+            showToast('Incident ended on the server.');
+        } catch (e) { showBlockingError('Could not end the incident', `${(e && e.message) || 'Network error.'} Try again when you have signal.`); }
+    }
+    window.addEventListener('online', () => { if (cmdActive()) { CMD.lastError = ''; cmdSchedule(500); } });
+    window.addEventListener('offline', () => { if (cmdActive()) cmdRenderStatus(); });
 
     // ================= START-UP =================
     setInterval(() => {

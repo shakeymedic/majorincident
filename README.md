@@ -32,7 +32,11 @@ Drag-and-drop or `netlify deploy --dir .`. The `_headers` file sets a strict CSP
 ## Project layout
 
 ```
-index.html        Single-page app — UI, triage flows, scanner, log, map
+index.html        Single-page app — UI, triage flows, scanner, log, map, live sharing
+commander.html    Incident commander dashboard (code + PIN; reads /api/incident every 30 s)
+netlify/functions Serverless backend for live sharing (incident.mjs) and the hourly expiry sweep
+netlify/lib       Backend logic, testable in plain Node (incident-core.js)
+netlify.toml      Netlify build/functions settings; _redirects keeps tooling paths unpublished
 lib.js            Pure helpers shared with the test suite (QR schema, merge, triage logic)
 sw.js             Service worker — precaches all local + vendored assets, caches OSM tiles
 manifest.json     PWA manifest
@@ -119,6 +123,10 @@ Use **one iPhone and one Android phone** for at least one full run, and do steps
 8. Log → **Verify audit trail**, then export the Casualty Register, Audit Trail and Full Incident Archive and open them on a computer.
 9. Record the scan distance, lighting and number of attempts; scanning performance varies by phone camera and screen.
 
+## Live sharing with an incident commander (optional, needs signal)
+
+Off by default. When a phone starts or joins sharing, its triage records go over HTTPS to `/api/incident/<code>/records` on this site, protected by the incident code and PIN. The server keeps only the minimised record (the same fields as a QR handover: no names, no NHS numbers) for 24 hours after the last update, then deletes it. The phones remain the record of truth and keep the audit trail. The commander page is an aid for a live incident, not a clinical record system. Netlify Functions and Blobs run on AWS; the region is not selectable, so check with your information governance lead before using it with real patients.
+
 ## Privacy posture
 
 - **No names, DOB, or NHS numbers are stored by default.** The free-text demographics field accepts anything the user types; teams should set local guidance accordingly.
@@ -129,6 +137,7 @@ Use **one iPhone and one Android phone** for at least one full run, and do steps
 
 ```bash
 node tests/lib.test.js          # logic: merge, IDs, transfer, audit chain, triage flows (no dependencies)
+node tests/incident-core.test.js # live-sharing backend with an in-memory store (no dependencies)
 node tests/syntax-compat.js     # fails on JavaScript syntax too new for older iPhones (needs npm install)
 npm install && node tests/e2e.js # real app in headless Chromium, simulating two phones
 ```
@@ -143,6 +152,15 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.10.0 build 2026-10-15-commander — incident commander dashboard (live sharing)
+
+- **Start screen roles**: a third button, **"I'm the incident commander"**, creates the incident on the spot (needs signal once), shows the code, PIN and join QR, and offers **Open the commander screen**, which signs in by itself on that phone. Everyone else is asked, right after picking their role, **"Is there an incident commander?"** with *Scan the commander's code*, *Type the code and PIN* or *No commander / not now*; an unlinked phone also shows a tappable reminder on the home screen until it links or the question is dismissed for the session. Once linked, everything the phone records is sent in the background.
+- **Share with commander** (⚙ Settings → Incident & training): one phone starts sharing and gets a 6-character incident code and a 6-digit PIN; other phones join by typing them or by scanning the join QR with 📷 Receive patient. From then on each phone sends its triage records in the background whenever it has signal (3 seconds after a change, plus a heartbeat every minute); nothing in the triage flow waits for the network, and a phone with no signal queues changes and sends them later. The blue bar shows a ☁ pill with the code and ✓ / … / ✗.
+- **commander.html**: any browser, tablet or laptop. Code + PIN sign-in, counts by category (on scene and total), a map with clustered markers, accuracy circles and the CCS, a "needs attention" list (overdue reassessments, tourniquets with their time, high risk, breathing not detected), the casualty table priority-first with place, OS grid reference, interventions, reassessment due time and which phone reported it, a by-sector breakdown, phones reporting with "not heard from" after 5 minutes, and GPX / KML / GeoJSON / CSV downloads. Refreshes every 30 seconds (cheap when nothing changed). **Wall display** (button, the W key, or `commander.html#CODE/wall`) fits the counts, map, needs-attention list and phones on one screen with large type for a screen in the command post.
+- **Backend**: a Netlify Function (`netlify/functions/incident.mjs`, logic in `netlify/lib/incident-core.js`) with Netlify Blobs. What leaves the phone is the same minimised record as the QR transfer (no names or NHS numbers; field caps enforced again server-side). Code and PIN are both needed for every request (PIN hashed with a salt, constant-time compare, 25 wrong PINs lock a client out for 15 minutes), an older copy of a record never overwrites a newer one, the server copy is deleted 24 hours after the last update (on access and by an hourly sweep), and the phone that started can "End incident for everyone" to delete it at once. Every start / join / push / failure / stop is in the phone's audit chain; the function logs create / read / close events.
+- **Training mode** incidents are marked as such on the commander screen, and a training phone cannot join a real incident (or the reverse).
+- 15 backend unit tests (`node tests/incident-core.test.js`) and 13 new end-to-end tests that run the real function code in-process behind the test web server.
 
 ### v0.9.0 build 2026-10-15-location-map — location, map and phone layout
 

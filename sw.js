@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v16-2026-10-15-location-map';
+const CACHE_NAME = 'mit-triage-v17-2026-10-15-commander';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 const TILE_CACHE_MAX = 600;
@@ -12,6 +12,7 @@ const PRECACHE_URLS = [
     './icon-512.png',
     './icon-maskable-512.png',
     './quick-reference.html',
+    './commander.html',
     './lib.js',
     './vendor/qrcode.min.js',
     './vendor/html5-qrcode.min.js',
@@ -66,6 +67,8 @@ self.addEventListener('fetch', event => {
     // Only cache GET requests; never cache POST/etc.
     if (req.method !== 'GET') return;
     const url = new URL(req.url);
+    // Live data for the incident commander is never served from cache.
+    if (url.pathname.indexOf('/api/') === 0 || url.pathname.indexOf('/.netlify/') === 0) return;
     // Map tile traffic: stale-while-revalidate into a separate, size-capped cache
     if (/tile\.openstreetmap\.org$/.test(url.hostname)) {
         event.respondWith(

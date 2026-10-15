@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#003087">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org; connect-src 'self' https://*.tile.openstreetmap.org; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Incident Commander — Major Incident Triage</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="vendor/markercluster.css">
+<link rel="stylesheet" href="vendor/markercluster-default.css">
+<script src="lib.js"></script>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/markercluster.js"></script>
+<style>
+    :root { --nhs-blue:#005EB8; --nhs-dark-blue:#003087; --nhs-green:#007F3B; --nhs-red:#DA291C; --nhs-yellow:#FAE100; --nhs-grey:#4C6272; --bg:#F0F4F5; --card:#fff; --text:#212b32; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size:16px; }
+    header { background:var(--nhs-dark-blue); color:#fff; padding:0.6rem 1rem; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    header h1 { font-size:1.15rem; margin:0; flex:1; min-width:200px; }
+    header .meta { font-size:0.85rem; opacity:0.95; }
+    .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:0.8rem; font-weight:bold; border:1px solid rgba(255,255,255,0.6); white-space:nowrap; }
+    .pill.live { color:#ccffcc; border-color:#ccffcc; }
+    .pill.bad { color:#ffcccc; border-color:#ffcccc; }
+    .pill.wait { color:#fff3a8; border-color:#fff3a8; }
+    main { padding:0.8rem; max-width:1500px; margin:0 auto; }
+    .card { background:var(--card); border-radius:10px; padding:0.9rem 1rem; margin-bottom:0.8rem; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+    .card h2 { font-size:1.05rem; margin:0 0 0.5rem; color:var(--nhs-blue); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .card h2 small { font-weight:normal; color:var(--nhs-grey); font-size:0.85rem; }
+    .btn { border:none; border-radius:8px; padding:0.7rem 1rem; font-size:1rem; font-weight:bold; color:#fff; background:var(--nhs-blue); cursor:pointer; font-family:inherit; min-height:44px; }
+    .btn.sec { background:var(--nhs-grey); }
+    .btn.small { padding:0.4rem 0.7rem; font-size:0.85rem; min-height:36px; }
+    .btn:disabled { opacity:0.5; }
+    input[type=text], input[type=password] { font-size:1.1rem; padding:0.7rem; border:2px solid #aeb7bd; border-radius:8px; width:100%; font-family:inherit; }
+    label { display:block; font-weight:bold; margin:0.6rem 0 0.25rem; }
+    .counts { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:8px; }
+    .count { border-radius:8px; padding:0.6rem; text-align:center; color:#fff; }
+    .count .n { font-size:2rem; font-weight:900; line-height:1; }
+    .count .l { font-size:0.8rem; font-weight:bold; margin-top:4px; }
+    .count .s { font-size:0.75rem; opacity:0.9; }
+    .grid2 { display:grid; grid-template-columns:1fr; gap:0.8rem; }
+    .grid2 > * , .card { min-width:0; }
+    #table-card { overflow-x:auto; }
+    @media (max-width:600px) { .card h2 small { display:block; width:100%; } header h1 { flex:1 1 100%; } }
+    @media (min-width:1000px) { .grid2 { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1fr); } }
+    #map { height:60vh; min-height:360px; border-radius:8px; border:2px solid #ccc; background:#e8ecef; z-index:1; }
+    table { width:100%; border-collapse:collapse; font-size:0.9rem; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #e3e7ea; vertical-align:top; }
+    th { background:var(--bg); font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--nhs-grey); position:sticky; top:0; }
+    tr.evac td { opacity:0.55; }
+    tr.overdue td:first-child { border-left:4px solid var(--nhs-red); }
+    .tbl-wrap { max-height:70vh; overflow:auto; }
+    .cat-chip { display:inline-block; padding:3px 10px; border-radius:12px; font-weight:bold; font-size:0.85rem; white-space:nowrap; }
+    .muted { color:var(--nhs-grey); font-size:0.85rem; }
+    .warn { background:#fff3a8; border-left:5px solid #c9a700; padding:8px 10px; border-radius:6px; margin-bottom:0.6rem; }
+    .danger { background:#ffe3e0; border-left:5px solid var(--nhs-red); padding:8px 10px; border-radius:6px; margin-bottom:0.6rem; }
+    .training { background:#ff9800; color:#000; text-align:center; font-weight:bold; padding:6px; }
+    .phones { display:flex; gap:8px; flex-wrap:wrap; }
+    .phone { border:1px solid #d7dde2; border-radius:8px; padding:6px 10px; font-size:0.85rem; min-width:160px; }
+    .phone.stale { border-color:var(--nhs-red); background:#ffe3e0; }
+    .phone b { display:block; }
+    .mk-wrap { background:none; border:none; }
+    .mk { width:34px; height:34px; border-radius:50%; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:0.72rem; letter-spacing:-0.3px; }
+    .mk.mk-tst { border:3px dashed #222; }
+    .mk.mk-evac { opacity:0.55; }
+    .mk.mk-ccs { width:40px; height:28px; border-radius:6px; background:#007F3B; color:#fff; font-size:0.8rem; }
+    .map-pop { font-size:0.95rem; min-width:190px; }
+    .map-pop-meta { font-size:0.82rem; color:#4C6272; margin-top:3px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .hidden { display:none !important; }
+    /* Wall display: one screen, no scrolling, readable from across a room */
+    body.wall { overflow:hidden; height:100vh; display:flex; flex-direction:column; }
+    body.wall header { font-size:1.2rem; padding:0.5rem 1.2rem; }
+    body.wall header h1 { font-size:1.6rem; }
+    body.wall header .meta, body.wall .pill { font-size:1.05rem; }
+    body.wall #clock { font-size:1.6rem; font-weight:900; font-variant-numeric:tabular-nums; }
+    body.wall main { flex:1; min-height:0; display:flex; flex-direction:column; padding:0.6rem; max-width:none; width:100%; }
+    body.wall #dash { flex:1; min-height:0; display:flex; flex-direction:column; gap:0.6rem; }
+    body.wall .wall-grid { flex:1; }
+    body.wall .count-wrap { margin:0; }
+    body.wall .counts { grid-template-columns:repeat(7, 1fr); }
+    body.wall .count .n { font-size:4.2rem; }
+    body.wall .count .l { font-size:1.15rem; }
+    body.wall .count .s { font-size:0.95rem; }
+    body.wall #counts-note, body.wall #signin, body.wall footer, body.wall #sectors-card, body.wall #table-card, body.wall .map-btns { display:none !important; }
+    body.wall .wall-grid { display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr); grid-template-rows:minmax(0, 1fr); gap:0.6rem; min-height:0; }
+    body.wall .wall-left, body.wall .wall-right { display:flex; flex-direction:column; min-height:0; gap:0.6rem; }
+    body.wall .wall-left .card, body.wall .wall-right .card { margin:0; }
+    body.wall #map-card { flex:1; display:flex; flex-direction:column; min-height:0; }
+    body.wall #map { flex:1; height:auto; min-height:0; }
+    body.wall #attention-card { flex:1; min-height:0; overflow:auto; font-size:1.3rem; }
+    body.wall #attention-card h2, body.wall #phones-card h2 { font-size:1.3rem; }
+    body.wall #attention .cat-chip { font-size:1.1rem; padding:5px 14px; }
+    body.wall #phones-card { max-height:32%; overflow:auto; }
+    body.wall .phone { font-size:1.05rem; }
+    body.wall .count-wrap { padding:0.6rem 0.8rem; margin:0; }
+    @media (max-width:1100px) { body.wall .wall-grid { grid-template-columns:1fr; grid-template-rows:minmax(0, 3fr) minmax(0, 2fr); } body.wall .counts { grid-template-columns:repeat(4, 1fr); } body.wall .count .n { font-size:3rem; } }
+    footer { text-align:center; color:var(--nhs-grey); font-size:0.8rem; padding:1rem; }
+</style>
+</head>
+<body>
+<header>
+    <h1>Incident Commander <span class="meta" id="hdr-incident"></span></h1>
+    <span class="pill wait" id="status-pill">Not connected</span>
+    <span class="meta" id="hdr-updated"></span>
+    <span id="clock" class="meta"></span>
+    <button type="button" class="btn small sec" id="btn-refresh" onclick="refreshNow()">Refresh now</button>
+    <button type="button" class="btn small sec" id="btn-wall" onclick="toggleWall()" style="display:none;">Wall display</button>
+    <button type="button" class="btn small sec" id="btn-signout" onclick="signOut()" style="display:none;">Sign out</button>
+</header>
+<div class="training hidden" id="training-banner">TRAINING INCIDENT — practice data, not real patients</div>
+<main>
+    <div class="card" id="signin">
+        <h2>Open an incident</h2>
+        <p class="muted">Enter the code and PIN shown on the commander's phone (start screen → "I'm the incident commander", or ⚙ Settings → Incident &amp; training). On that phone this page signs in by itself. It refreshes every 30 seconds while open. Data is held for 24 hours after the last update, then deleted.</p>
+        <label for="in-code">Incident code</label>
+        <input type="text" id="in-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="e.g. K7M2QX">
+        <label for="in-pin">PIN</label>
+        <input type="password" id="in-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 digits">
+        <div class="danger hidden" id="signin-error"></div>
+        <button type="button" class="btn" style="margin-top:0.8rem;" onclick="signIn()">Open dashboard</button>
+    </div>
+
+    <div id="dash" class="hidden">
+        <div class="danger hidden" id="conn-warn"></div>
+        <div class="card count-wrap">
+            <div class="counts" id="counts"></div>
+            <p class="muted" id="counts-note" style="margin:0.5rem 0 0;"></p>
+        </div>
+        <div class="grid2 wall-grid">
+            <div class="wall-left">
+                <div class="card" id="map-card">
+                    <h2>Map <small id="map-note"></small></h2>
+                    <div id="map"></div>
+                    <div class="row map-btns" style="margin-top:8px;">
+                        <button type="button" class="btn small sec" onclick="fitMap()">Fit all</button>
+                        <button type="button" class="btn small sec" onclick="exportFile('gpx')">Save GPX</button>
+                        <button type="button" class="btn small sec" onclick="exportFile('kml')">Save KML</button>
+                        <button type="button" class="btn small sec" onclick="exportFile('geojson')">Save GeoJSON</button>
+                        <button type="button" class="btn small sec" onclick="exportCsv()">Save CSV</button>
+                    </div>
+                </div>
+                <div class="card" id="phones-card">
+                    <h2>Phones reporting <small id="phones-note"></small></h2>
+                    <div class="phones" id="phones"></div>
+                </div>
+                <div class="card" id="sectors-card">
+                    <h2>By sector</h2>
+                    <div id="sectors"></div>
+                </div>
+            </div>
+            <div class="wall-right">
+                <div class="card" id="attention-card">
+                    <h2>Needs attention <small>overdue reassessments, tourniquets, high risk</small></h2>
+                    <div id="attention"></div>
+                </div>
+                <div class="card" id="table-card">
+                    <h2>Casualties <small id="list-note"></small></h2>
+                    <div class="row" style="margin-bottom:6px;">
+                        <label style="margin:0; font-weight:normal;"><input type="checkbox" id="show-evac" onchange="render()"> Include evacuated</label>
+                    </div>
+                    <div class="tbl-wrap">
+                        <table id="tbl">
+                            <thead><tr><th>ID</th><th>Cat</th><th>Where</th><th>Interventions</th><th>Reassess</th><th>Reported by</th></tr></thead>
+                            <tbody id="rows"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+<footer>Major Incident Triage — commander view. An aid for a live incident, not a clinical record: the phones keep the audit trail.</footer>
+<script>
+    const REFRESH_MS = 30 * 1000;
+    const $ = (id) => document.getElementById(id);
+    const esc = MITTLib.escapeHTML;
+    let cfg = null;           // { code, pin }
+    let data = null;          // last payload
+    let etag = '';
+    let knownSeq = '';       // sequence number of the data on screen; sent back so an unchanged incident costs a 304
+    let timer = null;
+    let lastOkAt = 0;
+    let map = null, cluster = null, ccsMarker = null, circles = null;
+    let firstFit = true;
+
+    function loadCfg() {
+        try { const s = sessionStorage.getItem('mit_commander'); if (s) cfg = JSON.parse(s); } catch (e) {}
+        const raw = (location.hash || '').replace('#', '').toUpperCase();
+        const h = raw.split('/')[0].replace(/[^A-Z0-9]/g, '');
+        if (h && h.length === 6) $('in-code').value = h;
+        // Opened on the phone that is sharing (same site, same browser): sign in with that phone's own code and PIN.
+        if (!cfg) {
+            try {
+                ['mit_commander', 'trn_mit_commander'].forEach(k => {
+                    if (cfg) return;
+                    const app = JSON.parse(localStorage.getItem(k) || 'null');
+                    if (app && app.code && app.pin && (!h || h === app.code)) cfg = { code: app.code, pin: app.pin, fromPhone: true };
+                });
+            } catch (e) {}
+        }
+        let wall = /\/WALL/.test(raw);
+        try { if (sessionStorage.getItem('mit_commander_wall') === '1') wall = true; } catch (e) {}
+        if (wall) setWall(true);
+        if (cfg && cfg.code) { $('in-code').value = cfg.code; $('in-pin').value = cfg.pin || ''; }
+    }
+    function setStatus(cls, text) { const p = $('status-pill'); p.className = 'pill ' + cls; p.textContent = text; }
+    function signIn() {
+        const code = $('in-code').value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+        const pin = $('in-pin').value.replace(/\D/g, '').slice(0, 6);
+        $('signin-error').classList.add('hidden');
+        if (code.length !== 6 || pin.length !== 6) { $('signin-error').textContent = 'The code is 6 letters or digits and the PIN is 6 digits.'; $('signin-error').classList.remove('hidden'); return; }
+        cfg = { code, pin };
+        try { sessionStorage.setItem('mit_commander', JSON.stringify(cfg)); } catch (e) {}
+        start();
+    }
+    function signOut() {
+        cfg = null; data = null; etag = ''; knownSeq = '';
+        try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
+        if (timer) clearTimeout(timer);
+        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none';
+        $('training-banner').classList.add('hidden');
+        setStatus('wait', 'Not connected'); setText('hdr-incident', ''); setText('hdr-updated', '');
+    }
+    function setText(id, t) { $(id).textContent = t; }
+    function start() {
+        $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = '';
+        refreshNow();
+    }
+    // Wall display: for a big screen in the command post. Toggle with the button, the W key, or #CODE/wall in the link.
+    function setWall(on) {
+        document.body.classList.toggle('wall', !!on);
+        $('btn-wall').textContent = on ? 'Normal view' : 'Wall display';
+        try { sessionStorage.setItem('mit_commander_wall', on ? '1' : ''); } catch (e) {}
+        if (map) setTimeout(() => { map.invalidateSize(); fitMap(); }, 150);
+    }
+    function toggleWall() { setWall(!document.body.classList.contains('wall')); }
+    function tickClock() { $('clock').textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+    setInterval(tickClock, 1000); tickClock();
+    async function refreshNow() {
+        if (!cfg) return;
+        if (timer) clearTimeout(timer);
+        $('btn-refresh').disabled = true;
+        try {
+            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const to = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
+            const headers = { 'x-incident-pin': cfg.pin };
+            if (etag) headers['If-None-Match'] = etag;
+            if (knownSeq) headers['X-Incident-Seq'] = knownSeq;
+            const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}`, { headers, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+            if (to) clearTimeout(to);
+            if (r.status === 304) { lastOkAt = Date.now(); setStatus('live', 'Live'); setText('hdr-updated', `Checked ${time(Date.now())} • no change`); $('conn-warn').classList.add('hidden'); render(); return; }
+            if (r.status === 401 || r.status === 404 || r.status === 410 || r.status === 429) {
+                let msg = 'Could not open this incident.';
+                try { msg = (await r.json()).message || msg; } catch (e) {}
+                if (!data) { signOut(); $('signin').classList.remove('hidden'); $('signin-error').textContent = msg; $('signin-error').classList.remove('hidden'); return; }
+                setStatus('bad', r.status === 410 ? 'Incident expired' : 'Access refused');
+                $('conn-warn').textContent = msg + (r.status === 410 ? ' The data below is the last copy this page received.' : '');
+                $('conn-warn').classList.remove('hidden');
+                return;
+            }
+            if (!r.ok) throw new Error('Server error ' + r.status);
+            data = await r.json();
+            etag = r.headers.get('ETag') || '';
+            knownSeq = r.headers.get('X-Incident-Seq') || (data.seq !== undefined ? String(data.seq) : '');
+            lastOkAt = Date.now();
+            setStatus('live', 'Live');
+            setText('hdr-updated', `Updated ${time(Date.now())}`);
+            $('conn-warn').classList.add('hidden');
+            render();
+        } catch (e) {
+            setStatus('bad', 'No connection');
+            $('conn-warn').textContent = `Cannot reach the server (${e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || 'offline'}). ${lastOkAt ? 'Showing the data from ' + time(lastOkAt) + '.' : ''} Retrying every 30 seconds.`;
+            $('conn-warn').classList.remove('hidden');
+        } finally {
+            $('btn-refresh').disabled = false;
+            if (cfg) timer = setTimeout(refreshNow, REFRESH_MS);
+        }
+    }
+    function time(ts) { return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+    function hm(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''; }
+    function age(ts) { return ts ? MITTLib.formatLocationAge(ts, Date.now()) : '—'; }
+    function place(r) { return [r.sector, r.landmark, r.floor ? 'Floor ' + r.floor : '', r.area].filter(Boolean).join(', '); }
+    function loc(r) { return r.currentLocation || r.location || null; }
+    function cat(c) { const i = MITTLib.CATEGORY_INFO[c] || { short: c, colour: '#4C6272', text: '#fff' }; return `<span class="cat-chip" style="background:${i.colour};color:${i.text}">${esc(i.short)}</span>`; }
+    function visibleRecords() { const all = (data && data.records) || []; return $('show-evac').checked ? all : all.filter(r => !r.evacuated); }
+
+    function render() {
+        if (!data) return;
+        const now = Date.now();
+        setText('hdr-incident', `${data.name ? data.name + ' • ' : ''}code ${data.code}${data.incidentCode ? ' • incident ' + data.incidentCode : ''}`);
+        $('training-banner').classList.toggle('hidden', !data.training);
+        const all = data.records || [];
+        const onScene = all.filter(r => !r.evacuated);
+        const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+        $('counts').innerHTML = order.map(c => { const i = MITTLib.CATEGORY_INFO[c]; const n = onScene.filter(r => r.category === c).length, t = all.filter(r => r.category === c).length; return `<div class="count" style="background:${i.colour};color:${i.text}"><div class="n">${n}</div><div class="l">${esc(i.short)}</div><div class="s">${t} in total</div></div>`; }).join('') +
+            `<div class="count" style="background:#4C6272"><div class="n">${all.filter(r => r.evacuated).length}</div><div class="l">Evacuated</div><div class="s">${all.length} casualties in total</div></div>`;
+        setText('counts-note', `On scene counts (big number) and totals including evacuated. Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
+        // phones
+        const devs = data.devices || [];
+        $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}"><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span></b>${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} records • last report ${age(d.lastSeen)}${d.stale ? ' • <b style="color:#DA291C">not heard from</b>' : ''}</div>`).join('') || '<p class="muted">No phones yet.</p>';
+        setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes`);
+        // sectors
+        const sectors = {};
+        onScene.forEach(r => { const s = r.sector || 'No sector'; sectors[s] = sectors[s] || { P1: 0, P1_HOLD: 0, P2: 0, P3: 0, NOT_BREATHING: 0, DEAD: 0, n: 0 }; sectors[s][r.category] = (sectors[s][r.category] || 0) + 1; sectors[s].n++; });
+        $('sectors').innerHTML = Object.keys(sectors).sort().map(s => `<div class="row" style="padding:4px 0;border-bottom:1px solid #e3e7ea;"><b style="flex:1">${esc(s)}</b>${order.filter(c => sectors[s][c]).map(c => `${cat(c)} ${sectors[s][c]}`).join(' ')}<span class="muted">${sectors[s].n} on scene</span></div>`).join('') || '<p class="muted">No sectors recorded yet.</p>';
+        // attention
+        const att = [];
+        onScene.forEach(r => {
+            const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
+            if (rs.state === 'overdue') att.push({ k: 0, r, t: `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min` });
+            if (r.interventions && r.interventions.Tourniquet) att.push({ k: 1, r, t: `Tourniquet on since ${esc(r.interventions.Tourniquet.time || '?')}` });
+            if (r.highRisk) att.push({ k: 2, r, t: 'Flagged high risk of deterioration' });
+            if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' });
+        });
+        att.sort((a, b) => a.k - b.k);
+        $('attention').innerHTML = att.map(a => `<div class="row" style="padding:5px 0;border-bottom:1px solid #e3e7ea;">${cat(a.r.category)}<b>${esc(a.r.id)}</b><span style="flex:1">${a.t}</span><span class="muted">${esc(place(a.r) || '')}</span></div>`).join('') || '<p class="muted">Nothing outstanding.</p>';
+        // table
+        const vis = visibleRecords();
+        $('rows').innerHTML = vis.map(r => {
+            const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
+            const l = loc(r);
+            const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : null;
+            const ints = Object.keys(r.interventions || {}).map(k => `${esc(k)} ${esc((r.interventions[k] && r.interventions[k].time) || '')}`.trim()).join(', ');
+            const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? 'Due now' : `Due ${hm(rs.dueAt)}`;
+            return `<tr class="${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}"><td><b>${esc(r.id)}</b><div class="muted">${esc(r.tool || '')} ${hm(r.timestamp)}${r.highRisk ? ' • <b style="color:#DA291C">HIGH RISK</b>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
+                `<td>${cat(r.category)}</td><td>${esc(place(r) || '—')}${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
+                `<td>${ints || '<span class="muted">none</span>'}</td><td>${re}</td><td>${esc(r.triager || '')}<div class="muted">${esc(r.reportedBy || '')} • ${age(r.updatedAt || r.reportedAt)}</div></td></tr>`;
+        }).join('');
+        setText('list-note', `${vis.length} shown, priority first`);
+        renderMap(vis);
+    }
+    function markerIcon(r) {
+        const info = MITTLib.CATEGORY_INFO[r.category] || { colour: '#005EB8', text: '#fff' };
+        const tail = String(r.id || '').replace(/^.*-/, '').slice(-4) || '•';
+        return L.divIcon({ html: `<div class="mk${r.tool === 'TST' ? ' mk-tst' : ''}${r.evacuated ? ' mk-evac' : ''}" style="background:${info.colour};color:${info.text};">${esc(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
+    }
+    function ensureMap() {
+        if (map || typeof L === 'undefined') return !!map;
+        map = L.map('map').setView([54.0, -2.0], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
+        L.control.scale({ imperial: false }).addTo(map);
+        cluster = L.markerClusterGroup({ maxClusterRadius: 32, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19 });
+        map.addLayer(cluster);
+        circles = L.layerGroup().addTo(map);
+        return true;
+    }
+    function renderMap(records) {
+        if (!ensureMap()) { setText('map-note', 'map library did not load'); return; }
+        cluster.clearLayers(); circles.clearLayers();
+        if (ccsMarker) { map.removeLayer(ccsMarker); ccsMarker = null; }
+        let n = 0;
+        records.forEach(r => {
+            const l = loc(r);
+            if (!l || !l.lat) return;
+            n++;
+            const ll = [Number(l.lat), Number(l.lng)];
+            const grid = MITTLib.toOsGridRef(ll[0], ll[1]);
+            const m = L.marker(ll, { icon: markerIcon(r) });
+            m.bindPopup(`<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div></div>`);
+            cluster.addLayer(m);
+            if (l.acc && l.acc > 15) circles.addLayer(L.circle(ll, { radius: Number(l.acc), color: MITTLib.CATEGORY_INFO[r.category] ? MITTLib.CATEGORY_INFO[r.category].colour : '#005EB8', weight: 1, opacity: 0.6, fillOpacity: 0.08 }));
+        });
+        if (data.ccs && data.ccs.lat) {
+            ccsMarker = L.marker([Number(data.ccs.lat), Number(data.ccs.lng)], { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty Clearing Station').addTo(map);
+        }
+        setText('map-note', `${n} with a position${records.length - n ? `, ${records.length - n} without` : ''}`);
+        if (firstFit && (n || ccsMarker)) { firstFit = false; fitMap(); }
+        setTimeout(() => map.invalidateSize(), 100);
+    }
+    function fitMap() {
+        if (!map) return;
+        const layers = cluster.getLayers().slice();
+        if (ccsMarker) layers.push(ccsMarker);
+        if (!layers.length) return;
+        const b = L.featureGroup(layers).getBounds();
+        map.fitBounds(b.pad(0.2), { maxZoom: 18 });
+    }
+    function download(name, text, type) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type }));
+        a.download = name; document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    }
+    function stamp() { return MITTLib.isoWithOffset(Date.now()).replace(/[:.]/g, '-'); }
+    function exportFile(kind) {
+        if (!data) return;
+        const recs = visibleRecords();
+        const opts = { name: `Major Incident Triage ${data.code} — casualties`, ccs: data.ccs };
+        const text = kind === 'gpx' ? MITTLib.buildGpx(recs, opts) : kind === 'kml' ? MITTLib.buildKml(recs, opts) : MITTLib.buildGeoJson(recs, opts);
+        download(`MITT_commander_${data.code}_${stamp()}.${kind}`, text, kind === 'gpx' ? 'application/gpx+xml' : kind === 'kml' ? 'application/vnd.google-earth.kml+xml' : 'application/geo+json');
+    }
+    function exportCsv() {
+        if (!data) return;
+        const c = MITTLib.csvCell;
+        const head = ['id', 'category', 'tool', 'triaged', 'sector', 'landmark', 'floor', 'area', 'osGridRef', 'lat', 'lng', 'accuracyM', 'interventions', 'highRisk', 'evacuated', 'evacDest', 'triager', 'reportedBy', 'updated'];
+        const lines = [head.join(',')].concat(visibleRecords().map(r => { const l = loc(r) || {}; return [r.id, r.category, r.tool, r.timestamp ? MITTLib.isoWithOffset(r.timestamp) : '', r.sector, r.landmark, r.floor, r.area, l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) || '' : '', l.lat || '', l.lng || '', l.acc || '', Object.keys(r.interventions || {}).map(k => k + ' ' + ((r.interventions[k] || {}).time || '')).join('; '), r.highRisk ? 'yes' : '', r.evacuated ? 'yes' : '', r.evacDest, r.triager, r.reportedBy, r.updatedAt ? MITTLib.isoWithOffset(r.updatedAt) : ''].map(c).join(','); }));
+        download(`MITT_commander_${data.code}_${stamp()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+    }
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
+        if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();
+    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && cfg) refreshNow(); });
+    loadCfg();
+    if (cfg && cfg.code && cfg.pin) start();
+</script>
+</body>
+</html>

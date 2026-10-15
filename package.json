@@ -1,10 +1,10 @@
 {
   "name": "mitt",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
-  "description": "Major Incident Triage Tool — offline PWA. No build step; dependencies below are for tests only.",
+  "description": "Major Incident Triage Tool \u2014 offline PWA with an optional incident commander dashboard (Netlify Functions + Blobs). The site has no build step; devDependencies are for tests only.",
   "scripts": {
-    "test": "node tests/lib.test.js",
+    "test": "node tests/lib.test.js && node tests/incident-core.test.js",
     "test:e2e": "node tests/e2e.js"
   },
   "devDependencies": {
@@ -13,5 +13,8 @@
     "playwright": "1.56.1",
     "pngjs": "^7.0.0",
     "qrcode": "1.5.4"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^11.1.4"
   }
 }
