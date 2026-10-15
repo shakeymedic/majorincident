@@ -46,11 +46,20 @@ Data is encrypted in transit (HTTPS). Users can delete it: the server copy is de
 or at once with *End incident for everyone*; records on the phone are deleted with *Close / reset incident*.
 Data is not collected for advertising and is not sold.
 
-**Health apps declaration:** the app is a clinical decision support / triage logging tool for trained responders using
-the NHS England Ten Second Triage and Major Incident Triage Tool. It is not yet approved for real incidents: until the
-clinical safety case is complete, describe it as *training and exercise use* in the listing, and change the
-declaration and description when that changes. (Whether it counts as a medical device under UK MHRA rules is a question
-for a regulatory adviser; the plan covers this.)
+**Health apps declaration:** Clinical Decision Support / Emergency and First Aid, with the "not a medical device"
+disclaimer. Intended purpose, word for word everywhere: **"Training and exercise use only. Not for use with real
+patients."**
+
+**Listing text (use as is):**
+
+- Short description: *Major incident triage practice (TST and MITT) for training and exercises. Not for real patients.*
+- Start of the full description: *Major Incident Triage helps trained responders practise NHS England Ten Second Triage
+  and the Major Incident Triage Tool, record interventions and hand casualties over between phones in exercises.
+  Training and exercise use only. Not for use with real patients. This app is not a medical device and has not been
+  approved for clinical use.*
+
+Change the declaration and the listing only if the intended purpose formally changes (after the clinical safety case
+and any UKCA marking).
 
 **Permissions:** INTERNET, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION. Camera (QR scanning) is requested by the
 website through Chrome, not by the app, so it does not appear in the app's permission list.

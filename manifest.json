@@ -1,7 +1,7 @@
 {
   "name": "Major Incident Triage",
   "short_name": "MI Triage",
-  "description": "Emergency triage logging and handover tool",
+  "description": "Major incident triage logging and handover for training and exercises. Not for use with real patients.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

@@ -629,6 +629,15 @@ async function test(name, fn) {
         assert.ok(await H.evaluate(() => document.getElementById('question-screen').classList.contains('active') && currentTool === 'TST'));
         await H._ctx.close();
     });
+    await test('v0.17.1: one intended-purpose statement on the start screen, footer and Settings', async () => {
+        const IP = await device('Purpose', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+        assert.match(await IP.textContent('.intro-purpose'), /Training and exercise use only\. Not for use with real patients\./);
+        assert.ok(await IP.isVisible('.intro-purpose'));
+        assert.match(await IP.textContent('footer'), /Training & exercise use only/);
+        const fits = await IP.evaluate(() => { const m = document.querySelector('main'); return m.scrollHeight <= m.clientHeight + 2; });
+        assert.ok(fits, 'start screen still fits');
+        await IP._ctx.close();
+    });
     await test('v0.17.0 back to basics: Hand over is visible on home and result, More holds the patient details, setup is in Settings, a double tap answers once', async () => {
         const B = await device('Basics', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
         await setup(B, 'Medic B');
