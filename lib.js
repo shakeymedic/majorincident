@@ -1923,10 +1923,10 @@
             e_svc: 'Ambulance (HART, MERIT), Fire and Rescue (USAR requested), Police; event medical team on scene',
         },
         phones: [
-            { deviceId: 'DEMOHT', triager: 'HART 1', role: 'HCP', prefix: 'DEMO-HT' },
-            { deviceId: 'DEMOMD', triager: 'Medic 2', role: 'HCP', prefix: 'DEMO-MD' },
-            { deviceId: 'DEMODR', triager: 'MERIT doctor', role: 'HCP', prefix: 'DEMO-DR' },
-            { deviceId: 'DEMOFR', triager: 'Fire crew 3', role: 'NON_HCP', prefix: 'DEMO-FR' },
+            { deviceId: 'DEMOHT', triager: 'HART 1', role: 'HCP', prefix: 'DEMO-HT', sector: 'Casualty Clearing', desc: 'HART paramedic: MITT at the stand, then the casualty clearing station' },
+            { deviceId: 'DEMOMD', triager: 'Medic 2', role: 'HCP', prefix: 'DEMO-MD', sector: 'Loading Point', desc: 'Paramedic at the casualty clearing station and loading point' },
+            { deviceId: 'DEMODR', triager: 'MERIT doctor', role: 'HCP', prefix: 'DEMO-DR', sector: 'Casualty Clearing', desc: 'Doctor at the casualty clearing station (P1 Hold, confirming death)' },
+            { deviceId: 'DEMOFR', triager: 'Fire crew 3', role: 'NON_HCP', prefix: 'DEMO-FR', sector: 'Inner Cordon', desc: 'Firefighter in the inner cordon (TST only)' },
         ],
     };
     const DEMO_ACTIONS = {

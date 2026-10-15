@@ -1,6 +1,6 @@
 {
   "name": "mitt",
-  "version": "0.11.1",
+  "version": "0.12.1",
   "private": true,
   "description": "Major Incident Triage Tool \u2014 offline PWA with an optional incident commander dashboard (Netlify Functions + Blobs). The site has no build step; devDependencies are for tests only.",
   "scripts": {

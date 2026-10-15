@@ -1279,7 +1279,7 @@ async function test(name, fn) {
         await setup(D, 'Dr Demo');
         await triage(D, 'TST', [true]);
         const realUid = await D.evaluate(() => incidentLog[0].uid);
-        await D.evaluate(() => { startDemo(); });
+        await D.evaluate(() => { demoChoose('all'); });
         await answerDialog(D, true);
         await D.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
         await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
@@ -1301,7 +1301,7 @@ async function test(name, fn) {
         // A new casualty triaged during the demo joins it; restarting the demo asks first
         await triage(D, 'TST', [true]);
         assert.strictEqual(await D.evaluate(() => incidentLog.length), 25);
-        await D.evaluate(() => { startDemo(); });
+        await D.evaluate(() => { demoChoose('all'); });
         await answerDialog(D, true);
         await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
         // Back to real use: the real patient is still there and no demo record leaked into it
@@ -1311,6 +1311,67 @@ async function test(name, fn) {
         assert.deepStrictEqual(await D.evaluate(() => incidentLog.map(r => r.uid)), [realUid]);
         await D._ctx.close();
     });
+    await test('as one of the phones: only its casualties, its name and role; real name untouched afterwards', async () => {
+        const E = await device('DemoPhone');
+        await setup(E, 'Dr Real');
+        await E.evaluate(() => startDemo());
+        await page_visible(E, '#demo-role-modal');
+        assert.strictEqual(await E.$$eval('#demo-phone-choices button', b => b.length), 4);
+        await E.evaluate(() => { demoChoose('p3'); });
+        await answerDialog(E, true);
+        await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 8, null, { timeout: 10000 });
+        assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, demoMode()]), ['Fire crew 3', 'NON_HCP', 'p3']);
+        assert.ok(await E.evaluate(() => incidentLog.every(r => r.deviceId === 'DEMOFR')));
+        await page_visible(E, '#demo-modal');
+        assert.match(await E.textContent('#demo-title'), /Fire crew 3/);
+        // Practise receiving: a casualty from another phone arrives through the normal review screen
+        await E.evaluate(() => demoReceive());
+        await page_visible(E, '#preview-modal');
+        await E.click('#btn-accept-preview');
+        await E.waitForFunction(() => incidentLog.length === 9, null, { timeout: 5000 });
+        assert.ok(await E.evaluate(() => incidentLog.some(r => r.deviceId !== 'DEMOFR')));
+        assert.ok(await E.evaluate(() => auditLog.some(a => a.action === 'DEMO_TRANSFER_PRACTICE')));
+        await E.evaluate(() => document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; }));
+        // Practise handing over: real QR, then the simulated receiver confirmation
+        await E.evaluate(() => demoHandover());
+        await page_visible(E, '#btn-demo-ack');
+        const uid = await E.evaluate(() => document.getElementById('qr-modal').dataset.handoverUid);
+        await E.click('#btn-demo-ack');
+        await page_visible(E, '#ack-success-modal');
+        assert.strictEqual(await E.evaluate(u => incidentLog[indexByUid(u)].handoverState, uid), 'accepted');
+        assert.ok(await E.isHidden('#handover-flow-modal'));
+        // "Leave demo" in the orange banner: back to real use on the start screen, with the real name and role
+        await E.evaluate(() => document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; }));
+        assert.ok(await E.isVisible('#btn-leave-demo'));
+        await E.click('#btn-leave-demo');
+        await answerDialog(E, true);
+        await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === false && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        await E.waitForFunction(() => document.getElementById('intro-screen').classList.contains('active'), null, { timeout: 5000 });
+        assert.ok(await E.isHidden('#btn-leave-demo'));
+        assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, devicePrefix]), ['Dr Real', 'HCP', '']);
+        await E._ctx.close();
+    });
+    await test('live practice: one device is the commander, a phone links and its casualties appear on the commander screen', async () => {
+        const K = await device('DemoCmd');
+        await K.evaluate(() => { demoChoose('cmd'); });
+        await answerDialog(K, true);
+        await K.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof cmdActive === 'function' && cmdActive() && CMD.cfg.commander, null, { timeout: 15000 });
+        const share = await K.evaluate(() => ({ code: CMD.cfg.code, pin: CMD.cfg.pin }));
+        assert.strictEqual(await K.evaluate(() => incidentLog.length), 0);
+        const F = await device('DemoHART');
+        await F.evaluate(() => { demoChoose('p0'); });
+        await answerDialog(F, true);
+        await F.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 7, null, { timeout: 10000 });
+        assert.strictEqual(await F.evaluate(s => cmdJoin(s.code, s.pin), share), true);
+        await F.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        const P = await K._ctx.newPage();
+        P.on('pageerror', e => errors.push(`DemoCmdPage: ${e.message}`));
+        await P.goto(url.replace('index.html', 'commander.html#' + share.code));
+        await P.waitForFunction(() => /7 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 10000 });
+        assert.match(await P.textContent('#phones'), /HART 1/);
+        await K._ctx.close(); await F._ctx.close();
+    });
+
     await test('the commander demo shows the incident with no sign-in and no network, and plays its events', async () => {
         const ctx = await browser.newContext({ serviceWorkers: 'block' });
         const P = await ctx.newPage();
