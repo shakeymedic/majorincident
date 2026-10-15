@@ -939,6 +939,11 @@
     .mk.mk-tst { border:3px dashed #222; }
     .mk.mk-evac { opacity:0.55; }
     .mk.mk-ccs { width:40px; height:28px; border-radius:6px; background:#007F3B; color:#fff; font-size:0.8rem; }
+    .mk-mark { display:inline-block; padding:3px 7px; border-radius:5px; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5); color:#fff; font-weight:800; font-size:0.75rem; white-space:nowrap; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; transform:translate(-50%, -50%); }
+    .tally-row { display:flex; gap:6px; flex-wrap:wrap; align-items:stretch; }
+    .tally-row .btn { width:auto; flex:1 1 0; margin:0; padding:0.5rem 0.4rem; font-size:0.9rem; min-height:44px; }
+    .tally-row .btn b { font-size:1.1rem; margin-left:4px; }
+    .tally-row .btn.tally-small { flex:0 0 auto; padding:0.5rem 0.7rem; }
     .map-pop { font-size:0.95rem; min-width:190px; }
     .map-pop .cat-chip { font-size:0.8rem; padding:2px 8px; }
     .map-pop-meta { font-size:0.82rem; color:#4C6272; margin-top:3px; }
@@ -1945,6 +1950,17 @@
                 <div style="display:flex; gap:10px;">
                     <input type="text" id="m-num" style="flex:1;">
                     <button class="btn btn-secondary" style="width:auto; padding:0 10px; margin:0;" onclick="autoFillCasualties()">Auto-Fill</button>
+                    <button class="btn btn-secondary" style="width:auto; padding:0 10px; margin:0;" onclick="toggleTally()" aria-expanded="false" id="btn-tally" title="Rough count before triage">🧮 Count</button>
+                </div>
+                <div id="tally-box" style="display:none; margin-top:6px;">
+                    <small>Rough count before triage: tap once per casualty you can see.</small>
+                    <div class="tally-row" style="margin-top:4px;">
+                        <button type="button" class="btn btn-secondary" onclick="tallyAdd('walking')" aria-label="Add one walking">🚶 Walking<b id="tally-walking">0</b></button>
+                        <button type="button" class="btn btn-secondary" onclick="tallyAdd('lying')" aria-label="Add one lying">🛌 Lying<b id="tally-lying">0</b></button>
+                        <button type="button" class="btn btn-secondary" onclick="tallyAdd('dead')" aria-label="Add one apparently dead">Dead?<b id="tally-dead">0</b></button>
+                        <button type="button" class="btn btn-secondary tally-small" onclick="tallyUndo()" aria-label="Undo last tap" title="Undo last tap">↶</button>
+                        <button type="button" class="btn btn-primary tally-small" onclick="tallyToMethane()" title="Put the rough count in N">→ N</button>
+                    </div>
                 </div>
             </div>
             <div class="input-group"><label for="m-svc">E - Emergency Services Required</label><textarea id="m-svc" rows="2"></textarea></div>
@@ -1992,6 +2008,7 @@
                         <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('AUDIT')">Audit Trail (CSV)</button>
                         <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadArchive()">Full Incident Archive (JSON)</button>
                         <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="showAuditVerification()">Verify audit trail</button>
+                        <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="showDebriefTimings()">⏱ Debrief timings</button>
                     </div>
                     <button class="btn btn-danger" style="margin-bottom:0;" onclick="clearAllData()">Close / Reset Incident</button>
                 </div>
@@ -2012,13 +2029,13 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.15.0';
-    const APP_BUILD = '2026-10-15-tags-and-calmer-screens';
+    const APP_VERSION = '0.16.0';
+    const APP_BUILD = '2026-10-15-shared-picture';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
     const DB_NAME = TRAINING ? 'MITT_TRAINING_DB' : 'MITT_DB';
-    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander']);
+    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander', 'mit_tally']);
     // Name, role, sector and ID prefix: training starts with the real-use values but keeps its own changes (the demo sets
     // them to the phone you play), so nothing typed in training is carried back into real use.
     const TRAINING_INHERIT_KEYS = new Set(['mit_triager', 'mit_device_prefix', 'mit_sector', 'mit_user_role']);
@@ -2101,6 +2118,7 @@
     let patientMap = null;
     let mapMarkerCluster = null;
     let ccsMarker = null;
+    let _mapMarks = null;          // shared map markings from the commander screen
 
     // ---------- Persistent storage (IndexedDB, with a localStorage fallback) ----------
     let db = null;
@@ -3733,9 +3751,18 @@
     }
 
     // ---------- Voice notes ----------
-    function startVoice(fieldId) {
+    // Browsers turn speech into text with their maker's online service, so the recording can leave the phone.
+    // Real use asks once (and records the answer in the audit trail); training does not ask.
+    async function startVoice(fieldId) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) { showToast('Voice not supported on this browser. Type instead.', { alert: true }); return; }
+        if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showToast('Voice notes need a connection. Type instead.', { alert: true }); return; }
+        if (!TRAINING && ls('mit_voice_ok') !== '1') {
+            const ok = await inAppConfirm({ title: 'Voice notes leave this phone', message: 'To turn speech into text, your browser may send the recording to its maker\'s online speech service (for example Google for Chrome, Apple for Safari). Nothing else in this app does that.\n\nDo not say names or other details that identify the patient. Check with your information governance lead before using voice notes with real patients.', okLabel: 'I understand, use voice', cancelLabel: 'Type instead' });
+            if (!ok) return;
+            ls('mit_voice_ok', '1');
+            logAudit('VOICE_NOTICE_ACCEPTED', '-', 'User accepted that voice notes may be processed by the browser maker\'s online speech service', Date.now());
+        }
         const recognition = new SpeechRecognition();
         recognition.lang = 'en-GB'; recognition.continuous = false; recognition.interimResults = false;
         showToast('🎙 Listening… speak now');
@@ -4107,15 +4134,41 @@
         } else if (target === 'current') {
             await applyPatientIdChange(code, true);
         } else {
+            if (!findByTag(code) && await offerServerRecord(code)) return;
             openManualId();
             $('manual-id-input').value = code;
             await submitManualId();
         }
     }
+    // A tag this phone does not know may have been triaged on another phone in the same live incident. Ask the
+    // commander server (exact matches on patient ID or card number only) and offer that record through the usual
+    // review-and-accept screen. Returns true if a record was offered. No signal or no sharing: returns false at once.
+    async function serverTagLookup(code) {
+        if (!cmdActive() || (typeof navigator.onLine === 'boolean' && !navigator.onLine)) return null;
+        try {
+            showToast('Checking the other phones in this incident…');
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/lookup`, { method: 'POST', pin: CMD.cfg.pin, body: { tag: code } });
+            if (r.status !== 200 || !Array.isArray(r.body.records)) return null;
+            return r.body.records.filter(x => x && x.uid && indexByUid(x.uid) === -1);
+        } catch (e) { return null; }
+    }
+    async function offerServerRecord(code) {
+        const found = await serverTagLookup(code);
+        if (!found || !found.length) return false;
+        const rec = found[0];
+        const data = MITTLib.sanitisePatientRecord(rec);
+        if (!data || !data.id || !data.category) return false;
+        logAudit('SERVER_LOOKUP', code, `Tag found on the commander server: ${data.id}, sent by phone ${rec.reportedBy || '?'}${found.length > 1 ? ` (${found.length} matches; newest shown)` : ''}`, Date.now(), { uid: data.uid });
+        const warnings = [`Recorded on another phone (${rec.reportedBy || 'unknown'}, ${data.triager || 'unknown triager'}) and copied from the commander server. Check it matches the tag on this patient.`];
+        if (found.length > 1) warnings.push(`${found.length} records on the server have this tag number. The newest is shown; check the tag carefully.`);
+        renderPreviewModal({ ok: true, data, meta: { schemaVersion: MITTLib.QR_SCHEMA_VERSION, recordVersion: data._rev || 0, sender: data.triager || rec.reportedBy || 'another phone', generatedAt: rec.reportedAt || data.updatedAt, integrityOk: null, warnings } }, { t: 'MIT_SERVER', from: rec.reportedBy || '' });
+        return true;
+    }
     // Receive patient read a plain code (a tag, not an app QR): open that patient if the phone has it, else start one.
     async function offerTagLookup(code) {
         const hit = findByTag(code);
         if (hit) { showToast(`Opening ${hit.id}`); editEntryByUid(hit.uid); return; }
+        if (await offerServerRecord(code)) return;
         const ok = await inAppConfirm({ title: 'Tag ' + code, message: 'No patient on this phone has this tag number. Start triage for a new patient with this number as the ID?', okLabel: 'Start triage with ' + code, cancelLabel: 'Not now' });
         if (!ok) return;
         _presetTagId = code;
@@ -4389,7 +4442,7 @@
                 logAudit('IMPORT_ID_COLLISION', entry.id, `Incoming ${data.id} (uid ${data.uid}) differs from local ${data.id}; stored as ${entry.id}`, Date.now(), { uid: entry.uid });
             }
             entry.handoverState = 'received'; entry.receivedFrom = sender; entry.receivedAt = Date.now();
-            entry.handoverLog = [{ from: sender, at: Date.now(), by: triagerName, method: 'qr' }];
+            entry.handoverLog = [{ from: sender, at: Date.now(), by: triagerName, method: wrapper && wrapper.t === 'MIT_SERVER' ? 'server' : 'qr' }];
             entry._rev = (meta.recordVersion || 0) + 1;
             incidentLog.push(entry);
             target = entry;
@@ -4399,6 +4452,13 @@
         _pendingImport = null;
         $('preview-modal').style.display = 'none';
         saveState(); updateDashboard();
+        if (wrapper && wrapper.t === 'MIT_SERVER') {
+            // Copied from the server, not handed over in person: there is no sender standing by to scan an ACK.
+            logAudit('SERVER_PICKUP', target.id, `Record copied from the commander server (incident ${CMD.cfg ? CMD.cfg.code : '?'}), first sent by phone ${wrapper.from || '?'}`, Date.now(), { uid: target.uid });
+            showToast(`${target.id} loaded from the other phone`);
+            editEntryByUid(target.uid);
+            return;
+        }
         showAckQR(target, wrapper && wrapper.h, meta.recordVersion, data.id);
     }
     let _dupCandidates = null;
@@ -5107,7 +5167,7 @@
         if (cmdActive()) cmdStopLocal('Stopped: this phone was cleared');
         incidentLog = []; auditLog = []; importedAudit = []; methaneHistory = [];
         appendAudit({ deviceId, sysTime: Date.now(), sysTimeISO: MITTLib.isoWithOffset(Date.now()), user: triagerName, role: userRole || '', action: 'DATA_WIPE', patientId: '-', details: `${why}. Previous: ${summary.records} records, ${summary.auditEntries} audit entries, audit head ${summary.auditHeadHash} (${v.ok ? 'intact' : 'BROKEN'})${digest ? ', archive SHA-256 ' + digest : ', no archive saved'}`, app: APP_VERSION });
-        ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_demo_mode'].forEach(k => ls(k, null));
+        ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_demo_mode', 'mit_tally'].forEach(k => ls(k, null));
         // A copy left in backup browser storage (from any earlier fallback) would keep patient data on the phone.
         if (storageMode === 'indexeddb') ls(FALLBACK_KEY, null);
         patientCounter = 1; currentLogIndex = -1; cachedCcsLocation = null;
@@ -5150,7 +5210,7 @@
     function readMethaneForm() {
         return { m: $('m-decl').value, e: $('m-loc').value, t: $('m-type').value, h: $('m-haz').value, a: $('m-acc').value, n: $('m-num').value, e_svc: $('m-svc').value };
     }
-    function showMethane() { showScreen('methane-screen'); }
+    function showMethane() { tallyRender(); showScreen('methane-screen'); }
     function showMethaneHistory() {
         const list = $('methane-history-list');
         clearChildren(list);
@@ -5164,6 +5224,36 @@
     function autoFillCasualties() {
         const c = categoryCounts(incidentLog);
         $('m-num').value = `Total: ${incidentLog.length} (P1 ${c.P1.total}, P2 ${c.P2.total}, P3 ${c.P3.total}, Not Breathing ${c.NOT_BREATHING.total}, Dead ${c.DEAD.total}${c.P1_HOLD.total ? ', P1 Hold ' + c.P1_HOLD.total : ''}) as at ${fmtTime(Date.now())} on this device`;
+    }
+    // ---------- Rough count before triage ----------
+    let _tallyLast = [];
+    function tallyGet() { const t = lsJSON('mit_tally', null); return t && typeof t === 'object' ? t : { walking: 0, lying: 0, dead: 0, at: 0 }; }
+    function toggleTally(force) { const box = $('tally-box'); const open = force !== undefined ? !!force : box.style.display === 'none'; box.style.display = open ? '' : 'none'; $('btn-tally').setAttribute('aria-expanded', open ? 'true' : 'false'); if (open) tallyRender(); }
+    function tallyRender() { const t = tallyGet(); ['walking', 'lying', 'dead'].forEach(k => setText('tally-' + k, String(t[k] || 0))); }
+    function tallySave(t) { t.at = Date.now(); ls('mit_tally', JSON.stringify(t)); tallyRender(); }
+    function tallyAdd(k) { const t = tallyGet(); t[k] = (t[k] || 0) + 1; _tallyLast.push(k); tallySave(t); triggerHaptic('tap'); }
+    function tallyUndo() { const k = _tallyLast.pop(); if (!k) { showToast('Nothing to undo'); return; } const t = tallyGet(); t[k] = Math.max(0, (t[k] || 0) - 1); tallySave(t); }
+    function tallyToMethane() {
+        const t = tallyGet();
+        if (!(t.walking || t.lying || t.dead)) { showToast('Tap Walking, Lying or Dead? once for each casualty you can see first.'); return; }
+        const line = MITTLib.roughCountText(t, Date.now());
+        const f = $('m-num');
+        f.value = f.value && !/^Rough count/.test(f.value) ? line + '\n' + f.value : line;
+        logAudit('ROUGH_COUNT', '-', line, Date.now());
+        showToast('Rough count added to N. Save the report to send it.');
+    }
+
+    // ---------- Debrief timings (this phone's records) ----------
+    function debriefText(t, scope) {
+        if (!t.count) return 'No casualties recorded yet.';
+        const lines = t.rows.map(r => `${r.label}: ${r.at ? `${fmtTime(r.at)} (${r.mins} min)` : 'not yet'}${r.note ? ` • ${r.note}` : ''}`);
+        if (t.p1SceneMedianMins !== null) lines.push(`P1 time on scene (median of ${t.p1SceneCount}): ${t.p1SceneMedianMins} min`);
+        return `${scope}\nMinutes are from the first record (${fmtTime(t.start)}).\n\n` + lines.join('\n');
+    }
+    function showDebriefTimings() {
+        const t = MITTLib.debriefTimings(incidentLog);
+        logAudit('DEBRIEF_VIEWED', '-', `Debrief timings viewed (${t.count} casualties)`, Date.now());
+        inAppConfirm({ title: '⏱ Debrief timings', message: debriefText(t, `From the ${t.count} casualt${t.count === 1 ? 'y' : 'ies'} on this phone. The commander screen shows the same figures for every linked phone.`), okLabel: 'Close', alertOnly: true });
     }
     function saveMethane() {
         const m = Object.assign(readMethaneForm(), { timestamp: Date.now(), by: triagerName, device: deviceId });
@@ -5251,6 +5341,7 @@
             const ccsIcon = L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] });
             ccsMarker = L.marker([parseFloat(cachedCcsLocation.lat), parseFloat(cachedCcsLocation.lng)], { icon: ccsIcon, zIndexOffset: 1000 }).addTo(patientMap).bindPopup('<b>Casualty Clearing Station (CCS)</b><div class="map-pop-btns"><button type="button" onclick="startMapPin(\'CCS\')">Move CCS</button></div>');
         }
+        renderSharedMarks();
         updateMapUserMarker();
         renderMapLegend(records, pts);
         renderMapList();
@@ -5258,6 +5349,21 @@
         setText('map-n-all', String(incidentLog.length));
         $('map-chip-onscene').classList.toggle('on', _mapFilter === 'onscene');
         $('map-chip-all').classList.toggle('on', _mapFilter === 'all');
+    }
+    // Cordons, RVP, loading point and so on, set on the commander screen and received with each push.
+    function renderSharedMarks() {
+        if (!patientMap) return;
+        if (!_mapMarks) _mapMarks = L.layerGroup().addTo(patientMap);
+        _mapMarks.clearLayers();
+        const marks = (CMD.cfg && Array.isArray(CMD.cfg.marks)) ? MITTLib.normaliseMapMarks(CMD.cfg.marks) : [];
+        marks.forEach(m => {
+            const ty = MITTLib.MAP_MARK_TYPES[m.type];
+            const label = m.label ? `${ty.short}: ${m.label}` : ty.short;
+            const pop = `<b>${escapeHTML(ty.label)}</b>${m.label ? '<br>' + escapeHTML(m.label) : ''}${m.radius ? `<br>Radius about ${m.radius} m` : ''}<div class="map-pop-meta">Set on the commander screen${m.at ? ' at ' + escapeHTML(fmtTime(m.at)) : ''}</div>`;
+            if (ty.circle) _mapMarks.addLayer(L.circle([m.lat, m.lng], { radius: m.radius, color: ty.colour, weight: 3, dashArray: '8 6', fill: false }).bindPopup(pop));
+            // A cordon's label sits on its northern edge, so an inner and outer cordon round the same point both read.
+            _mapMarks.addLayer(L.marker([ty.circle ? m.lat + m.radius / 111320 : m.lat, m.lng], { icon: L.divIcon({ html: `<span class="mk-mark" style="background:${ty.colour}">${escapeHTML(label)}</span>`, className: 'mk-wrap', iconSize: [0, 0] }), zIndexOffset: 900 }).bindPopup(pop));
+        });
     }
     function fitMap(opts) {
         opts = opts || {};
@@ -5693,6 +5799,14 @@
             const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
+                if (Array.isArray(r.body.marks) && (r.body.marksAt || 0) !== (CMD.cfg.marksAt || 0)) {
+                    const had = (CMD.cfg.marks || []).length;
+                    CMD.cfg.marks = MITTLib.normaliseMapMarks(r.body.marks); CMD.cfg.marksAt = r.body.marksAt || 0;
+                    cmdSaveCfg();
+                    logAudit('COMMANDER_MARKS', '-', `Map markings from the commander: ${CMD.cfg.marks.map(m => MITTLib.MAP_MARK_TYPES[m.type].short + (m.label ? ' ' + m.label : '')).join(', ') || 'none'}`, Date.now());
+                    if (CMD.cfg.marks.length || had) showToast(CMD.cfg.marks.length ? 'The commander updated the map (cordons, RVP, loading point). Open the map to see them.' : 'The commander cleared the map markings.');
+                    if (patientMap) renderSharedMarks();
+                }
                 CMD.lastSentAt = Date.now();
                 CMD.sentTotal += r.body.accepted || 0;
                 if (CMD.failStreak) logAudit('COMMANDER_RECONNECTED', '-', `Sending to commander ${CMD.cfg.code} resumed after ${CMD.failStreak} failed attempt(s)`, Date.now());

@@ -2136,6 +2136,85 @@
     }
     function isDemoRecord(r) { return !!(r && (r.demo || /^demo\d{4}kestrel$/.test(String(r.uid || '')))); }
 
+    // ---------- Debrief timings ----------
+    // Key times for the debrief, worked out from the records alone (no audit trail needed, so the commander
+    // screen can show the same figures as the phone). Every time is the earliest or latest one any record holds;
+    // "mins" is minutes after the start (the first record, or opts.startedAt if that is earlier).
+    function evacTime(r) { return r && r.evacuated ? (r.evacAt || (r.handoverState === 'accepted' && r.handoverAt) || r.updatedAt || null) : null; }
+    function everHadMitt(r) { return !!r && (r.tool === 'MITT' || (r.triageHistory || []).some(t => t && t.tool === 'MITT')); }
+    function firstMittAt(r) { const h = (r.triageHistory || []).filter(t => t && t.tool === 'MITT' && t.ts).map(t => t.ts); if (h.length) return Math.min.apply(null, h); return r.tool === 'MITT' ? (r.createdAt || r.timestamp || null) : null; }
+    function debriefTimings(records, opts) {
+        opts = opts || {};
+        const recs = (records || []).filter(r => r && r.category);
+        const created = recs.map(r => r.createdAt || r.timestamp).filter(Boolean);
+        const out = { count: recs.length, rows: [], start: null };
+        if (!recs.length) return out;
+        const start = Math.min.apply(null, created.concat(opts.startedAt ? [opts.startedAt] : []));
+        out.start = start;
+        const mins = (t) => t ? Math.max(0, Math.round((t - start) / 60000)) : null;
+        const row = (key, label, at, note) => out.rows.push({ key, label, at: at || null, mins: mins(at), note: note || '' });
+        const minOf = (a) => a.length ? Math.min.apply(null, a) : null;
+        const maxOf = (a) => a.length ? Math.max.apply(null, a) : null;
+        row('first', 'First casualty recorded', minOf(created));
+        const p1 = [];
+        recs.forEach(r => {
+            const h = (r.triageHistory || []).filter(t => t && t.ts && (t.category === 'P1' || t.category === 'P1_HOLD')).map(t => t.ts);
+            if (h.length) p1.push(Math.min.apply(null, h)); else if (r.category === 'P1' || r.category === 'P1_HOLD') p1.push(r.createdAt || r.timestamp);
+        });
+        row('firstP1', 'First P1 identified', minOf(p1.filter(Boolean)), p1.length ? `${p1.length} casualt${p1.length === 1 ? 'y has' : 'ies have'} been P1 at some point` : 'No P1 recorded');
+        row('lastTriaged', 'Last new casualty recorded', maxOf(created), `${recs.length} casualt${recs.length === 1 ? 'y' : 'ies'} in total`);
+        // MITT sort: of the living casualties still on scene or moved on, how many have had MITT, and when the last one did.
+        const sortable = recs.filter(r => r.category !== 'DEAD');
+        const sorted = sortable.filter(everHadMitt);
+        const pending = sortable.length - sorted.length;
+        row('mittAll', 'Everyone sorted with MITT', pending ? null : maxOf(sorted.map(firstMittAt).filter(Boolean)), pending ? `${pending} casualt${pending === 1 ? 'y has' : 'ies have'} had TST only` : `${sorted.length} sorted`);
+        const ccs = recs.map(r => r.ccsAt).filter(Boolean);
+        row('firstCcs', 'First casualty at the CCS', minOf(ccs), ccs.length ? `${ccs.length} reached the CCS` : '');
+        const evac = recs.map(evacTime).filter(Boolean);
+        row('firstEvac', 'First casualty left the scene', minOf(evac));
+        const onScene = recs.filter(r => !r.evacuated && r.category !== 'DEAD').length;
+        row('lastEvac', 'Last living casualty left the scene', onScene ? null : maxOf(evac), onScene ? `${onScene} living casualt${onScene === 1 ? 'y' : 'ies'} still on scene` : `${evac.length} evacuated`);
+        // Scene time for P1s: from first record to leaving, as a median, because one long extrication skews a mean.
+        const p1Scene = recs.filter(r => r.evacuated && (r.category === 'P1' || r.category === 'P1_HOLD')).map(r => (evacTime(r) - (r.createdAt || r.timestamp)) / 60000).filter(x => isFinite(x) && x >= 0).sort((a, b) => a - b);
+        out.p1SceneMedianMins = p1Scene.length ? Math.round(p1Scene.length % 2 ? p1Scene[(p1Scene.length - 1) / 2] : (p1Scene[p1Scene.length / 2 - 1] + p1Scene[p1Scene.length / 2]) / 2) : null;
+        out.p1SceneCount = p1Scene.length;
+        return out;
+    }
+
+    // ---------- Shared map markings (set on the commander screen, shown on every linked phone) ----------
+    const MAP_MARK_TYPES = {
+        inner: { label: 'Inner cordon', short: 'Inner', circle: true, colour: '#DA291C', radius: 100 },
+        outer: { label: 'Outer cordon', short: 'Outer', circle: true, colour: '#005EB8', radius: 400 },
+        rvp: { label: 'Rendezvous point (RVP)', short: 'RVP', colour: '#7C2855' },
+        loading: { label: 'Ambulance loading point', short: 'LOAD', colour: '#007F3B' },
+        fcp: { label: 'Forward command post', short: 'FCP', colour: '#212B32' },
+        hazard: { label: 'Hazard', short: '⚠', colour: '#ED8B00' },
+    };
+    const MAP_MARKS_MAX = 30;
+    function normaliseMapMarks(list) {
+        if (!Array.isArray(list)) return [];
+        const out = [];
+        list.forEach(m => {
+            if (!m || typeof m !== 'object' || out.length >= MAP_MARKS_MAX) return;
+            const type = String(m.type || '');
+            if (!Object.prototype.hasOwnProperty.call(MAP_MARK_TYPES, type)) return;
+            const lat = _num(m.lat), lng = _num(m.lng);
+            if (lat === null || lng === null || lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+            const mark = { id: _str(m.id, 24).replace(/[^A-Za-z0-9_-]/g, '') || ('m' + out.length), type, lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6, label: _str(m.label, 60).trim(), at: _num(m.at) };
+            if (MAP_MARK_TYPES[type].circle) { const r = _num(m.radius); mark.radius = Math.round(Math.max(10, Math.min(5000, r === null ? MAP_MARK_TYPES[type].radius : r))); }
+            out.push(mark);
+        });
+        return out;
+    }
+
+    // ---------- Rough count before triage (first crew on scene) ----------
+    function roughCountText(t, at) {
+        t = t || {};
+        const w = Math.max(0, Math.floor(Number(t.walking) || 0)), l = Math.max(0, Math.floor(Number(t.lying) || 0)), d = Math.max(0, Math.floor(Number(t.dead) || 0));
+        const when = at ? ' at ' + new Date(at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+        return `Rough count, not yet triaged${when}: about ${w + l + d} (walking ${w}, lying ${l}, apparently dead ${d})`;
+    }
+
     const api = {
         QR_SCHEMA_VERSION, QR_DEFAULT_TTL_MS, QR_MAX_FUTURE_SKEW_MS,
         BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
@@ -2165,6 +2244,7 @@
         wgs84ToOsgb36, osgb36ToEastNorth, eastNorthToGridRef, toOsGridRef, formatCoords, mapsLinks, orderNearest, googleMapsRouteUrl, GOOGLE_ROUTE_MAX_POINTS,
         locationPoints, buildGpx, buildKml, buildGeoJson, classifyLocationFix, describeGeoError,
         buildDemoScenario, isDemoRecord, DEMO_INCIDENT,
+        debriefTimings, evacTime, MAP_MARK_TYPES, MAP_MARKS_MAX, normaliseMapMarks, roughCountText,
     };
 
     if (typeof module !== 'undefined' && module.exports) {

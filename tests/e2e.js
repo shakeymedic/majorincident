@@ -1624,6 +1624,108 @@ async function test(name, fn) {
         await K._ctx.close();
     });
 
+    console.log('\ne2e: v0.16.0 shared picture (tag pick-up, map markings, debrief, rough count, voice notice)');
+    await test('v0.16.0: a tag recorded on one phone is picked up from the server on another; commander markings reach the phones; debrief timings show', async () => {
+        const P = await device('P16'); await setup(P, 'Medic Papa');
+        await P.evaluate(() => { cmdStart(); });
+        await answerDialog(P, true);
+        await P.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        const sh = await P.evaluate(() => { closeCmdDetails(); return { code: CMD.cfg.code, pin: CMD.cfg.pin }; });
+        await triage(P, 'MITT', [true]);
+        await P.evaluate(() => { const e = currentEntry(); e.cardNo = 'WM-9001'; touch(e, ['cardNo']); saveState(); });
+        await P.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0 && !CMD.inflight, null, { timeout: 10000 });
+        const pUid = await P.evaluate(() => incidentLog[0].uid);
+        const Q = await device('Q16'); await setup(Q, 'Medic Quebec');
+        assert.strictEqual(await Q.evaluate((s) => cmdJoin(s.code, s.pin), sh), true);
+        // Q scans the card number it has never seen: the server's copy is offered through review-and-accept.
+        await Q.evaluate(() => { offerTagLookup('WM-9001'); });
+        await page_visible(Q, '#preview-modal');
+        assert.match(await Q.textContent('#preview-warn'), /copied from the commander server/);
+        await Q.evaluate(() => acceptPreview());
+        await Q.waitForFunction(() => incidentLog.length === 1, null, { timeout: 5000 });
+        assert.strictEqual(await Q.evaluate(() => incidentLog[0].uid), pUid, 'same uid, so the two copies merge later');
+        assert.strictEqual(await Q.evaluate(() => document.getElementById('qr-modal').style.display === 'flex'), false, 'no ACK QR for a server pick-up');
+        assert.ok(await Q.evaluate(() => auditLog.some(a => a.action === 'SERVER_LOOKUP') && auditLog.some(a => a.action === 'SERVER_PICKUP')));
+        assert.strictEqual(await Q.evaluate(() => document.getElementById('result-screen').classList.contains('active')), true, 'the picked-up patient opens');
+        // An unknown tag that no phone has still offers to start a new patient.
+        await Q.evaluate(() => { resetToHome(); offerTagLookup('WM-0000'); });
+        await page_visible(Q, '#confirm-modal');
+        assert.match(await Q.textContent('#confirm-title'), /WM-0000/);
+        await Q.click('#confirm-cancel');
+        // Commander marks the map; the phones receive it with their next report and show it.
+        const CM = await device('Cmd16', { viewport: { width: 1280, height: 900 }, permissions: [] });
+        await CM.goto(url.replace('index.html', 'commander.html#' + sh.code));
+        await CM.fill('#in-pin', sh.pin);
+        await CM.click('#signin button');
+        await CM.waitForFunction(() => document.querySelectorAll('#rows tr').length === 1, null, { timeout: 8000 });
+        assert.notStrictEqual(await CM.evaluate(() => document.getElementById('mark-tools').style.display), 'none');
+        await CM.evaluate(() => { document.getElementById('mark-type').value = 'inner'; markTypeChanged(); document.getElementById('mark-radius').value = '150'; startMarking(); onMapClickMark({ latlng: { lat: 53.481, lng: -2.243 } }); });
+        await CM.waitForFunction(() => (data.marks || []).length === 1, null, { timeout: 5000 });
+        await CM.evaluate(() => { document.getElementById('mark-type').value = 'rvp'; markTypeChanged(); document.getElementById('mark-label').value = 'Main gate'; startMarking(); onMapClickMark({ latlng: { lat: 53.482, lng: -2.244 } }); });
+        await CM.waitForFunction(() => (data.marks || []).length === 2, null, { timeout: 5000 });
+        assert.match(await CM.textContent('#mark-list'), /RVP: Main gate/);
+        assert.strictEqual(await CM.evaluate(() => document.querySelectorAll('#map .mk-mark').length), 2);
+        await Q.evaluate(() => cmdPush(true));
+        await Q.waitForFunction(() => (CMD.cfg.marks || []).length === 2, null, { timeout: 8000 });
+        assert.ok(await Q.evaluate(() => auditLog.some(a => a.action === 'COMMANDER_MARKS' && /RVP Main gate/.test(a.details))));
+        await Q.evaluate(() => showMap());
+        await Q.waitForFunction(() => document.querySelectorAll('#patient-map .mk-mark').length === 2, null, { timeout: 5000 });
+        // Removing one on the commander screen removes it on the phones too.
+        await CM.evaluate(() => removeMark(data.marks[0].id));
+        await CM.waitForFunction(() => (data.marks || []).length === 1, null, { timeout: 5000 });
+        await Q.evaluate(() => cmdPush(true));
+        await Q.waitForFunction(() => (CMD.cfg.marks || []).length === 1, null, { timeout: 8000 });
+        assert.strictEqual(await Q.evaluate(() => document.querySelectorAll('#patient-map .mk-mark').length), 1);
+        // Debrief timings: the commander card and the phone.
+        assert.match(await CM.textContent('#debrief'), /First casualty recorded/);
+        assert.match(await CM.textContent('#debrief'), /First P1 identified/);
+        await Q.evaluate(() => { resetToHome(); showDebriefTimings(); });
+        await page_visible(Q, '#confirm-modal');
+        assert.match(await Q.textContent('#confirm-title'), /Debrief timings/);
+        assert.match(await Q.textContent('#confirm-message'), /First P1 identified: \d\d:\d\d/);
+        await Q.click('#confirm-ok');
+        // The view-only PIN hides the marking tools.
+        const viewPin = await P.evaluate(() => CMD.cfg.viewPin);
+        const CV = await browser.newPage();
+        CV.on('pageerror', e => errors.push(`Cmd16 V: ${e.message}`));
+        await CV.goto(url.replace('index.html', 'commander.html#' + sh.code));
+        await CV.fill('#in-pin', viewPin);
+        await CV.click('#signin button');
+        await CV.waitForFunction(() => document.querySelectorAll('#rows tr').length >= 1, null, { timeout: 8000 });
+        assert.strictEqual(await CV.evaluate(() => document.getElementById('mark-tools').style.display), 'none');
+        assert.strictEqual(await CV.evaluate(() => document.querySelectorAll('#map .mk-mark').length), 1, 'view-only still sees the markings');
+        await CV.close();
+        await CM._ctx.close(); await P._ctx.close(); await Q._ctx.close();
+    });
+    await test('v0.16.0: the METHANE rough count tallies, undoes and fills N; voice notes ask once in real use and refuse offline', async () => {
+        const R = await device('R16', { initScript: () => { window.SpeechRecognition = window.webkitSpeechRecognition = function () { this.start = () => { window._voiceStarted = (window._voiceStarted || 0) + 1; }; }; } });
+        await setup(R, 'Medic Romeo');
+        await R.evaluate(() => { showMethane(); toggleTally(true); });
+        await R.evaluate(() => { tallyAdd('walking'); tallyAdd('walking'); tallyAdd('lying'); tallyAdd('dead'); tallyUndo(); });
+        assert.deepStrictEqual(await R.evaluate(() => ['walking', 'lying', 'dead'].map(k => document.getElementById('tally-' + k).textContent)), ['2', '1', '0']);
+        await R.evaluate(() => tallyToMethane());
+        assert.match(await R.inputValue('#m-num'), /^Rough count, not yet triaged at \d\d:\d\d: about 3 \(walking 2, lying 1, apparently dead 0\)$/);
+        assert.ok(await R.evaluate(() => auditLog.some(a => a.action === 'ROUGH_COUNT')));
+        // Voice: real use asks first; "Type instead" does not start the microphone.
+        await triage(R, 'TST', [true]);
+        await R.evaluate(() => { startVoice('p-notes'); });
+        await page_visible(R, '#confirm-modal');
+        assert.match(await R.textContent('#confirm-title'), /Voice notes leave this phone/);
+        await R.click('#confirm-cancel');
+        assert.strictEqual(await R.evaluate(() => window._voiceStarted || 0), 0);
+        await R.evaluate(() => { startVoice('p-notes'); });
+        await answerDialog(R, true);
+        await R.waitForFunction(() => window._voiceStarted === 1, null, { timeout: 3000 });
+        assert.ok(await R.evaluate(() => auditLog.some(a => a.action === 'VOICE_NOTICE_ACCEPTED')));
+        await R.evaluate(() => startVoice('p-notes'));   // asked only once
+        assert.strictEqual(await R.evaluate(() => window._voiceStarted), 2);
+        await R._ctx.setOffline(true);
+        await R.evaluate(() => startVoice('p-notes'));
+        assert.strictEqual(await R.evaluate(() => window._voiceStarted), 2, 'no voice without a connection');
+        await R._ctx.setOffline(false);
+        await R._ctx.close();
+    });
+
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
 
     await browser.close();

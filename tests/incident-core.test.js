@@ -247,6 +247,43 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(g2.status, 200);
         assert.strictEqual(g2.body.records.length, 1);
     });
+    console.log('\nincident-core: v0.16.0 map markings and tag lookup');
+    await test('the commander sets map markings; phones get them back on every push; the read carries them and its ETag changes', async () => {
+        const core4 = createCore({ store: memoryStore(), now: () => clock });
+        const c = (await core4.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        const g1 = await core4.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.deepStrictEqual(g1.body.marks, []);
+        clock += 1000;
+        const m = await core4.handle('POST', `/api/incident/${c.code}/marks`, H(c.pin), JSON.stringify({ marks: [{ type: 'inner', lat: 52.45, lng: -1.9, radius: 150 }, { type: 'rvp', lat: 52.46, lng: -1.91, label: 'Main gate' }, { type: 'nonsense', lat: 1, lng: 1 }, { type: 'hazard', lat: 999, lng: 1 }] }), '2.2.2.2');
+        assert.strictEqual(m.status, 200);
+        assert.deepStrictEqual(m.body.marks.map(x => x.type), ['inner', 'rvp']);
+        assert.strictEqual(m.body.marks[0].radius, 150);
+        const p = await core4.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [] }), '1.1.1.1');
+        assert.strictEqual(p.body.marks.length, 2);
+        assert.strictEqual(p.body.marksAt, m.body.marksAt);
+        const g2 = await core4.handle('GET', `/api/incident/${c.code}`, Object.assign(H(c.pin), { 'x-incident-seq': g1.headers['X-Incident-Seq'] }), '', '2.2.2.2');
+        assert.strictEqual(g2.status, 200);
+        assert.strictEqual(g2.body.marks[1].label, 'Main gate');
+    });
+    await test('the view-only PIN cannot change map markings or look up a tag', async () => {
+        const core5 = createCore({ store: memoryStore(), now: () => clock });
+        const c = (await core5.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        assert.strictEqual((await core5.handle('POST', `/api/incident/${c.code}/marks`, H(c.viewPin), JSON.stringify({ marks: [] }), '2.2.2.2')).status, 403);
+        assert.strictEqual((await core5.handle('POST', `/api/incident/${c.code}/lookup`, H(c.viewPin), JSON.stringify({ tag: 'X' }), '2.2.2.2')).status, 403);
+    });
+    await test('a tag lookup finds a record by exact patient ID or card number, not by partial match', async () => {
+        const core6 = createCore({ store: memoryStore(), now: () => clock });
+        const c = (await core6.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        await core6.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('t1', 'A1B2-TST-001', 'P1', { cardNo: 'WM 004512' }), rec('t2', 'TAG-778', 'P2')] }), '1.1.1.1');
+        const byCard = await core6.handle('POST', `/api/incident/${c.code}/lookup`, H(c.pin), JSON.stringify({ tag: 'wm 004512' }), '1.1.1.1');
+        assert.strictEqual(byCard.status, 200);
+        assert.deepStrictEqual(byCard.body.records.map(r => r.uid), ['t1']);
+        const byId = await core6.handle('POST', `/api/incident/${c.code}/lookup`, H(c.pin), JSON.stringify({ tag: 'TAG-778' }), '1.1.1.1');
+        assert.deepStrictEqual(byId.body.records.map(r => r.uid), ['t2']);
+        const partial = await core6.handle('POST', `/api/incident/${c.code}/lookup`, H(c.pin), JSON.stringify({ tag: 'TAG' }), '1.1.1.1');
+        assert.deepStrictEqual(partial.body.records, []);
+        assert.strictEqual((await core6.handle('POST', `/api/incident/${c.code}/lookup`, H(c.pin), JSON.stringify({}), '1.1.1.1')).status, 400);
+    });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);
 })();

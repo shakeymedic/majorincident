@@ -172,6 +172,19 @@
     .mk.mk-evac { opacity:0.55; }
     .mk.mk-ccs { width:40px; height:28px; border-radius:6px; background:#007F3B; color:#fff; font-size:0.8rem; }
     .map-pop { font-size:0.95rem; min-width:190px; }
+    .mk-mark { display:inline-block; padding:3px 7px; border-radius:5px; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5); color:#fff; font-weight:800; font-size:0.75rem; white-space:nowrap; font-family:var(--font); transform:translate(-50%, -50%); }
+    body.wall .mk-mark { font-size:0.8vw; padding:0.15vw 0.4vw; }
+    .mark-tools { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid var(--line); }
+    .mark-tools select, .mark-tools input { font-size:0.9rem; padding:6px; }
+    .mark-tools input.r { width:5.5em; }
+    .mark-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+    .mark-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 4px 3px 8px; border-radius:6px; color:#fff; font-size:0.85rem; font-weight:700; }
+    .mark-chip button { border:0; background:rgba(255,255,255,0.25); color:#fff; border-radius:4px; cursor:pointer; font-weight:900; padding:1px 7px; }
+    body.marking #map { cursor:crosshair; outline:3px solid #ED8B00; }
+    .debrief { width:100%; border-collapse:collapse; font-size:0.92rem; }
+    .debrief td { padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+    .debrief td.t { white-space:nowrap; font-weight:700; }
+    body.wall .mark-tools, body.wall .mark-list, body.wall #debrief-card { display:none !important; }
     .map-pop-meta { font-size:0.82rem; color:#4C6272; margin-top:3px; }
 
     /* ---------- Attention list ---------- */
@@ -457,6 +470,18 @@
                         <button type="button" class="btn small sec" onclick="exportFile('geojson')">Save GeoJSON</button>
                         <button type="button" class="btn small sec" onclick="exportCsv()">Save CSV</button>
                     </div>
+                    <div class="mark-tools" id="mark-tools">
+                        <b>Mark the map for every phone:</b>
+                        <select id="mark-type" onchange="markTypeChanged()" aria-label="What to mark">
+                            <option value="inner">Inner cordon</option><option value="outer">Outer cordon</option><option value="rvp">Rendezvous point (RVP)</option>
+                            <option value="loading">Ambulance loading point</option><option value="fcp">Forward command post</option><option value="hazard">Hazard</option>
+                        </select>
+                        <input type="number" class="r" id="mark-radius" min="10" max="5000" step="10" value="100" aria-label="Cordon radius in metres" title="Cordon radius (metres)">
+                        <input type="text" id="mark-label" maxlength="60" placeholder="Label (optional)" aria-label="Label">
+                        <button type="button" class="btn small" id="btn-mark" onclick="startMarking()">Place on map</button>
+                        <span class="muted" id="mark-hint"></span>
+                    </div>
+                    <div class="mark-list" id="mark-list"></div>
                 </div>
                 <div class="card" id="phones-card">
                     <h2>Phones reporting <small id="phones-note"></small></h2>
@@ -504,6 +529,10 @@
                     <h2>METHANE <small id="methane-note"></small></h2>
                     <div id="methane"></div>
                 </div>
+                <div class="card" id="debrief-card">
+                    <h2>Debrief timings <small id="debrief-note"></small></h2>
+                    <div id="debrief"></div>
+                </div>
             </div>
         </div>
         <div class="legend" id="legend"></div>
@@ -537,6 +566,8 @@
     let map = null, cluster = null, ccsMarker = null, circles = null;
     let firstFit = true;
     let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
+    let demoMarks = [];       // map markings placed during the demo (kept in the page only)
+    let marksLayer = null, marking = false;
 
     function loadCfg() {
         try { const s = sessionStorage.getItem('mit_commander'); if (s) cfg = JSON.parse(s); } catch (e) {}
@@ -641,7 +672,7 @@
         const order = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
         const records = d.records.map(r => Object.assign(MITTLib.sanitisePatientRecord(r), { reportedBy: r.deviceId, reportedAt: r.updatedAt }))
             .sort((x, y) => ((x.category in order ? order[x.category] : 99) - (y.category in order ? order[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
-        data = { code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, methane: Object.assign({}, d.incident.methane, { timestamp: d.incident.createdAt + 7 * 60 * 1000, by: 'MERIT doctor', device: 'DEMODR' }), devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
+        data = { marks: demoMarks, marksAt: 0, code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, methane: Object.assign({}, d.incident.methane, { timestamp: d.incident.createdAt + 7 * 60 * 1000, by: 'MERIT doctor', device: 'DEMODR' }), devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
         lastOkAt = now;
         setStatus('live', 'Demo');
         const next = d.incident.nextEventInMs;
@@ -787,6 +818,73 @@
         renderMethane();
         renderHospitals(all);
         renderTimeline(all);
+        renderDebrief(all);
+        renderMarkTools();
+    }
+
+    // ---------- Debrief timings (same figures as the phones, for every linked phone) ----------
+    function debriefRowsHtml(t) {
+        return t.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="t">${r.at ? `${hm(r.at)} <span class="muted">+${r.mins} min</span>` : '<span class="muted">not yet</span>'}</td><td class="muted">${esc(r.note || '')}</td></tr>`).join('') +
+            (t.p1SceneMedianMins !== null ? `<tr><td>P1 time on scene (median of ${t.p1SceneCount})</td><td class="t">${t.p1SceneMedianMins} min</td><td class="muted">first record to leaving</td></tr>` : '');
+    }
+    function renderDebrief(all) {
+        const t = MITTLib.debriefTimings(all, { startedAt: data.createdAt });
+        $('debrief').innerHTML = t.count ? `<table class="debrief"><tbody>${debriefRowsHtml(t)}</tbody></table>` : '<p class="muted">Nothing recorded yet.</p>';
+        setText('debrief-note', t.count ? `minutes from ${hm(t.start)} (incident started or first record)` : '');
+    }
+
+    // ---------- Shared map markings: placed here, sent to every linked phone with its next report ----------
+    function canMark() { return !!data && (demo || (cfg && !data.viewOnly)); }
+    function markTypeChanged() {
+        const ty = MITTLib.MAP_MARK_TYPES[$('mark-type').value];
+        $('mark-radius').style.display = ty.circle ? '' : 'none';
+        if (ty.circle) $('mark-radius').value = ty.radius;
+    }
+    function renderMarkTools() {
+        $('mark-tools').style.display = canMark() ? '' : 'none';
+        const marks = MITTLib.normaliseMapMarks(data.marks || []);
+        $('mark-list').innerHTML = marks.map(m => { const ty = MITTLib.MAP_MARK_TYPES[m.type]; return `<span class="mark-chip" style="background:${ty.colour}">${esc(ty.short)}${m.label ? ': ' + esc(m.label) : ''}${m.radius ? ` <small>${m.radius} m</small>` : ''}${canMark() ? `<button type="button" title="Remove" aria-label="Remove ${esc(ty.label)}" onclick="removeMark('${esc(m.id)}')">✕</button>` : ''}</span>`; }).join('');
+    }
+    function startMarking() {
+        if (!canMark() || !ensureMap()) return;
+        marking = !marking;
+        document.body.classList.toggle('marking', marking);
+        $('btn-mark').textContent = marking ? 'Cancel' : 'Place on map';
+        setText('mark-hint', marking ? 'Click the map where it goes.' : '');
+    }
+    async function saveMarks(marks) {
+        marks = MITTLib.normaliseMapMarks(marks);
+        if (demo) { demoMarks = marks; data.marks = marks; render(); return true; }
+        try {
+            const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/marks`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify({ marks }), cache: 'no-store' });
+            const b = await r.json().catch(() => ({}));
+            if (!r.ok) { alert(b.message || `Could not save the map markings (server replied ${r.status}).`); return false; }
+            data.marks = b.marks || marks; data.marksAt = b.marksAt || Date.now();
+            render();
+            setText('mark-hint', 'Saved. Phones get it with their next report (within a minute).');
+            return true;
+        } catch (e) { alert('Could not reach the server, so the map markings were not saved. Try again.'); return false; }
+    }
+    function onMapClickMark(ev) {
+        if (!marking) return;
+        startMarking();
+        const type = $('mark-type').value;
+        const mark = { id: 'm' + Date.now().toString(36), type, lat: ev.latlng.lat, lng: ev.latlng.lng, label: $('mark-label').value.trim(), radius: Number($('mark-radius').value) || undefined, at: Date.now() };
+        $('mark-label').value = '';
+        saveMarks((data.marks || []).concat([mark]));
+    }
+    function removeMark(id) { saveMarks((data.marks || []).filter(m => m.id !== id)); }
+    function renderMarks() {
+        if (!map) return;
+        if (!marksLayer) marksLayer = L.layerGroup().addTo(map);
+        marksLayer.clearLayers();
+        MITTLib.normaliseMapMarks(data.marks || []).forEach(m => {
+            const ty = MITTLib.MAP_MARK_TYPES[m.type];
+            const pop = `<b>${esc(ty.label)}</b>${m.label ? '<br>' + esc(m.label) : ''}${m.radius ? `<br>Radius about ${m.radius} m` : ''}`;
+            if (ty.circle) marksLayer.addLayer(L.circle([m.lat, m.lng], { radius: m.radius, color: ty.colour, weight: 3, dashArray: '8 6', fill: false, interactive: false }));
+            // A cordon's label sits on its northern edge, so an inner and outer cordon round the same point both read.
+            marksLayer.addLayer(L.marker([ty.circle ? m.lat + m.radius / 111320 : m.lat, m.lng], { icon: L.divIcon({ html: `<span class="mk-mark" style="background:${ty.colour}">${esc(m.label ? ty.short + ': ' + m.label : ty.short)}</span>`, className: 'mk-wrap', iconSize: [0, 0] }), zIndexOffset: 900 }).bindPopup(pop));
+        });
     }
 
     // ---------- Alerts: things the control room must not miss, with a sound ----------
@@ -954,6 +1052,7 @@
             `<p>${data.name ? esc(data.name) + ' • ' : ''}Code ${esc(data.code || '')}${data.incidentCode ? ' • Incident ' + esc(data.incidentCode) : ''}${data.training ? ' • <b>TRAINING / EXERCISE</b>' : ''}<br>Started ${data.createdAt ? new Date(data.createdAt).toLocaleString('en-GB') : '?'} • printed ${when} • ${all.length} casualties from ${(data.devices || []).length} phones</p>` +
             `<h2>Counts</h2>${counts}` +
             (m ? `<h2>METHANE (${m.by ? esc(m.by) + ', ' : ''}${hm(m.timestamp)})</h2><table><tbody>${[['M', m.m], ['E', m.e], ['T', m.t], ['H', m.h], ['A', m.a], ['N', m.n], ['E', m.e_svc]].map(x => `<tr><th style="width:2em">${x[0]}</th><td>${esc(x[1] || '')}</td></tr>`).join('')}</tbody></table>` : '') +
+            (() => { const t = MITTLib.debriefTimings(all, { startedAt: data.createdAt }); return t.count ? `<h2>Debrief timings</h2><table><tbody>${debriefRowsHtml(t)}</tbody></table>` : ''; })() +
             `<h2>Hospitals</h2>${hosp ? `<table><thead><tr><th>Hospital</th>${order.map(c => `<th>${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th>Sent</th><th>Vehicles</th></tr></thead><tbody>${hosp}</tbody></table>` : '<p>Nobody evacuated.</p>'}` +
             `<h2>Phones</h2><table><thead><tr><th>Triager</th><th>Phone</th><th>Records</th><th>Joined</th><th>Last report</th></tr></thead><tbody>${phones}</tbody></table>` +
             `<h2>Casualties (${all.length})</h2><table><thead><tr><th>ID</th><th>Category</th><th>Stage</th><th>Triaged</th><th>Where</th><th>Interventions</th><th>By</th></tr></thead><tbody>${rows}</tbody></table>` +
@@ -984,6 +1083,7 @@
         cluster = L.markerClusterGroup({ maxClusterRadius: 32, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19 });
         map.addLayer(cluster);
         circles = L.layerGroup().addTo(map);
+        map.on('click', onMapClickMark);
         return true;
     }
     function renderMap(records) {
@@ -1006,6 +1106,7 @@
         if (data.ccs && data.ccs.lat) {
             ccsMarker = L.marker([Number(data.ccs.lat), Number(data.ccs.lng)], { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty Clearing Station').addTo(map);
         }
+        renderMarks();
         setText('map-note', `${n} with a position${records.length - n ? `, ${records.length - n} without` : ''}`);
         if (firstFit && (n || ccsMarker)) { firstFit = false; fitMap(); }
         setTimeout(() => map.invalidateSize(), 100);

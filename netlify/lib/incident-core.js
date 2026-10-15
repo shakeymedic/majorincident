@@ -20,6 +20,7 @@ const RATE_MAX_FAILURES = 25;                 // wrong PINs per client per windo
 const STALE_DEVICE_MS = 5 * 60 * 1000;
 const READ_BATCH = 25;                        // blobs fetched at once when the commander screen reads
 const METHANE_FIELD_MAX = 600;
+const MAX_LOOKUP_RESULTS = 5;
 const ORDER = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
 
 function randomCode(rng) {
@@ -218,14 +219,15 @@ function createCore(opts) {
         meta.updatedAt = t;
         meta.seq = (meta.seq || 0) + 1;
         await store.set(keyMeta(code), meta);
-        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS });
+        // Map markings ride back on every push and heartbeat, so linked phones pick them up without another request.
+        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS, marks: meta.marks || [], marksAt: meta.marksAt || 0 });
     }
 
     // What the commander screen has is identified by a fingerprint of the stored blobs (every record and device
     // etag plus the meta's own change counter), not by the counter alone. Two phones pushing at the same moment
     // can both write the same counter value; they cannot both leave the same set of etags behind.
     function fingerprint(meta, recs, devs) {
-        const parts = [String(meta.seq || 0), String(meta.updatedAt || 0), String((meta.ccs && meta.ccs.timestamp) || 0), String((meta.methane && meta.methane.timestamp) || 0)]
+        const parts = [String(meta.seq || 0), String(meta.updatedAt || 0), String((meta.ccs && meta.ccs.timestamp) || 0), String((meta.methane && meta.methane.timestamp) || 0), String(meta.marksAt || 0)]
             .concat(recs.map(e => e.key + '=' + e.etag), devs.map(e => e.key + '=' + e.etag));
         return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 20);
     }
@@ -249,7 +251,36 @@ function createCore(opts) {
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         log('read', code, client);
-        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, viewOnly: !!a.viewOnly, hasViewPin: !!meta.viewHash, devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
+        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: meta.marks || [], marksAt: meta.marksAt || 0, viewOnly: !!a.viewOnly, hasViewPin: !!meta.viewHash, devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
+    }
+
+    // Commander screen: replace the incident's map markings (cordons, RVP, loading point...). Full PIN only.
+    async function setMarks(code, pin, body, client) {
+        const a = await authed(code, pin, client);
+        if (a.status) return a;
+        const meta = a.meta;
+        const t = now();
+        meta.marks = lib.normaliseMapMarks(body.marks).map(m => Object.assign(m, { at: m.at || t }));
+        meta.marksAt = t;
+        meta.updatedAt = t;
+        meta.seq = (meta.seq || 0) + 1;
+        await store.set(keyMeta(code), meta);
+        log('marks', code, meta.marks.length);
+        return reply(200, { ok: true, marks: meta.marks, marksAt: t });
+    }
+
+    // A phone scanned a tag it does not know: has another phone in this incident recorded it? Full PIN only, and
+    // only exact matches on the patient ID or triage card number, so it cannot be used to browse the incident.
+    async function lookup(code, pin, body, client) {
+        const a = await authed(code, pin, client);
+        if (a.status) return a;
+        const tag = str(body.tag, 80).trim().toUpperCase();
+        if (!tag) return error(400, 'bad_request', 'tag is required.');
+        const keys = entries(await store.list(`i/${code}/r/`)).map(e => e.key);
+        const records = (await getMany(store, keys)).filter(r => String(r.id || '').toUpperCase() === tag || String(r.cardNo || '').trim().toUpperCase() === tag);
+        records.sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0));
+        log('lookup', code, records.length);
+        return reply(200, { ok: true, records: records.slice(0, MAX_LOOKUP_RESULTS) });
     }
 
     async function close(code, pin, client) {
@@ -295,6 +326,8 @@ function createCore(opts) {
             if (method === 'POST' && action === 'join') return await join(code, pin, body, client);
             if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client);
             if (method === 'POST' && action === 'close') return await close(code, pin, client);
+            if (method === 'POST' && action === 'marks') return await setMarks(code, pin, body, client);
+            if (method === 'POST' && action === 'lookup') return await lookup(code, pin, body, client);
             return error(404, 'not_found', 'Unknown endpoint.');
         } catch (e) {
             log('error', e && e.message);
@@ -302,7 +335,7 @@ function createCore(opts) {
         }
     }
 
-    return { handle, cleanup, create, join, push, read, close, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_LENGTH, PIN_LENGTH, READ_BATCH } };
+    return { handle, cleanup, create, join, push, read, close, setMarks, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_LENGTH, PIN_LENGTH, READ_BATCH } };
 }
 
 // Simple in-memory store (tests and local development). opts.delay (ms) or opts.jitter (ms) make every operation
