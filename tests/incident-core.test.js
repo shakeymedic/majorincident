@@ -189,6 +189,16 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(junk.status, 200);
         assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.methane.n, 'About 20', 'junk METHANE ignored');
     });
+    await test('a phone reports its battery; the commander read carries it', async () => {
+        const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('c1', 'A-1', 'P3', { cardNo: '0427' })], battery: 7.6, charging: false }), '1.1.1.1');
+        const g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.strictEqual(g.body.devices[0].battery, 8);
+        assert.strictEqual(g.body.devices[0].charging, false);
+        assert.strictEqual(g.body.records[0].cardNo, '0427');
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], battery: 'full' }), '1.1.1.1');
+        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].battery, 8, 'junk ignored, last value kept');
+    });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
         // A store where every operation takes a little time, so the two pushes interleave as they would on Netlify.
         const slow = memoryStore({ jitter: 3 });

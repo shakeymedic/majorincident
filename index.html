@@ -1533,6 +1533,7 @@
         <span class="status-item" id="header-incident" style="font-weight:bold;"></span>
         <span class="status-item" id="header-device" title="Device code (default patient-ID prefix)"></span>
         <span class="status-pills" style="margin-left:auto; display:inline-flex; gap:6px; flex-shrink:0;">
+            <button type="button" id="bat-pill" class="gps-status loc-stale" style="display:none;" onclick="showToast('Battery low. Plug in or hand over to a charged phone before it dies; records are saved on this phone and already sent to the commander keep.', { long: true })" title="Battery">🔋</button>
             <button type="button" id="cmd-pill" class="gps-status loc-searching" style="display:none;" onclick="cmdShowDetails()" title="Live sharing with the incident commander">☁ Commander</button>
             <button type="button" id="gps-indicator" class="gps-status loc-searching" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
         </span>
@@ -1758,6 +1759,7 @@
                         </div>
                         <input type="text" id="p-demos" class="rec-field" placeholder="Age / Gender (e.g. 35M)">
                     </div>
+                    <div class="input-group"><label for="p-card-no">Triage card / tag number</label><input type="text" id="p-card-no" class="rec-field" placeholder="Number printed on the card on the casualty" autocomplete="off"></div>
                     <div class="input-group"><label for="p-allergies">Allergies</label><input type="text" id="p-allergies" class="rec-field" placeholder="e.g. Penicillin"></div>
                     <div class="input-group">
                         <label for="p-notes">Notes</label>
@@ -3305,6 +3307,7 @@
         $('p-evac-vehicle').value = entry.evacVehicle || '';
         $('p-evac-dest').value = entry.evacDest || '';
         $('p-hospital-id').value = entry.hospitalId || '';
+        $('p-card-no').value = entry.cardNo || '';
         $('time-offset').value = '0';
         const ccsBtn = $('btn-ccs');
         ccsBtn.textContent = entry.atCcs ? 'At CCS ✓ (tap to undo)' : 'Mark as AT CCS (handed to casualty clearing)';
@@ -3390,6 +3393,7 @@
         if (entry.evacDest) t.push('→ ' + entry.evacDest);
         if (entry.evacVehicle) t.push(entry.evacVehicle);
         if (entry.handoverTo) t.push('care: ' + entry.handoverTo);
+        if (entry.cardNo) t.unshift('card ' + entry.cardNo);
         if (entry.hospitalId) t.push('hosp ' + entry.hospitalId);
         setText('sum-transport', t.join(' • ') || 'on scene');
         setText('sum-category', `currently ${catShort(entry.category)}`);
@@ -3397,7 +3401,7 @@
 
     // ---------- Field saving: only fields the user actually edited are written ----------
     // (Previously every save copied the whole form back, silently overwriting imports, handover notes, etc.)
-    const REC_FIELDS = { 'p-demos': ['demos', 'Demographics'], 'p-allergies': ['allergies', 'Allergies'], 'p-notes': ['notes', 'Notes'], 'p-evac-dest': ['evacDest', 'Destination'], 'p-evac-vehicle': ['evacVehicle', 'Vehicle/crew'], 'p-hospital-id': ['hospitalId', 'Hospital ID'] };
+    const REC_FIELDS = { 'p-demos': ['demos', 'Demographics'], 'p-allergies': ['allergies', 'Allergies'], 'p-notes': ['notes', 'Notes'], 'p-evac-dest': ['evacDest', 'Destination'], 'p-evac-vehicle': ['evacVehicle', 'Vehicle/crew'], 'p-hospital-id': ['hospitalId', 'Hospital ID'], 'p-card-no': ['cardNo', 'Triage card no.'] };
     const dirtyFields = new Set();
     let _dirtyTimer = null;
     function markDirty(id) { dirtyFields.add(id); }
@@ -3423,7 +3427,7 @@
     // Input limits come from the same table the receiving device uses, so text typed here is never cut on handover.
     function applyInputLimits() {
         const L = MITTLib.FIELD_INPUT_LIMITS;
-        const map = { 'p-demos': 'demos', 'p-allergies': 'allergies', 'p-notes': 'notes', 'p-evac-dest': 'evacDest', 'p-evac-vehicle': 'evacVehicle', 'p-hospital-id': 'hospitalId',
+        const map = { 'p-demos': 'demos', 'p-allergies': 'allergies', 'p-notes': 'notes', 'p-evac-dest': 'evacDest', 'p-evac-vehicle': 'evacVehicle', 'p-hospital-id': 'hospitalId', 'p-card-no': 'cardNo',
             'p-sector': 'sector', 'p-landmark': 'landmark', 'p-floor': 'floor', 'p-area': 'area', 'intro-sector': 'sector', 'intro-triager': 'triager', 'manual-id-input': 'id' };
         Object.keys(map).forEach(id => { const f = $(id); if (f && L[map[id]]) f.maxLength = L[map[id]]; });
     }
@@ -4098,6 +4102,7 @@
         appendRow(content, 'Reason', d.reason);
         appendRow(content, 'Action', d.action);
         appendRow(content, 'Demographics', d.demos);
+        if (d.cardNo) appendRow(content, 'Triage card no.', d.cardNo);
         if (d.allergies) appendRow(content, 'Allergies', el('strong', { text: d.allergies }));
         if (d.highRisk) appendRow(content, 'High Risk', el('strong', { style: 'color:var(--nhs-red)', text: '⚠ HIGH RISK OF DETERIORATION' }));
         if (d.landmark || d.floor || d.area || d.sector || d.currentLocation) appendRow(content, 'Location', locationLabel(d));
@@ -5384,7 +5389,41 @@
     const CMD = { cfg: null, dirty: new Set(), seen: {}, timer: null, heartbeat: null, inflight: false, lastSentAt: 0, lastError: '', failStreak: 0, sentTotal: 0 };
     function cmdActive() { return !!(CMD.cfg && CMD.cfg.code && CMD.cfg.pin); }
     function cmdSaveCfg() { ls('mit_commander', CMD.cfg ? JSON.stringify(CMD.cfg) : null); }
+    // ---------- Battery (Android Chrome; Safari has no battery API, so the pill never shows there) ----------
+    const BAT = { level: null, charging: null, warned: 0 };
+    function batteryRender() {
+        const pill = $('bat-pill');
+        if (!pill) return;
+        const pct = BAT.level === null ? null : Math.round(BAT.level * 100);
+        const show = pct !== null && pct <= 25 && !BAT.charging;
+        pill.style.display = show ? '' : 'none';
+        if (!show) return;
+        pill.textContent = `🔋 ${pct}%`;
+        pill.className = 'gps-status ' + (pct <= 10 ? 'loc-denied' : 'loc-stale');
+        pill.title = `Battery ${pct}%${BAT.charging ? ', charging' : ''}`;
+    }
+    function batteryCheck() {
+        const pct = BAT.level === null ? null : Math.round(BAT.level * 100);
+        batteryRender();
+        if (pct === null || BAT.charging) { if (BAT.charging) BAT.warned = 0; return; }
+        const step = pct <= 10 ? 10 : pct <= 20 ? 20 : 0;
+        if (step && BAT.warned !== step) {
+            BAT.warned = step;
+            showToast(step === 10 ? `Battery ${pct}%: plug in now or hand your patients to a charged phone (Home → More → Send patients).` : `Battery ${pct}%. Plug in when you can; records are safe on this phone.`, { alert: step === 10, long: true });
+            logAudit('BATTERY_LOW', '-', `Battery ${pct}%`, Date.now());
+        }
+    }
+    function batteryInit() {
+        if (!navigator.getBattery) return;
+        navigator.getBattery().then(b => {
+            const upd = () => { BAT.level = b.level; BAT.charging = b.charging; batteryCheck(); };
+            upd();
+            b.addEventListener('levelchange', upd); b.addEventListener('chargingchange', upd);
+        }).catch(() => {});
+    }
+    function batteryPercent() { return BAT.level === null ? undefined : Math.round(BAT.level * 100); }
     function cmdInit() {
+        batteryInit();
         CMD.cfg = lsJSON('mit_commander', null);
         if (!cmdActive()) { CMD.cfg = null; cmdRenderStatus(); return; }
         cmdQueueAll();
@@ -5431,7 +5470,7 @@
         uids.forEach(u => { if (indexByUid(u) === -1) CMD.dirty.delete(u); });
         CMD.inflight = true;
         try {
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined } });
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
                 CMD.lastSentAt = Date.now();

@@ -102,8 +102,8 @@
     }
     // Maximum stored length of each free-text field. The app's input boxes use lower limits
     // (FIELD_INPUT_LIMITS) so merged records have headroom and text is never cut in normal use.
-    const FIELD_LIMITS = { id: 80, demos: 300, allergies: 2000, notes: 20000, evacDest: 200, evacVehicle: 200, hospitalId: 80, sector: 120, landmark: 120, floor: 60, area: 120, action: 300, reason: 160, triager: 80 };
-    const FIELD_INPUT_LIMITS = { id: 60, demos: 200, allergies: 1000, notes: 10000, evacDest: 120, evacVehicle: 120, hospitalId: 60, sector: 80, landmark: 80, floor: 40, area: 80, triager: 60 };
+    const FIELD_LIMITS = { id: 80, demos: 300, allergies: 2000, notes: 20000, evacDest: 200, evacVehicle: 200, hospitalId: 80, cardNo: 40, sector: 120, landmark: 120, floor: 60, area: 120, action: 300, reason: 160, triager: 80 };
+    const FIELD_INPUT_LIMITS = { id: 60, demos: 200, allergies: 1000, notes: 10000, evacDest: 120, evacVehicle: 120, hospitalId: 60, cardNo: 30, sector: 80, landmark: 80, floor: 40, area: 80, triager: 60 };
     function _num(v) {
         if (v === undefined || v === null || v === '') return null;
         const n = Number(v);
@@ -169,6 +169,7 @@
             evacDest: _str(rec.evacDest, L.evacDest),
             evacVehicle: _str(rec.evacVehicle, L.evacVehicle),
             hospitalId: _str(rec.hospitalId, L.hospitalId),
+            cardNo: _str(rec.cardNo, L.cardNo).trim(),
             tod: _str(rec.tod, 16),
             injuries: sanitiseInjuries(rec.injuries),
             lastReassessed: _num(rec.lastReassessed),
@@ -255,6 +256,7 @@
         if (entry.fts && Object.keys(entry.fts).length) short.ft = entry.fts;
         if (Array.isArray(entry.triageHistory) && entry.triageHistory.length) short.th = entry.triageHistory.slice(-5);
         if (entry.hospitalId) short.hid = entry.hospitalId;
+        if (entry.cardNo) short.cn = entry.cardNo;
         if (entry.tod) short.tod = entry.tod;
         if (entry.locationConfidence) short.lc = entry.locationConfidence;
         if (entry.landmark) short.lm = entry.landmark;
@@ -306,6 +308,7 @@
             fts: short.ft || {},
             triageHistory: short.th || [],
             hospitalId: short.hid || '',
+            cardNo: short.cn || '',
             tod: short.tod || '',
             locationHistoryTotal: short.lhn || undefined,
             time: short.tm || '',
@@ -413,7 +416,7 @@
     //  * Notes never nest: if one side already contains the other, the superset is kept.
     //  * Every change and conflict is reported so the app can audit it field by field.
     const CATEGORY_URGENCY = { P1: 0, P2: 1, P3: 2 };
-    const LOW_RISK_TEXT_FIELDS = ['sector', 'landmark', 'floor', 'area', 'evacDest', 'evacVehicle', 'hospitalId', 'locationConfidence', 'tod', 'incidentCode'];
+    const LOW_RISK_TEXT_FIELDS = ['sector', 'landmark', 'floor', 'area', 'evacDest', 'evacVehicle', 'hospitalId', 'cardNo', 'locationConfidence', 'tod', 'incidentCode'];
 
     function resolveCategoryMerge(localCat, incCat, resolution) {
         if (!incCat || incCat === localCat) return { take: false };
@@ -735,7 +738,7 @@
         'id','time','timestamp','tool','category','action','reason','triager','location','initialLocation','currentLocation','locationHistory','locationConfidence','sector','landmark','floor','area',
         'demos','allergies','notes','highRisk','interventions','evacuated','evacDest','evacVehicle',
         'injuries','lastReassessed','reassessOutcome','lastDeteriorationAt','handoverState','handoverAt','handoverTo','_rev',
-        'uid','createdAt','createdBy','deviceId','updatedAt','fts','triageHistory','hospitalId','tod','importConflicts','incidentCode','atCcs','ccsAt','evacAt'
+        'uid','createdAt','createdBy','deviceId','updatedAt','fts','triageHistory','hospitalId','tod','importConflicts','incidentCode','atCcs','ccsAt','evacAt','cardNo'
     ];
 
     function jsonClone(value) {

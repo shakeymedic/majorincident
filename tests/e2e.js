@@ -1214,12 +1214,14 @@ async function test(name, fn) {
         await CC.evaluate(() => { ALERTS.sound = false; dismissAlert(); });
         assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('#alerts .alert').length), 0);
         // CA's TST P3 casualty gets worse (re-triaged as P1 by hand, as a re-triage would do)
-        await CA.evaluate(() => { const e = incidentLog[0]; e.category = 'P1'; e.triageHistory = (e.triageHistory || []).concat([{ ts: Date.now(), category: 'P1', reason: 'Severe Bleeding', tool: 'TST', by: triagerName, kind: 'retriage' }]); e.lastDeteriorationAt = Date.now(); touch(e, ['category']); saveState(); });
+        await CA.evaluate(() => { const e = incidentLog[0]; e.cardNo = '0427'; e.category = 'P1'; e.triageHistory = (e.triageHistory || []).concat([{ ts: Date.now(), category: 'P1', reason: 'Severe Bleeding', tool: 'TST', by: triagerName, kind: 'retriage' }]); e.lastDeteriorationAt = Date.now(); touch(e, ['category']); saveState(); });
         await CA.waitForFunction(() => CMD.dirty.size === 0, null, { timeout: 10000 });
         await CC.evaluate(() => refreshNow());
         await CC.waitForFunction(() => document.querySelectorAll('#alerts .alert').length === 1, null, { timeout: 8000 });
         assert.match(await CC.evaluate(() => document.querySelector('#alerts .alert').textContent), /got worse: P3 → P1/);
         assert.match(await CC.evaluate(() => document.getElementById('timeline').textContent), /Deteriorated/);
+        assert.match(await CC.evaluate(() => document.getElementById('rows').textContent), /Card 0427/, 'triage card number shown on the commander table');
+        assert.strictEqual(await CA.evaluate(() => { currentLogIndex = 0; renderResultScreen(incidentLog[0]); return document.getElementById('p-card-no').value; }), '0427');
         await CC.evaluate(() => dismissAlert());
         assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('#alerts .alert').length), 0);
         // METHANE saved on a phone reaches the commander screen

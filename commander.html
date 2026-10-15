@@ -743,7 +743,7 @@
         setText('counts-note', `Big number = on scene now (field + CCS); "in total" includes evacuated. CCS = casualty clearing station (set on the phone, or inferred from a "Casualty Clearing" sector on older phones). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
         // phones
         const devs = data.devices || [];
-        $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span></b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
+        $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
         setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes`);
         // sectors
         const sectors = {};
@@ -775,7 +775,7 @@
             const ints = Object.keys(r.interventions || {}).map(k => `${esc(k)} ${esc((r.interventions[k] && r.interventions[k].time) || '')}`.trim()).join(', ');
             const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? 'Due now' : `Due ${hm(rs.dueAt)}`;
             const fresh = !r.evacuated && (now - (r.updatedAt || r.reportedAt || 0)) < 90000;
-            return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" onclick="openPatient('${esc(r.uid)}')"><td><span class="id">${esc(r.id)}</span><div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
+            return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" onclick="openPatient('${esc(r.uid)}')"><td><span class="id">${esc(r.id)}</span>${r.cardNo ? `<div><b>Card ${esc(r.cardNo)}</b></div>` : ''}<div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
                 `<td>${cat(r.category)}<div style="margin-top:4px">${toolChip(r)}</div></td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
                 `<td>${ints || '<span class="muted">none</span>'}</td><td>${re}</td><td>${esc(r.triager || '')}<div class="muted">${esc(r.reportedBy || '')} • ${age(r.updatedAt || r.reportedAt)}</div></td></tr>`;
         }).join('');
@@ -844,8 +844,11 @@
             if (cur.tq && !prev.tq) fresh.push({ red: false, uid: r.uid, msg: `${shortId(r.id)}: tourniquet on for over an hour`, sub: `since ${esc((r.interventions.Tourniquet || {}).time || '?')} • ${esc(place(r) || '')}` });
         });
         (devices || []).forEach(d => {
-            next.d[d.deviceId] = !!d.stale;
-            if (seen && d.stale && seen.d[d.deviceId] === false) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)} not heard from for 5 minutes`, sub: `last report ${esc(age(d.lastSeen))}` });
+            const low = typeof d.battery === 'number' && !d.charging && d.battery <= 10;
+            next.d[d.deviceId] = { stale: !!d.stale, low };
+            const prev = seen && seen.d[d.deviceId];
+            if (prev && d.stale && !prev.stale) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)} not heard from for 5 minutes`, sub: `last report ${esc(age(d.lastSeen))}` });
+            if (prev && low && !prev.low) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)}: battery ${d.battery}%`, sub: 'ask them to plug in or hand their patients to a charged phone' });
         });
         ALERTS.seen = next;
         if (!fresh.length) return;
@@ -946,7 +949,7 @@
         const hosp = Object.keys(sc.hospitals).sort().map(h => { const rs = all.filter(r => r.evacuated && (String(r.evacDest || '').trim() || 'Destination not recorded') === h); return `<tr><td>${esc(h)}</td>${order.map(c => `<td>${rs.filter(r => r.category === c).length || ''}</td>`).join('')}<td>${rs.length}</td><td>${esc(Array.from(new Set(rs.map(r => r.evacVehicle).filter(Boolean))).join(', '))}</td></tr>`; }).join('');
         const phones = (data.devices || []).map(d => `<tr><td>${esc(d.triager || 'Unnamed')}</td><td>${esc(d.deviceId)}</td><td>${d.records || 0}</td><td>${hm(d.joinedAt)}</td><td>${hm(d.lastSeen)}</td></tr>`).join('');
         const tl = timelineEvents(all).slice().reverse().map(e => `<tr><td>${hm(e.ts)}</td><td>${esc(e.id)}</td><td>${e.text}${e.sub ? ` <span class="muted">${esc(e.sub)}</span>` : ''}</td></tr>`).join('');
-        const rows = all.map(r => { const l = loc(r); const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : ''; return `<tr><td>${esc(r.id)}</td><td>${cat(r.category)} ${hadMitt(r) ? 'MITT' : 'TST only'}</td><td>${esc(MITTLib.STAGE_INFO[stage(r)].short)}${r.evacuated ? ' → ' + esc(r.evacDest || '?') : ''}</td><td>${hm(r.timestamp)}</td><td>${esc(place(r) || '')}${grid ? ` <span class="muted">${esc(grid)}</span>` : ''}</td><td>${Object.keys(r.interventions || {}).map(k => esc(k) + ' ' + esc((r.interventions[k] || {}).time || '')).join(', ')}</td><td>${esc(r.triager || '')}</td></tr>`; }).join('');
+        const rows = all.map(r => { const l = loc(r); const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : ''; return `<tr><td>${esc(r.id)}${r.cardNo ? `<br><b>card ${esc(r.cardNo)}</b>` : ''}</td><td>${cat(r.category)} ${hadMitt(r) ? 'MITT' : 'TST only'}</td><td>${esc(MITTLib.STAGE_INFO[stage(r)].short)}${r.evacuated ? ' → ' + esc(r.evacDest || '?') : ''}</td><td>${hm(r.timestamp)}</td><td>${esc(place(r) || '')}${grid ? ` <span class="muted">${esc(grid)}</span>` : ''}</td><td>${Object.keys(r.interventions || {}).map(k => esc(k) + ' ' + esc((r.interventions[k] || {}).time || '')).join(', ')}</td><td>${esc(r.triager || '')}</td></tr>`; }).join('');
         $('print-view').innerHTML = `<h1>Major Incident Triage — commander summary</h1>` +
             `<p>${data.name ? esc(data.name) + ' • ' : ''}Code ${esc(data.code || '')}${data.incidentCode ? ' • Incident ' + esc(data.incidentCode) : ''}${data.training ? ' • <b>TRAINING / EXERCISE</b>' : ''}<br>Started ${data.createdAt ? new Date(data.createdAt).toLocaleString('en-GB') : '?'} • printed ${when} • ${all.length} casualties from ${(data.devices || []).length} phones</p>` +
             `<h2>Counts</h2>${counts}` +
@@ -958,6 +961,7 @@
             `<p class="muted">An aid for a live incident, not a clinical record: the phones keep the audit trail. Printed from the commander screen.</p>`;
         setTimeout(() => window.print(), 50);
     }
+    function batteryTag(d) { if (typeof d.battery !== 'number' || d.charging || d.battery > 25) return ''; return ` <span class="cat-chip" style="background:${d.battery <= 10 ? '#DA291C' : '#c9a700'};color:#fff;font-size:0.72rem;padding:1px 6px" title="Battery">🔋 ${d.battery}%</span>`; }
     // The phone's ID is "<prefix>-<TOOL>-<number>"; on the wall the prefix is noise, so show "TST 014" style.
     function shortId(id) { const m = /^(?:.*-)?(TST|MITT)-(\d+)$/.exec(String(id || '')); return m ? `${m[1]} ${m[2]}` : String(id || ''); }
     let legendDone = false;
@@ -1060,7 +1064,7 @@
             ['Next due', rs.state === 'na' ? 'n/a' : rs.state === 'overdue' ? `<span class="flag">overdue by ${Math.round(rs.overdueMs / 60000)} min</span>` : rs.state === 'due-soon' ? 'now' : dhm(rs.dueAt), true],
             ['Deteriorated', r.lastDeteriorationAt ? dhm(r.lastDeteriorationAt) : ''],
         ]);
-        const who = kv([['Triaged by', `${r.triager || r.createdBy || '—'}${r.deviceId ? ' • phone ' + r.deviceId : ''}`], ['First triage', dhm(r.createdAt || r.timestamp)], ['Reported by', r.reportedBy ? `${r.reportedBy} • ${age(r.reportedAt || r.updatedAt)}` : ''], ['Last change', age(r.updatedAt)], ['Incident', r.incidentCode || '']]);
+        const who = kv([['Triage card no.', r.cardNo || ''], ['Triaged by', `${r.triager || r.createdBy || '—'}${r.deviceId ? ' • phone ' + r.deviceId : ''}`], ['First triage', dhm(r.createdAt || r.timestamp)], ['Reported by', r.reportedBy ? `${r.reportedBy} • ${age(r.reportedAt || r.updatedAt)}` : ''], ['Last change', age(r.updatedAt)], ['Incident', r.incidentCode || '']]);
         $('pt-body').innerHTML =
             `<div class="pt-sec"><h4>Triage</h4>${triage}</div>` +
             `<div class="pt-sec"><h4>Reassessment</h4>${reass}<h4 style="margin-top:10px">Where</h4>${locHtml}</div>` +
@@ -1085,8 +1089,8 @@
     function exportCsv() {
         if (!data) return;
         const c = MITTLib.csvCell;
-        const head = ['id', 'category', 'tool', 'triaged', 'sector', 'landmark', 'floor', 'area', 'osGridRef', 'lat', 'lng', 'accuracyM', 'interventions', 'highRisk', 'evacuated', 'evacDest', 'triager', 'reportedBy', 'updated'];
-        const lines = [head.join(',')].concat(visibleRecords().map(r => { const l = loc(r) || {}; return [r.id, r.category, r.tool, r.timestamp ? MITTLib.isoWithOffset(r.timestamp) : '', r.sector, r.landmark, r.floor, r.area, l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) || '' : '', l.lat || '', l.lng || '', l.acc || '', Object.keys(r.interventions || {}).map(k => k + ' ' + ((r.interventions[k] || {}).time || '')).join('; '), r.highRisk ? 'yes' : '', r.evacuated ? 'yes' : '', r.evacDest, r.triager, r.reportedBy, r.updatedAt ? MITTLib.isoWithOffset(r.updatedAt) : ''].map(c).join(','); }));
+        const head = ['id', 'cardNo', 'category', 'tool', 'triaged', 'sector', 'landmark', 'floor', 'area', 'osGridRef', 'lat', 'lng', 'accuracyM', 'interventions', 'highRisk', 'evacuated', 'evacDest', 'triager', 'reportedBy', 'updated'];
+        const lines = [head.join(',')].concat(visibleRecords().map(r => { const l = loc(r) || {}; return [r.id, r.cardNo || '', r.category, r.tool, r.timestamp ? MITTLib.isoWithOffset(r.timestamp) : '', r.sector, r.landmark, r.floor, r.area, l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) || '' : '', l.lat || '', l.lng || '', l.acc || '', Object.keys(r.interventions || {}).map(k => k + ' ' + ((r.interventions[k] || {}).time || '')).join('; '), r.highRisk ? 'yes' : '', r.evacuated ? 'yes' : '', r.evacDest, r.triager, r.reportedBy, r.updatedAt ? MITTLib.isoWithOffset(r.updatedAt) : ''].map(c).join(','); }));
         download(`MITT_commander_${data.code}_${stamp()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
     }
     document.addEventListener('keydown', e => {

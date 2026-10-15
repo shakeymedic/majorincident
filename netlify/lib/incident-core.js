@@ -206,6 +206,7 @@ function createCore(opts) {
         dev.app = str(body.app, 40) || dev.app || '';
         dev.records = num(body.totalRecords) !== null ? Math.max(0, Math.floor(num(body.totalRecords))) : dev.records;
         dev.lastPush = incoming.length ? t : dev.lastPush || null;
+        if (num(body.battery) !== null) { dev.battery = Math.max(0, Math.min(100, Math.round(num(body.battery)))); dev.charging = !!body.charging; }
         if (methane) {
             methane.device = deviceId;
             if (!methane.by) methane.by = dev.triager;
