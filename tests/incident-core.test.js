@@ -76,6 +76,13 @@ function rec(uid, id, category, extra) {
         assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': etag.replace(/"$/, '-df"') }), '', '2.2.2.2')).status, 304);
         assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': 'W/' + etag }), '', '2.2.2.2')).status, 304);
         assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': '"999"' }), '', '2.2.2.2')).status, 200);
+        // The edge drops a suffixed If-None-Match altogether, so the page's own X-Incident-Seq header must work on its own.
+        const seq = etag.replace(/"/g, '');
+        assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'x-incident-seq': seq }), '', '2.2.2.2')).status, 304);
+        const full = await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'x-incident-seq': '0' }), '', '2.2.2.2');
+        assert.strictEqual(full.status, 200);
+        assert.strictEqual(full.headers['X-Incident-Seq'], seq);
+        assert.strictEqual(String(full.body.seq), seq);
         clock += 1000;
         await core.handle('PUT', `/api/incident/${code}/records`, H(pin), JSON.stringify({ deviceId: 'DEVB', records: [rec('u9', 'DEVB-TST-001', 'P2')] }), '3.3.3.3');
         const r2 = await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': etag }), '', '2.2.2.2');

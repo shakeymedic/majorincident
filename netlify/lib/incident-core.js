@@ -175,14 +175,18 @@ function createCore(opts) {
         return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS });
     }
 
-    async function read(code, pin, ifNoneMatch, client) {
+    async function read(code, pin, ifNoneMatch, client, knownSeq) {
         const a = await authed(code, pin, client);
         if (a.status) return a;
         const meta = a.meta;
-        const etag = `"${meta.seq || 0}"`;
-        // Netlify's edge appends a suffix when it compresses the body ("2" becomes "2-df"), so compare the sequence number only.
+        const seq = String(meta.seq || 0);
+        const etag = `"${seq}"`;
+        // Netlify's edge rewrites the ETag it serves when it compresses the body ("2" becomes "2-df") and then drops an
+        // If-None-Match that carries that suffix before the function sees it. So the page also sends the sequence it
+        // already has in X-Incident-Seq, which the edge leaves alone; either one matching means nothing has changed.
         const givenSeq = String(ifNoneMatch || '').replace(/^W\//, '').replace(/"/g, '').split('-')[0];
-        if (givenSeq && givenSeq === String(meta.seq || 0)) return { status: 304, body: null, headers: { ETag: etag, 'Cache-Control': 'no-store' } };
+        const known = String(knownSeq || '').trim();
+        if ((givenSeq && givenSeq === seq) || (known && known === seq)) return { status: 304, body: null, headers: { ETag: etag, 'X-Incident-Seq': seq, 'Cache-Control': 'no-store' } };
         const t = now();
         const recKeys = await store.list(`i/${code}/r/`);
         const records = [];
@@ -193,7 +197,7 @@ function createCore(opts) {
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         log('read', code, client);
-        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, devices, records, serverTime: t, seq: meta.seq || 0 }, { ETag: etag });
+        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, devices, records, serverTime: t, seq: meta.seq || 0 }, { ETag: etag, 'X-Incident-Seq': seq });
     }
 
     async function close(code, pin, client) {
@@ -230,7 +234,7 @@ function createCore(opts) {
         if (!body || typeof body !== 'object') body = {};
         try {
             if (method === 'POST' && !parts.length) return await create(body, client);
-            if (method === 'GET' && parts.length === 1) return await read(code, pin, headers['if-none-match'] || '', client);
+            if (method === 'GET' && parts.length === 1) return await read(code, pin, headers['if-none-match'] || '', client, headers['x-incident-seq'] || '');
             if (method === 'POST' && action === 'join') return await join(code, pin, body, client);
             if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client);
             if (method === 'POST' && action === 'close') return await close(code, pin, client);
