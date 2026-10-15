@@ -885,6 +885,54 @@
     .modal-actions .btn { flex:1; min-width:120px; }
     .setting-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid #ccc; }
     .setting-row select { padding:8px; font-size:16px; }
+    /* ---- v0.9.0 location + map (15 Oct 2026) ---- */
+    /* Location pill: a button that explains itself when tapped */
+    .gps-status { border:1px solid rgba(255,255,255,0.5); cursor:pointer; font-family:inherit; line-height:1.2; white-space:nowrap; }
+    .gps-status.loc-good { color:#ccffcc; border-color:#ccffcc; }
+    .gps-status.loc-coarse, .gps-status.loc-stale { color:#fff3a8; border-color:#fff3a8; }
+    .gps-status.loc-searching { color:#dbe7ff; border-color:#dbe7ff; }
+    .gps-status.loc-denied, .gps-status.loc-none { color:#ffcccc; border-color:#ffcccc; }
+    @media (max-width: 520px) { #header-device, #header-incident:empty { display:none; } .status-bar { padding:0.4rem 0.7rem; font-size:0.8rem; flex-wrap:wrap; row-gap:0.3rem; overflow-x:hidden; } .status-bar .status-item { margin-right:10px; } #gps-indicator { flex-shrink:0; } }
+    @media (max-width: 420px) { #header-user { display:none; } }
+    .home-row .home-map { background-color: var(--nhs-green); }
+    @media (max-width: 380px) { .home-row .btn { font-size:0.95rem; padding:0.9rem 0.3rem; } .home-row .btn span { font-size:0.72rem !important; } }
+    /* Map screen */
+    #map-screen { padding-bottom: 0.5rem; }
+    .map-chips { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+    .chip { border:2px solid var(--nhs-blue); background:var(--card-bg); color:var(--nhs-blue); border-radius:999px; padding:8px 10px; font-weight:bold; font-size:0.9rem; white-space:nowrap; min-height:40px; cursor:pointer; font-family:inherit; }
+    .chip.on { background:var(--nhs-blue); color:#fff; }
+    .chip-primary { margin-left:auto; background:var(--nhs-green); border-color:var(--nhs-green); color:#fff; }
+    body.night-mode .chip { color:var(--nhs-blue); }
+    body.night-mode .chip.on { color:#fff; }
+    .map-pin-banner { display:flex; align-items:center; gap:8px; background:var(--nhs-yellow); color:#000; font-weight:bold; padding:8px 10px; border-radius:8px; margin-bottom:6px; }
+    .map-pin-banner span { flex:1; }
+    #patient-map { height:auto; flex:1 1 auto; min-height:55vh; border-radius:8px; border:2px solid #ccc; z-index:1; background:#e8ecef; }
+    body.night-mode #patient-map { background:#1a1d20; border-color:#333; }
+    #patient-map.pinning { cursor:crosshair; border-color:var(--nhs-yellow); box-shadow:0 0 0 3px rgba(250,225,0,0.5); }
+    .map-legend { display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding:6px 0; font-size:0.85rem; color:var(--nhs-grey); }
+    .map-legend .cat-chip { font-size:0.8rem; padding:3px 9px; }
+    .map-row { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid rgba(0,0,0,0.08); cursor:pointer; }
+    .map-row-main { flex:1; min-width:0; }
+    .map-row-meta { font-size:0.8rem; color:var(--nhs-grey); overflow-wrap:anywhere; }
+    .map-row-dist { font-size:0.85rem; font-weight:bold; white-space:nowrap; }
+    .mk-wrap { background:none; border:none; }
+    .mk { width:34px; height:34px; border-radius:50%; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:0.72rem; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; letter-spacing:-0.3px; }
+    .mk.mk-tst { border:3px dashed #222; }
+    .mk.mk-evac { opacity:0.55; }
+    .mk.mk-ccs { width:40px; height:28px; border-radius:6px; background:#007F3B; color:#fff; font-size:0.8rem; }
+    .map-pop { font-size:0.95rem; min-width:190px; }
+    .map-pop .cat-chip { font-size:0.8rem; padding:2px 8px; }
+    .map-pop-meta { font-size:0.82rem; color:#4C6272; margin-top:3px; }
+    .map-pop-btns { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+    .map-pop-btns button, .map-pop-btns a { flex:1 1 auto; min-height:40px; border:none; border-radius:8px; background:#005EB8; color:#fff; font-weight:bold; font-size:0.9rem; padding:8px 10px; text-align:center; text-decoration:none; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+    .map-pop-btns a { background:#4C6272; }
+    .leaflet-container { font-family:inherit; }
+    .leaflet-control-zoom a { width:40px !important; height:40px !important; line-height:40px !important; font-size:1.4rem !important; }
+    .maps-opt { text-align:left; display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:0.9rem 1rem; }
+    .maps-opt small { font-weight:normal; font-size:0.82rem; opacity:0.9; }
+    /* Settings grouped into sections so the sheet is short */
+    .settings-sec > summary { padding:12px 14px; }
+    .settings-sec .rs-body .setting-row:last-child { border-bottom:none; }
     body.printing-label .container, body.printing-label .modal-overlay { display:none !important; }
     @media print {
         body:not(.printing-label) #print-area { display:none !important; }
@@ -1004,21 +1052,41 @@
             <button type="button" class="btn btn-secondary" onclick="toggleNightMode()">☾ Night mode<br><small>on / off</small></button>
             <button type="button" class="btn btn-secondary" style="background:#111;" onclick="closeModesMenu(); toggleBlackout();">⬛ Blackout screen<br><small>tap the screen to wake</small></button>
         </div>
-        <label class="setting-row"><span><strong>Gloved-Use Mode</strong><br><small>Larger taps, higher contrast.</small></span><input type="checkbox" id="mode-gloved" style="width:24px; height:24px;" onchange="toggleGloved()"></label>
-        <label class="setting-row"><span><strong>One-Handed Mode</strong><br><small>Sticky bottom bar with key actions.</small></span><input type="checkbox" id="mode-onehand" style="width:24px; height:24px;" onchange="toggleOneHand()"></label>
-        <label class="setting-row"><span><strong>Panic / Simple Mode</strong><br><small>Hides non-essentials; fastest TST path.</small></span><input type="checkbox" id="mode-panic" style="width:24px; height:24px;" onchange="togglePanic()"></label>
-        <label class="setting-row"><span><strong>Keep screen on</strong><br><small>Uses more battery.</small></span><input type="checkbox" id="mode-wakelock" style="width:24px; height:24px;" onchange="toggleWakeLockSetting()"></label>
-        <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
-        <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
-        <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
-        <a class="btn btn-secondary" href="quick-reference.html" target="_blank" rel="noopener" style="margin-top:8px;">📄 Quick reference card (print for the kit bag)</a>
-        <h4 style="margin:1rem 0 0.3rem;">Reassessment intervals</h4>
-        <p class="qr-meta" style="text-align:left;">Local defaults — not specified by NHSE guidance. Agree with your clinical lead.</p>
-        <div class="setting-row"><span>P1</span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
-        <div class="setting-row"><span>P2</span><select id="interval-P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
-        <div class="setting-row"><span>P3</span><select id="interval-P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
-        <p class="qr-meta" id="device-info" style="text-align:left; margin-top:1rem;"></p>
-        <button class="btn btn-primary" style="margin-top:1rem;" onclick="closeModesMenu()">Done</button>
+        <details class="rs-sec settings-sec" open>
+            <summary>Display &amp; handling <span class="rs-sum">gloves, one hand, simple mode, screen</span></summary>
+            <div class="rs-body">
+                <label class="setting-row"><span><strong>Gloved-Use Mode</strong><br><small>Larger taps, higher contrast.</small></span><input type="checkbox" id="mode-gloved" style="width:24px; height:24px;" onchange="toggleGloved()"></label>
+                <label class="setting-row"><span><strong>One-Handed Mode</strong><br><small>Sticky bottom bar with key actions.</small></span><input type="checkbox" id="mode-onehand" style="width:24px; height:24px;" onchange="toggleOneHand()"></label>
+                <label class="setting-row"><span><strong>Panic / Simple Mode</strong><br><small>Hides non-essentials; fastest TST path.</small></span><input type="checkbox" id="mode-panic" style="width:24px; height:24px;" onchange="togglePanic()"></label>
+                <label class="setting-row"><span><strong>Keep screen on</strong><br><small>Uses more battery.</small></span><input type="checkbox" id="mode-wakelock" style="width:24px; height:24px;" onchange="toggleWakeLockSetting()"></label>
+            </div>
+        </details>
+        <details class="rs-sec settings-sec">
+            <summary>Incident &amp; training <span class="rs-sum">incident code, training mode</span></summary>
+            <div class="rs-body">
+                <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
+                <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
+                <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
+            </div>
+        </details>
+        <details class="rs-sec settings-sec">
+            <summary>Reassessment intervals <span class="rs-sum">P1 / P2 / P3 timers</span></summary>
+            <div class="rs-body">
+                <p class="qr-meta" style="text-align:left;">Local defaults — not specified by NHSE guidance. Agree with your clinical lead.</p>
+                <div class="setting-row"><span>P1</span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
+                <div class="setting-row"><span>P2</span><select id="interval-P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+                <div class="setting-row"><span>P3</span><select id="interval-P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
+            </div>
+        </details>
+        <details class="rs-sec settings-sec">
+            <summary>About &amp; help <span class="rs-sum">quick reference, location help, version</span></summary>
+            <div class="rs-body">
+                <a class="btn btn-secondary" href="quick-reference.html" target="_blank" rel="noopener" style="margin-top:8px;">📄 Quick reference card (print for the kit bag)</a>
+                <button class="btn btn-secondary" onclick="closeModesMenu(); openLocationHelp();">📍 Location status &amp; help</button>
+                <p class="qr-meta" id="device-info" style="text-align:left;"></p>
+            </div>
+        </details>
+        <button class="btn btn-primary" style="margin-top:0.6rem;" onclick="closeModesMenu()">Done</button>
     </div>
 </div>
 
@@ -1117,7 +1185,11 @@
     <div class="modal-box" style="max-height:88vh; overflow-y:auto;">
         <h3 id="atmist-title" style="margin-top:0; color:var(--nhs-blue);">ATMIST Handover</h3>
         <div id="atmist-content" style="font-size:1.05rem; line-height:1.5;"></div>
-        <button class="btn btn-primary" style="margin-top:15px;" onclick="closeAtmist()">Close</button>
+        <div class="modal-actions" style="margin-top:15px;">
+            <button class="btn btn-secondary" onclick="copyAtmist()">Copy text</button>
+            <button class="btn btn-secondary" id="btn-atmist-share" onclick="shareAtmist()">Share…</button>
+            <button class="btn btn-primary" onclick="closeAtmist()">Close</button>
+        </div>
     </div>
 </div>
 
@@ -1183,6 +1255,27 @@
     </div>
 </div>
 
+<div id="loc-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="loc-title">
+    <div class="modal-box" style="max-height:90vh; overflow-y:auto;">
+        <h3 id="loc-title" style="margin-top:0;">Your location</h3>
+        <div id="loc-help-body"></div>
+        <div class="modal-actions" style="margin-top:1rem;">
+            <button class="btn btn-primary" onclick="retryLocation()">↻ Try again</button>
+            <button class="btn btn-secondary" onclick="closeLocationHelp(); showMap();">🗺 Map</button>
+            <button class="btn btn-secondary" onclick="closeLocationHelp()">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="maps-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="maps-title">
+    <div class="modal-box" style="max-height:90vh; overflow-y:auto;">
+        <h3 id="maps-title" style="margin-top:0;">Open in…</h3>
+        <div id="maps-options" class="transfer-methods"></div>
+        <p class="qr-meta" style="text-align:left; margin-top:0.8rem;">Links open in the phone's browser or maps app (needs signal). Files save to the phone and open in mapping apps or on a control-room computer.</p>
+        <button class="btn btn-secondary" style="margin-top:0.5rem;" onclick="closeMapsChooser()">Close</button>
+    </div>
+</div>
+
 <div id="paste-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="paste-title">
     <div class="modal-box">
         <h3 id="paste-title" style="margin-top:0;">Paste Code</h3>
@@ -1224,7 +1317,7 @@
         <span class="status-item" id="header-sector" style="color:var(--nhs-yellow);"></span>
         <span class="status-item" id="header-incident" style="font-weight:bold;"></span>
         <span class="status-item" id="header-device" title="Device code (default patient-ID prefix)"></span>
-        <span id="gps-indicator" class="gps-status gps-inactive" style="margin-left: auto;">GPS: Searching...</span>
+        <button type="button" id="gps-indicator" class="gps-status loc-searching" style="margin-left: auto;" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
     </div>
 
     <div id="global-dashboard" class="dashboard">
@@ -1312,11 +1405,14 @@
                     📷 Receive patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan another phone's QR</span>
                 </button>
                 <button class="btn btn-secondary" onclick="showLog()">
-                    📋 Patient log<br><span style="font-size:0.8rem; font-weight:normal;">Records, alerts &amp; exports</span>
+                    📋 Patient log<br><span style="font-size:0.8rem; font-weight:normal;">Records &amp; alerts</span>
+                </button>
+                <button class="btn btn-secondary home-map" id="btn-home-map" onclick="showMap()">
+                    🗺 Map<br><span style="font-size:0.8rem; font-weight:normal;">Where everyone is</span>
                 </button>
             </div>
             <details class="rs-sec home-more" id="home-more">
-                <summary>More <span class="rs-sum">send all patients, import file, map, METHANE, my ID</span></summary>
+                <summary>More <span class="rs-sum">send all patients, import file, METHANE, my ID</span></summary>
                 <div class="rs-body">
                     <button class="btn btn-transfer-all" onclick="openAllPatientsTransfer()">
                         Send patients to another device<br><span style="font-size:0.9rem; font-weight:normal;">All, one sector, or on-scene only • QR / file</span>
@@ -1330,7 +1426,6 @@
                     <button class="btn btn-nfc nfc-only" style="display:none;" onclick="startNfcReceive()">
                         Read NFC tag<br><span style="font-size:0.8rem; font-weight:normal;">Android Chrome only</span>
                     </button>
-                    <button class="btn btn-secondary" style="background-color: var(--nhs-green); color: white;" onclick="showMap()">🗺️ View Patient Map</button>
                     <button class="btn btn-secondary" onclick="showMethane()">METHANE Report<br><span style="font-size:0.9rem; font-weight:normal;">Major Incident Declaration</span></button>
                     <button class="btn btn-secondary" style="background-color: #333;" onclick="resetApp()">Change User / Role</button>
                 </div>
@@ -1467,13 +1562,23 @@
                     <h3>Patient Location</h3>
                     <div id="location-editor-status" class="location-status-card unknown">Location not confirmed.</div>
                     <div class="location-quick">
-                        <button class="btn btn-secondary" onclick="useCurrentGpsForPatient('Found at current location')">Use current GPS</button>
-                        <button class="btn btn-secondary" onclick="copyPatientCoordinates()">Copy lat/lon</button>
-                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('Found at current location')">Found here</button>
-                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('Moved to sector/area')">Moved to sector/area</button>
-                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('At CCS/loading area')">At CCS/loading area</button>
-                        <button class="btn btn-secondary" onclick="applyLocationQuickAction('Loaded/evacuated/destination')">Loaded / evacuated</button>
+                        <button class="btn btn-primary" onclick="useCurrentGpsForPatient('Use my location')">📍 Use my location</button>
+                        <button class="btn btn-primary" style="background:var(--nhs-dark-blue);" onclick="pinCurrentPatientOnMap()">🗺 Pin on map</button>
+                        <button class="btn btn-secondary" onclick="copyLocationFromPrevious()">Same place as last patient</button>
+                        <button class="btn btn-secondary" id="btn-loc-open-maps" style="display:none;" onclick="openPatientInMaps()">↗ Open in Maps / copy</button>
                     </div>
+                    <p class="location-mini">Indoors the phone's position is rough (Wi-Fi, ±30–150 m). Pin on map puts the patient exactly where you tap.</p>
+                    <details class="rs-sec" id="sec-location-moves" style="margin:0.6rem 0;">
+                        <summary>Record a move <span class="rs-sum">found here, moved, at CCS, loaded</span></summary>
+                        <div class="rs-body">
+                            <div class="location-quick" style="margin-top:0.4rem;">
+                                <button class="btn btn-secondary" onclick="applyLocationQuickAction('Found at current location')">Found here</button>
+                                <button class="btn btn-secondary" onclick="applyLocationQuickAction('Moved to sector/area')">Moved to sector/area</button>
+                                <button class="btn btn-secondary" onclick="applyLocationQuickAction('At CCS/loading area')">At CCS/loading area</button>
+                                <button class="btn btn-secondary" onclick="applyLocationQuickAction('Loaded/evacuated/destination')">Loaded / evacuated</button>
+                            </div>
+                        </div>
+                    </details>
                     <div class="location-grid">
                         <div class="input-group"><label for="p-sector">Sector / Zone</label><input type="text" id="p-sector" class="loc-field" placeholder="e.g. Warm Zone, CCS"></div>
                         <div class="input-group"><label for="p-landmark">Treatment area / Landmark</label><input type="text" id="p-landmark" class="loc-field" placeholder="e.g. bus stop"></div>
@@ -1492,7 +1597,7 @@
                         <div class="input-group"><label for="p-loc-lat">Latitude</label><input type="number" step="0.000001" id="p-loc-lat" class="loc-field" placeholder="Manual latitude"></div>
                         <div class="input-group"><label for="p-loc-lng">Longitude</label><input type="number" step="0.000001" id="p-loc-lng" class="loc-field" placeholder="Manual longitude"></div>
                     </div>
-                    <p class="location-mini">Map imagery may be unavailable offline. Stored coordinates, labels and history remain usable and are included in transfers.</p>
+                    <p class="location-mini">Coordinates, labels and history travel with every handover. Map imagery needs signal; positions do not.</p>
                 </div>
 
                 </div>
@@ -1542,19 +1647,34 @@
         </div>
 
         <div id="map-screen" class="screen">
-            <h2>Patient Locations</h2>
-            <div id="map-offline-note" class="map-offline-note">Map imagery may be unavailable offline. Stored coordinates, accuracy radius and location labels remain usable and transferable.</div>
-            <div id="patient-map"></div>
-            <div style="padding: 1rem 0; display: flex; gap: 10px;">
-                <button class="btn btn-secondary" style="flex: 1;" onclick="setCCSLocation()">📍 Set CCS Here</button>
-                <button class="btn btn-primary" style="flex: 1;" onclick="resetToHome()">Back to Home</button>
+            <div class="map-chips" role="toolbar" aria-label="Map controls">
+                <button type="button" class="chip on" id="map-chip-onscene" onclick="setMapFilter('onscene')">On scene <span id="map-n-onscene">0</span></button>
+                <button type="button" class="chip" id="map-chip-all" onclick="setMapFilter('all')">All <span id="map-n-all">0</span></button>
+                <button type="button" class="chip" onclick="mapCentreOnMe()" aria-label="Centre the map on me">◎ Me</button>
+                <button type="button" class="chip chip-primary" onclick="openMapsChooserAll()">↗ Open in…</button>
+            </div>
+            <div id="map-pin-banner" class="map-pin-banner" style="display:none;"></div>
+            <div id="map-offline-note" class="map-offline-note">No map imagery (no signal). Casualty positions are still shown to scale: use the scale bar, the distances below and the OS grid references.</div>
+            <div id="patient-map" aria-label="Casualty map"></div>
+            <div id="map-legend" class="map-legend"></div>
+            <details class="rs-sec" id="map-list-sec" open>
+                <summary>Casualties <span class="rs-sum" id="map-list-sum"></span></summary>
+                <div class="rs-body" id="map-list"></div>
+            </details>
+            <div class="rs-row" style="margin-top:0.4rem;">
+                <button class="btn btn-secondary" onclick="setCCSLocation()">＋ Set CCS</button>
+                <button class="btn btn-primary" onclick="resetToHome()">Home</button>
             </div>
         </div>
 
         <div id="methane-screen" class="screen">
             <h2>METHANE Report</h2>
             <div class="input-group"><label for="m-decl">M - Major Incident Declared?</label><select id="m-decl"><option>Standby</option><option>DECLARED</option><option>Cancelled</option></select></div>
-            <div class="input-group"><label for="m-loc">E - Exact Location</label><input type="text" id="m-loc"></div>
+            <div class="input-group">
+                <label for="m-loc">E - Exact Location</label>
+                <input type="text" id="m-loc" placeholder="Street / building, then floor or room">
+                <button type="button" class="btn btn-secondary" style="margin:0.4rem 0 0; padding:0.55rem 0.8rem; font-size:0.95rem;" onclick="methaneUseMyLocation()">📍 Add my position (OS grid reference)</button>
+            </div>
             <div class="input-group"><label for="m-type">T - Type of Incident</label><input type="text" id="m-type"></div>
             <div class="input-group"><label for="m-haz">H - Hazards</label><input type="text" id="m-haz"></div>
             <div class="input-group"><label for="m-acc">A - Access</label><input type="text" id="m-acc"></div>
@@ -1600,16 +1720,20 @@
                 <button class="btn btn-transfer-all" style="flex:2; padding:1rem; font-size:1rem;" onclick="openAllPatientsTransfer()">Send patients to another device</button>
                 <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem; background:#666;" onclick="refreshLog()">↻ Refresh</button>
             </div>
-            <h3 style="margin-bottom:0.4rem;">Records &amp; exports (for debrief and inquiry)</h3>
-            <div class="log-actions" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-                <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('SNAPSHOT')">Casualty Register (CSV)</button>
-                <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('AUDIT')">Audit Trail (CSV)</button>
-                <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadArchive()">Full Incident Archive (JSON)</button>
-                <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="showAuditVerification()">Verify audit trail</button>
-            </div>
-            <div style="margin-top: 1rem; display: flex; gap: 10px;">
+            <details class="rs-sec" id="log-exports">
+                <summary>Records &amp; exports <span class="rs-sum">for debrief and inquiry</span></summary>
+                <div class="rs-body">
+                    <div class="log-actions" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                        <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('SNAPSHOT')">Casualty Register (CSV)</button>
+                        <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadCSV('AUDIT')">Audit Trail (CSV)</button>
+                        <button class="btn btn-primary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="downloadArchive()">Full Incident Archive (JSON)</button>
+                        <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="showAuditVerification()">Verify audit trail</button>
+                    </div>
+                    <button class="btn btn-danger" style="margin-bottom:0;" onclick="clearAllData()">Close / Reset Incident</button>
+                </div>
+            </details>
+            <div style="margin-top: 0.6rem; display: flex; gap: 10px;">
                 <button class="btn btn-primary" onclick="resetToHome()">Back</button>
-                <button class="btn btn-danger" onclick="clearAllData()">Close / Reset Incident</button>
             </div>
         </div>
     </main>
@@ -1624,8 +1748,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.8.1';
-    const APP_BUILD = '2026-10-14-usability';
+    const APP_VERSION = '0.9.0';
+    const APP_BUILD = '2026-10-15-location-map';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -1634,7 +1758,7 @@
     function lsKey(key) { return TRAINING && TRAINING_SEPARATE_KEYS.has(key) ? 'trn_' + key : key; }
     const QR_DEFAULT_TTL_MS = MITTLib.QR_DEFAULT_TTL_MS;
     const GPS_FRESH_MS = 30 * 1000;       // fixes older than this are not used for "best fix"
-    const GPS_STAMP_MAX_AGE_MS = 60 * 1000; // never stamp a patient with a position older than this
+    const GPS_STAMP_MAX_AGE_MS = 120 * 1000; // never stamp a patient with a position older than this (a 20 s heartbeat keeps a still phone current)
     const NFC_MAX_CHARS = 850;            // NTAG216 user memory is ~888 bytes
 
     // ---------- Safe DOM helpers ----------
@@ -1893,7 +2017,7 @@
     // Re-render the patient screen only if it is already showing that patient (never switch screens behind the user).
     function refreshIfShowing(entry) {
         const cur = currentEntry();
-        if (cur && entry && cur.uid === entry.uid && $('result-screen').classList.contains('active')) renderResultScreen(cur);
+        if (cur && entry && cur.uid === entry.uid && $('result-screen').classList.contains('active')) renderResultScreen(cur, { keepDetailsOpen: true });
     }
     function indexByUid(uid) { return incidentLog.findIndex(e => e.uid === uid); }
     function idPrefix() { return (TRAINING ? 'TRAIN-' : '') + (devicePrefix || deviceId); }
@@ -1971,6 +2095,8 @@
             case 'all-preflight-modal': closeAllPreflightModal(); break;
             case 'all-transfer-modal': closeAllTransferModal(); break;
             case 'modes-modal': closeModesMenu(); break;
+            case 'loc-modal': closeLocationHelp(); break;
+            case 'maps-modal': closeMapsChooser(); break;
             default: m.style.display = 'none';
         }
         return true;
@@ -2043,45 +2169,150 @@
         if (_confirmResolver) { const r = _confirmResolver; _confirmResolver = null; r(result); }
     }
 
-    // ---------- GPS ----------
+    // ---------- Device location ----------
+    // Two watches run side by side: a satellite (high-accuracy) one, and a coarse one that accepts the
+    // Wi-Fi / mobile-mast positions a phone falls back to indoors. Either may feed a fix. A phone that
+    // is standing still gets no new callbacks, so a heartbeat re-reads the position every 20 s and the
+    // "current" fix never goes stale while the app is open. Errors are explained in plain English and
+    // never discard a fix we already have.
+    const LOC = { watchHi: null, watchLo: null, heartbeat: null, lastCallbackAt: 0, lastError: null, permission: 'unknown', started: false };
     function initGPS() {
         gpsFixes = [];
-        updateGPSIndicator(false, 'Getting fix...');
-        if (!('geolocation' in navigator)) { updateGPSIndicator(false, 'GPS unavailable'); return; }
+        if (!('geolocation' in navigator)) { LOC.lastError = { code: 0 }; updateGPSIndicator(); return; }
+        LOC.started = true;
+        updateGPSIndicator();
         try {
-            watchId = navigator.geolocation.watchPosition((position) => {
-                const fix = MITTLib.normaliseLocation({
-                    latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy,
-                    altitude: position.coords.altitude, altitudeAccuracy: position.coords.altitudeAccuracy,
-                    heading: position.coords.heading, speed: position.coords.speed, timestamp: position.timestamp || Date.now(), source: 'gps-watch'
-                });
-                if (!fix) return;
-                gpsFixes.push(fix);
-                if (gpsFixes.length > 12) gpsFixes.shift();
-                // Only recent fixes compete for "best": never a more accurate fix from where the triager stood minutes ago.
-                const best = MITTLib.selectBestLocationFix(gpsFixes, { now: Date.now(), maxAgeMs: GPS_FRESH_MS }) || fix;
-                currentPosition = best;
-                gpsAccuracy = best.acc || null;
-                const cls = MITTLib.classifyLocationAccuracy(gpsAccuracy);
-                updateGPSIndicator(true, `${cls.warning ? 'Poor fix' : 'Good fix'} ±${Math.round(gpsAccuracy || 0)}m`);
-                try { refreshCurrentPatientLocationStatus(); } catch (e) {}
-            }, (error) => {
-                updateGPSIndicator(false, error && error.message ? `GPS unavailable: ${error.message}` : 'GPS unavailable');
-            }, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 });
-        } catch (e) { updateGPSIndicator(false, 'GPS unavailable'); }
-        setInterval(() => { if (currentPosition && !freshPosition()) updateGPSIndicator(false, `Last fix ${MITTLib.formatLocationAge(currentPosition.timestamp)}`); }, 15000);
+            if (navigator.permissions && navigator.permissions.query) {
+                navigator.permissions.query({ name: 'geolocation' }).then(st => {
+                    LOC.permission = st.state;
+                    updateGPSIndicator();
+                    st.onchange = () => { LOC.permission = st.state; if (st.state === 'granted') { LOC.lastError = null; restartLocationWatches(); } updateGPSIndicator(); };
+                }).catch(() => {});
+            }
+        } catch (e) {}
+        restartLocationWatches();
+        if (LOC.heartbeat) clearInterval(LOC.heartbeat);
+        LOC.heartbeat = setInterval(() => {
+            if (!LOC.started || (LOC.lastError && LOC.lastError.code === 1)) { updateGPSIndicator(); return; }
+            // Nothing heard for 20 s (phone not moving): ask once, coarse is fine, so the timestamp stays current.
+            if (Date.now() - LOC.lastCallbackAt > 20000) {
+                try { navigator.geolocation.getCurrentPosition(p => onLocationFix(p, 'heartbeat'), onLocationError, { enableHighAccuracy: false, maximumAge: 0, timeout: 15000 }); } catch (e) {}
+            }
+            updateGPSIndicator();
+        }, 20000);
+    }
+    function restartLocationWatches() {
+        stopLocationWatches();
+        try {
+            LOC.watchHi = navigator.geolocation.watchPosition(p => onLocationFix(p, 'gps-watch'), onLocationError, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
+            LOC.watchLo = navigator.geolocation.watchPosition(p => onLocationFix(p, 'network-watch'), onLocationError, { enableHighAccuracy: false, maximumAge: 10000, timeout: 20000 });
+            watchId = LOC.watchHi;
+        } catch (e) { LOC.lastError = { code: 0 }; updateGPSIndicator(); }
+    }
+    function stopLocationWatches() {
+        try { if (LOC.watchHi !== null) navigator.geolocation.clearWatch(LOC.watchHi); } catch (e) {}
+        try { if (LOC.watchLo !== null) navigator.geolocation.clearWatch(LOC.watchLo); } catch (e) {}
+        LOC.watchHi = LOC.watchLo = null;
+    }
+    function retryLocation() {
+        LOC.lastError = null; gpsFixes = [];
+        if (!('geolocation' in navigator)) { updateGPSIndicator(); return; }
+        LOC.started = true;
+        restartLocationWatches();
+        try { navigator.geolocation.getCurrentPosition(p => onLocationFix(p, 'retry'), onLocationError, { enableHighAccuracy: false, maximumAge: 0, timeout: 15000 }); } catch (e) {}
+        updateGPSIndicator();
+        showToast('Looking for your location…');
+    }
+    function onLocationFix(position, source) {
+        const c = position && position.coords;
+        if (!c) return;
+        const fix = MITTLib.normaliseLocation({
+            latitude: c.latitude, longitude: c.longitude, accuracy: c.accuracy,
+            altitude: c.altitude, altitudeAccuracy: c.altitudeAccuracy,
+            heading: c.heading, speed: c.speed, timestamp: position.timestamp || Date.now(), source: source || 'gps-watch'
+        });
+        if (!fix) return;
+        LOC.lastCallbackAt = Date.now();
+        if (LOC.lastError && LOC.lastError.code !== 1) LOC.lastError = null;
+        if (LOC.permission !== 'granted') LOC.permission = 'granted';
+        gpsFixes.push(fix);
+        if (gpsFixes.length > 12) gpsFixes.shift();
+        // Only recent fixes compete for "best": never a more accurate fix from where the triager stood minutes ago.
+        const best = MITTLib.selectBestLocationFix(gpsFixes, { now: Date.now(), maxAgeMs: GPS_FRESH_MS }) || fix;
+        currentPosition = best;
+        gpsAccuracy = best.acc || null;
+        updateGPSIndicator();
+        try { refreshCurrentPatientLocationStatus(); } catch (e) {}
+        try { if ($('map-screen').classList.contains('active')) updateMapUserMarker(); } catch (e) {}
+        try { if ($('loc-modal').style.display === 'flex') renderLocationHelp(); } catch (e) {}
+    }
+    function onLocationError(error) {
+        const code = error && typeof error.code === 'number' ? error.code : 0;
+        // A timeout while we already hold a recent fix is not news; permission denial always is.
+        if (code === 3 && freshPosition()) return;
+        if (code === 1) { LOC.permission = 'denied'; stopLocationWatches(); }
+        LOC.lastError = { code, message: error && error.message ? String(error.message) : '', at: Date.now() };
+        updateGPSIndicator();
+        try { if ($('loc-modal').style.display === 'flex') renderLocationHelp(); } catch (e) {}
     }
     // Position safe to stamp on a patient now, or null.
     function freshPosition() {
         if (!currentPosition || !currentPosition.timestamp) return null;
         return (Date.now() - currentPosition.timestamp) <= GPS_STAMP_MAX_AGE_MS ? currentPosition : null;
     }
-    function updateGPSIndicator(isActive, status) {
+    function devicePlatform() { return isIOS() ? 'ios' : /Android/i.test(navigator.userAgent) ? 'android' : 'other'; }
+    // One-line state for the blue bar: what the phone knows, how good it is, and whether it needs the user.
+    function locationSummary() {
+        const now = Date.now();
+        const fix = currentPosition ? MITTLib.classifyLocationFix(currentPosition, now) : null;
+        if (LOC.lastError && LOC.lastError.code === 1) return { state: 'denied', short: 'Location off', long: 'Location is blocked for this app. Tap for how to allow it.' };
+        if (!('geolocation' in navigator) || (LOC.lastError && LOC.lastError.code === 0)) return { state: 'none', short: 'No location', long: 'This browser cannot report a position.' };
+        if (fix && fix.ok) {
+            const acc = fix.accuracy !== null ? `±${Math.round(fix.accuracy)} m` : '';
+            const src = fix.likelySource === 'network' ? ' Wi-Fi' : '';
+            if (fix.ageState === 'fresh') return { state: fix.indoorHint ? 'coarse' : (fix.accuracy !== null && fix.accuracy > 25 ? 'coarse' : 'good'), short: `${acc}${src}`.trim() || 'Located', long: `Position known to ${acc}${fix.likelySource === 'network' ? ', probably from Wi-Fi or mobile masts (normal indoors)' : fix.likelySource === 'gps' ? ' from satellites' : ''}.` };
+            return { state: 'stale', short: `${acc} ${MITTLib.formatLocationAge(currentPosition.timestamp, now)}`.trim(), long: `Last position ${MITTLib.formatLocationAge(currentPosition.timestamp, now)} (${acc}). Waiting for a newer one.` };
+        }
+        if (LOC.lastError && LOC.lastError.code === 2) return { state: 'searching', short: 'Location unavailable', long: 'The phone could not work out where it is yet.' };
+        return { state: 'searching', short: 'Finding location…', long: 'Waiting for the phone\'s first position. Indoors this can take a minute.' };
+    }
+    function updateGPSIndicator() {
         const e = $('gps-indicator');
         if (!e) return;
-        const cls = MITTLib.classifyLocationAccuracy(gpsAccuracy);
-        e.textContent = `GPS: ${status || 'No signal'}`;
-        e.className = 'gps-status ' + (isActive && !cls.warning ? 'gps-active' : 'gps-inactive');
+        const s = locationSummary();
+        e.textContent = `📍 ${s.short}`;
+        e.className = 'gps-status loc-' + s.state;
+        e.title = s.long;
+    }
+    // Tapping the location pill explains the state and how to fix it (and offers a retry).
+    function openLocationHelp() { renderLocationHelp(); $('loc-modal').style.display = 'flex'; }
+    function closeLocationHelp() { $('loc-modal').style.display = 'none'; }
+    function renderLocationHelp() {
+        const box = $('loc-help-body');
+        clearChildren(box);
+        const s = locationSummary();
+        const platform = devicePlatform();
+        const card = el('div', { className: 'location-status-card ' + (s.state === 'good' ? 'good' : s.state === 'coarse' || s.state === 'stale' ? 'ok' : s.state === 'searching' ? 'unknown' : 'bad') }, [el('strong', { text: `📍 ${s.short}` }), el('div', { text: s.long })]);
+        box.appendChild(card);
+        if (currentPosition && currentPosition.lat) {
+            const grid = MITTLib.toOsGridRef(currentPosition.lat, currentPosition.lng);
+            box.appendChild(el('p', { className: 'location-mini', text: `${grid ? 'OS grid ' + grid + ' • ' : ''}${MITTLib.formatCoords(currentPosition.lat, currentPosition.lng)} • ${MITTLib.formatLocationAge(currentPosition.timestamp)}` }));
+        }
+        if (LOC.lastError && LOC.lastError.code) {
+            const d = MITTLib.describeGeoError(LOC.lastError.code, platform);
+            box.appendChild(el('div', { className: 'alert-card' + (d.kind === 'denied' ? '' : ' info') }, [el('h4', { text: d.title }), d.help]));
+        } else if (!('geolocation' in navigator)) {
+            const d = MITTLib.describeGeoError(0, platform);
+            box.appendChild(el('div', { className: 'alert-card' }, [el('h4', { text: d.title }), d.help]));
+        }
+        const tips = el('ul', { className: 'warn-list', style: 'margin-top:8px;' });
+        [
+            'Indoors, GPS cannot see satellites. The phone uses Wi-Fi networks and mobile masts instead: usually within 30–150 m, and it can take a minute. Keep Wi-Fi switched on (it does not need to be connected).',
+            'Near a window, doorway or outside, satellite fixes return within a few metres.',
+            'For a casualty indoors, record the floor and room, or open the map and pin exactly where they are. The pin overrides the phone\'s estimate.',
+            'The position is stamped on each patient when triage finishes, and can be updated later from the patient\'s Location section.',
+        ].forEach(t => tips.appendChild(el('li', { text: t })));
+        box.appendChild(el('details', { className: 'rs-sec', style: 'margin-top:8px;' }, [el('summary', { text: 'Why is it poor indoors?' }), el('div', { className: 'rs-body' }, [tips])]));
     }
 
     // ---------- Patient location ----------
@@ -2094,22 +2325,34 @@
         if (entry.landmark) parts.push(entry.landmark);
         if (entry.floor) parts.push(`Floor ${entry.floor}`);
         if (entry.area) parts.push(entry.area);
-        if (loc && loc.lat && loc.lng) parts.push(`${loc.lat}, ${loc.lng}${loc.acc ? ' ±' + loc.acc + 'm' : ''}`);
+        if (loc && loc.lat && loc.lng) {
+            const grid = MITTLib.toOsGridRef(loc.lat, loc.lng);
+            parts.push(`${grid ? grid + ' • ' : ''}${MITTLib.formatCoords(loc.lat, loc.lng)}${loc.acc ? ' ±' + Math.round(loc.acc) + ' m' : ''}`);
+        }
         const conf = entry.locationConfidence || (loc && loc.confidence) || (loc ? 'gps-approximate' : 'unknown');
-        return `${parts.join(' • ') || 'No coordinates or operational label'} (${String(conf).replace(/-/g, ' ')})`;
+        return `${parts.join(' • ') || 'No coordinates or operational label'} (${confidenceLabel(conf)})`;
+    }
+    function confidenceLabel(conf) {
+        return { 'gps-exact': 'GPS exact', 'gps-approximate': 'GPS approximate', 'manual-corrected': 'pinned / corrected by hand', 'sector-only': 'sector only', 'unknown': 'unknown' }[conf] || String(conf || 'unknown').replace(/-/g, ' ');
     }
     function refreshCurrentPatientLocationStatus() {
         const entry = currentEntry();
         if (!entry) return;
         const loc = locationForEntry(entry);
         const cls = MITTLib.classifyLocationAccuracy(loc && loc.acc);
+        const pinned = entry.locationConfidence === 'manual-corrected';
         const text = locationLabel(entry);
         setText('location-status-text', text);
-        const ageText = loc && loc.timestamp ? `Recorded ${MITTLib.formatLocationAge(loc.timestamp)}.` : 'No GPS position stored.';
-        const warning = loc && cls.warning ? ' Accuracy is poor — confirm sector/landmark or correct coordinates.' : '';
+        const ageText = loc && loc.timestamp ? `Recorded ${MITTLib.formatLocationAge(loc.timestamp)}.` : 'No position stored.';
+        const warning = loc && loc.lat && cls.warning && !pinned ? ' The phone\'s estimate is rough (normal indoors): add the floor and room, or pin the spot on the map.' : '';
         setText('location-age-warning', `${ageText}${warning}`);
         setText('location-editor-status', `${text}. ${ageText}${warning}`);
-        setText('sum-location', `${loc && cls.warning ? '⚠ poor GPS — ' : ''}${[entry.sector, entry.landmark].filter(Boolean).join(' • ') || (loc && loc.lat ? `±${loc.acc || '?'}m GPS` : 'not set')}`);
+        const card = $('location-editor-status');
+        if (card) card.className = 'location-status-card ' + (!loc || !loc.lat ? 'unknown' : pinned ? 'good' : cls.className);
+        const grid = loc && loc.lat ? MITTLib.toOsGridRef(loc.lat, loc.lng) : null;
+        setText('sum-location', `${loc && loc.lat && cls.warning && !pinned ? '⚠ rough — ' : ''}${[entry.sector, entry.landmark, entry.floor ? 'floor ' + entry.floor : '', entry.area].filter(Boolean).join(' • ') || (loc && loc.lat ? (grid || MITTLib.formatCoords(loc.lat, loc.lng)) + (pinned ? ' (pinned)' : ` ±${Math.round(loc.acc || 0) || '?'} m`) : 'not set')}`);
+        const mapBtn = $('btn-loc-open-maps');
+        if (mapBtn) mapBtn.style.display = loc && loc.lat ? '' : 'none';
     }
     function openSection(id, scroll) {
         const d = $(id);
@@ -2160,16 +2403,66 @@
         const entry = currentEntry();
         if (!entry) return;
         const pos = freshPosition();
-        if (!pos) { showBlockingError('No current GPS fix', 'There is no GPS position from the last minute. Enter the sector / landmark instead.'); return; }
+        if (!pos) {
+            const s = locationSummary();
+            showBlockingError('No current position', `${s.long} You can pin the patient on the map, use the last patient's position, or enter the sector, floor and room.`).then(() => { if (s.state === 'denied' || s.state === 'searching') openLocationHelp(); });
+            return;
+        }
         const cls = MITTLib.classifyLocationAccuracy(pos.acc);
         entry.locationConfidence = cls.warning ? 'gps-approximate' : 'gps-exact';
-        Object.assign(entry, MITTLib.appendLocationHistory(entry, pos, { user: triagerName, reason: reason || 'Use current GPS', source: 'gps-watch', confidence: entry.locationConfidence, sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area }));
+        Object.assign(entry, MITTLib.appendLocationHistory(entry, pos, { user: triagerName, reason: reason || 'Use my location', source: pos.source || 'gps-watch', confidence: entry.locationConfidence, sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area }));
         touch(entry, ['location', 'locationConfidence']);
-        logAudit('LOCATION_UPDATE', entry.id, `${reason || 'Use current GPS'}: ${locationLabel(entry)}`, Date.now(), { uid: entry.uid });
+        logAudit('LOCATION_UPDATE', entry.id, `${reason || 'Use my location'}: ${locationLabel(entry)}`, Date.now(), { uid: entry.uid });
         saveState();
         renderResultScreen(entry, { keepDetailsOpen: true });
         openLocationEditor();
-        showToast(cls.warning ? 'GPS accuracy is poor — confirm sector/landmark.' : 'Patient location updated from GPS.', { alert: cls.warning });
+        showToast(cls.warning ? `Position saved (±${Math.round(pos.acc)} m, rough). Pin it on the map if you can.` : 'Patient location updated from the phone.', { alert: cls.warning });
+    }
+    // Indoors several casualties are often together: reuse the most recently positioned other patient.
+    function copyLocationFromPrevious() {
+        const entry = currentEntry();
+        if (!entry) return;
+        const others = incidentLog.filter(e => e.uid !== entry.uid && locationForEntry(e) && locationForEntry(e).lat)
+            .sort((a, b) => ((locationForEntry(b).timestamp || b.updatedAt || 0) - (locationForEntry(a).timestamp || a.updatedAt || 0)));
+        if (!others.length) { showToast('No other patient has a position yet.'); return; }
+        const src = others[0], loc = locationForEntry(src);
+        entry.locationConfidence = src.locationConfidence === 'manual-corrected' ? 'manual-corrected' : (MITTLib.classifyLocationAccuracy(loc.acc).warning ? 'gps-approximate' : 'gps-exact');
+        if (!entry.sector && src.sector) entry.sector = src.sector;
+        if (!entry.landmark && src.landmark) entry.landmark = src.landmark;
+        if (!entry.floor && src.floor) entry.floor = src.floor;
+        if (!entry.area && src.area) entry.area = src.area;
+        Object.assign(entry, MITTLib.appendLocationHistory(entry, Object.assign({}, loc, { timestamp: Date.now(), source: 'copied:' + src.id }), { user: triagerName, reason: `Same place as ${src.id}`, source: 'copied', confidence: entry.locationConfidence, sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area }));
+        touch(entry, ['location', 'locationConfidence', 'sector', 'landmark', 'floor', 'area']);
+        logAudit('LOCATION_UPDATE', entry.id, `Same place as ${src.id}: ${locationLabel(entry)}`, Date.now(), { uid: entry.uid });
+        saveState();
+        renderResultScreen(entry, { keepDetailsOpen: true });
+        openLocationEditor();
+        showToast(`Position copied from ${src.id}.`);
+    }
+    // Opens the map so the user can tap exactly where this patient is (overrides the phone's estimate).
+    function pinCurrentPatientOnMap() {
+        const entry = currentEntry();
+        if (!entry) return;
+        commitDirtyFields('Pin on map');
+        showMap({ pinUid: entry.uid });
+    }
+    function applyMapPin(uid, latlng) {
+        const idx = indexByUid(uid);
+        if (idx === -1) return false;
+        const entry = incidentLog[idx];
+        const fix = { lat: latlng.lat, lng: latlng.lng, accuracy: 5, timestamp: Date.now(), source: 'map-pin' };
+        entry.locationConfidence = 'manual-corrected';
+        Object.assign(entry, MITTLib.appendLocationHistory(entry, fix, { user: triagerName, reason: 'Pinned on map', source: 'map-pin', confidence: 'manual-corrected', sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area }));
+        touch(entry, ['location', 'locationConfidence']);
+        logAudit('LOCATION_UPDATE', entry.id, `Pinned on map: ${locationLabel(entry)}`, Date.now(), { uid: entry.uid });
+        saveState();
+        return true;
+    }
+    function openPatientInMaps() {
+        const entry = currentEntry();
+        const loc = locationForEntry(entry);
+        if (!loc || !loc.lat) { showToast('No coordinates for this patient yet.'); return; }
+        openMapsChooser([{ lat: Number(loc.lat), lng: Number(loc.lng), id: entry.id, category: entry.category }], `Patient ${entry.id}`);
     }
     function applyLocationQuickAction(action) {
         const entry = currentEntry();
@@ -2199,8 +2492,12 @@
     function copyPatientCoordinates() {
         const loc = locationForEntry(currentEntry());
         if (!loc || !loc.lat || !loc.lng) { showToast('No coordinates to copy.'); return; }
-        const text = `${loc.lat}, ${loc.lng}${loc.acc ? ' ±' + loc.acc + 'm' : ''}`;
-        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => showToast('Coordinates copied.')).catch(() => showToast(text, { long: true }));
+        const grid = MITTLib.toOsGridRef(loc.lat, loc.lng);
+        const text = `${grid ? grid + ' / ' : ''}${MITTLib.formatCoords(loc.lat, loc.lng)}${loc.acc ? ' ±' + Math.round(loc.acc) + ' m' : ''}`;
+        copyText(text, 'Location copied.');
+    }
+    function copyText(text, doneMsg) {
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => showToast(doneMsg || 'Copied.')).catch(() => showToast(text, { long: true }));
         else showToast(text, { long: true });
     }
 
@@ -2669,6 +2966,7 @@
     function renderResultScreen(entry, opts) {
         opts = opts || {};
         dirtyFields.clear();
+        if (!opts.keepDetailsOpen) collapseResultSections();
         setText('r-patient-id', entry.id);
         const tag = $('result-tag');
         setText('tag-text', catShort(entry.category));
@@ -2769,18 +3067,15 @@
     }
     // Opens every section (used when a task needs the full record on screen).
     function toggleDetails() { document.querySelectorAll('#details-container details.rs-sec').forEach(d => { d.open = true; }); }
-    // Remember which sections the user keeps open; saving edits when a section closes.
+    // Sections start closed for every patient (a busy screen hides the category and the next action);
+    // closing a section saves any edits in it.
     function wireSectionState() {
-        const saved = lsJSON('mit_open_sections', {}) || {};
+        ls('mit_open_sections', null); // older versions remembered open sections across patients
         document.querySelectorAll('#details-container details.rs-sec').forEach(d => {
-            if (saved[d.id]) d.open = true;
-            d.addEventListener('toggle', () => {
-                if (!d.open) commitDirtyFields('Section closed');
-                const st = lsJSON('mit_open_sections', {}) || {};
-                st[d.id] = d.open; ls('mit_open_sections', JSON.stringify(st));
-            });
+            d.addEventListener('toggle', () => { if (!d.open) commitDirtyFields('Section closed'); });
         });
     }
+    function collapseResultSections() { document.querySelectorAll('#details-container details.rs-sec').forEach(d => { d.open = false; }); }
     function updateSectionSummaries(entry) {
         const ints = Object.entries(entry.interventions || {});
         setText('sum-interventions', ints.length ? ints.map(([k, v]) => `${k} ${v && v.time ? v.time : ''}`.trim()).join(', ') : 'none recorded');
@@ -2903,6 +3198,33 @@
         $('atmist-modal').style.display = 'flex';
     }
     function closeAtmist() { $('atmist-modal').style.display = 'none'; }
+    function atmistText() {
+        const entry = currentEntry();
+        if (!entry) return '';
+        const rows = Array.from($('atmist-content').querySelectorAll('.atmist-row')).map(r => `${r.children[0].textContent}: ${r.children[1].textContent}`);
+        const loc = locationForEntry(entry);
+        const place = [entry.sector, entry.landmark, entry.floor ? 'Floor ' + entry.floor : '', entry.area].filter(Boolean).join(', ');
+        const grid = loc && loc.lat ? MITTLib.toOsGridRef(loc.lat, loc.lng) : null;
+        return [`ATMIST ${entry.id} (${catShort(entry.category)}, ${entry.tool || '-'})${TRAINING ? ' — TRAINING' : ''}`].concat(rows, [place || grid ? `Location: ${[place, grid, loc && loc.lat ? MITTLib.formatCoords(loc.lat, loc.lng) : ''].filter(Boolean).join(' • ')}` : null], [`From ${triagerName}${incidentCode ? ', incident ' + incidentCode : ''}, ${fmtDateTime(Date.now())}`]).filter(Boolean).join('\n');
+    }
+    function copyAtmist() { const t = atmistText(); if (t) { copyText(t, 'ATMIST copied.'); logAudit('ATMIST_COPIED', currentEntry().id, '', Date.now(), { uid: currentEntry().uid }); } }
+    async function shareAtmist() {
+        const t = atmistText();
+        if (!t) return;
+        if (!navigator.share) { copyAtmist(); return; }
+        try { await navigator.share({ title: `ATMIST ${currentEntry().id}`, text: t }); logAudit('ATMIST_SHARED', currentEntry().id, 'Shared via the phone share sheet', Date.now(), { uid: currentEntry().uid }); }
+        catch (e) { if (e && e.name !== 'AbortError') copyAtmist(); }
+    }
+    // METHANE "E - Exact location": the phone's position as a grid reference people can read out.
+    function methaneUseMyLocation() {
+        const pos = freshPosition() || currentPosition;
+        if (!pos || !pos.lat) { openLocationHelp(); return; }
+        const grid = MITTLib.toOsGridRef(pos.lat, pos.lng);
+        const f = $('m-loc');
+        const txt = `${grid ? grid + ' / ' : ''}${MITTLib.formatCoords(pos.lat, pos.lng)} (±${Math.round(pos.acc || 0)} m, ${fmtTime(Date.now())})`;
+        f.value = f.value.trim() ? `${f.value.trim()} — ${txt}` : txt;
+        showToast('Position added. Add the street / building name too.');
+    }
 
     // ---------- Interventions / evacuation ----------
     async function recordIntervention(btn, type) {
@@ -4259,43 +4581,263 @@
     function resetToHome() { try { commitDirtyFields('Home'); } catch (e) {} showScreen('home-screen'); }
 
     // ================= MAP =================
-    function setCCSLocation() {
-        const pos = freshPosition();
-        if (!pos) { showToast('Waiting for a current GPS fix to set the CCS.'); return; }
-        cachedCcsLocation = MITTLib.normaliseLocation(pos);
-        logAudit('CCS_SET', '-', `${cachedCcsLocation.lat}, ${cachedCcsLocation.lng} ±${cachedCcsLocation.acc}m`, Date.now());
-        saveState(); showToast('CCS location saved.'); showMap();
+    // One map for the whole incident: every casualty with coordinates, colour-coded, clustered when
+    // crowded, with its accuracy circle; the user's own position; the CCS. Tapping the map while
+    // "pinning" sets a patient's position by hand (the only reliable way indoors).
+    let _mapPin = null;            // { uid } while the next map tap places a patient (or 'CCS')
+    let _mapUser = null;           // { dot, circle } Leaflet layers for the phone's own position
+    let _mapFilter = 'onscene';
+    let _mapCircles = null;        // accuracy circles (not clustered)
+    let _mapTilesFailed = false;
+    function mapRecords() { return incidentLog.filter(e => _mapFilter === 'all' || !e.evacuated); }
+    function mapPointsFor(records) { return MITTLib.locationPoints(records); }
+    function ensureMap() {
+        if (typeof L === 'undefined') return false;
+        if (patientMap) return true;
+        patientMap = L.map('patient-map', { zoomControl: true, attributionControl: true }).setView([54.0, -2.0], 6);
+        const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(patientMap);
+        tiles.on('tileerror', () => { _mapTilesFailed = true; $('map-offline-note').style.display = 'block'; });
+        tiles.on('load', () => { if (_mapTilesFailed) { _mapTilesFailed = false; $('map-offline-note').style.display = 'none'; } });
+        L.control.scale({ imperial: false }).addTo(patientMap);
+        mapMarkerCluster = L.markerClusterGroup({ maxClusterRadius: 32, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19 });
+        patientMap.addLayer(mapMarkerCluster);
+        _mapCircles = L.layerGroup().addTo(patientMap);
+        patientMap.on('click', onMapClick);
+        return true;
     }
-    function showMap() {
+    function showMap(opts) {
+        opts = opts || {};
         showScreen('map-screen');
-        if (typeof L === 'undefined') { $('map-offline-note').style.display = 'block'; return; }
-        if (!patientMap) {
-            patientMap = L.map('patient-map').setView([54.0, -2.0], 6);
-            const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(patientMap);
-            tiles.on('tileerror', () => { $('map-offline-note').style.display = 'block'; });
-            mapMarkerCluster = L.markerClusterGroup({ maxClusterRadius: 40, spiderfyOnMaxZoom: true });
-            patientMap.addLayer(mapMarkerCluster);
-        }
+        if (!ensureMap()) { $('map-offline-note').style.display = 'block'; setText('map-offline-note', 'The map library did not load. Positions are still stored and listed below.'); renderMapList(); return; }
+        if (opts.pinUid) startMapPin(opts.pinUid); else if (!_mapPin) setMapPinBanner(null);
+        renderMap(opts);
+        setTimeout(() => { if (patientMap) { patientMap.invalidateSize(); if (opts.fit !== false) fitMap(opts); } }, 120);
+    }
+    function markerIcon(p) {
+        const info = MITTLib.CATEGORY_INFO[p.category] || { colour: '#005EB8', text: '#fff' };
+        const tail = String(p.id || '').replace(/^.*-/, '').slice(-4) || '•';
+        return L.divIcon({ html: `<div class="mk${p.tool === 'TST' ? ' mk-tst' : ''}${p.evacuated ? ' mk-evac' : ''}" style="background:${info.colour};color:${info.text};">${escapeHTML(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
+    }
+    function popupHtml(entry, p) {
+        const grid = MITTLib.toOsGridRef(p.lat, p.lng);
+        const links = MITTLib.mapsLinks(p.lat, p.lng, entry.id);
+        const uid = JSON.stringify(entry.uid);
+        return `<div class="map-pop"><b>${escapeHTML(entry.id)}</b> <span class="cat-chip cat-bg-${escapeHTML(entry.category)}">${escapeHTML(catShort(entry.category))}</span>${entry.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}${entry.evacuated ? ' <i>evacuated</i>' : ''}` +
+            `<div class="map-pop-meta">${escapeHTML([entry.sector, entry.landmark, entry.floor ? 'Floor ' + entry.floor : '', entry.area].filter(Boolean).join(' • ') || 'No place label')}</div>` +
+            `<div class="map-pop-meta">${grid ? escapeHTML(grid) + ' • ' : ''}${p.acc !== null ? '±' + Math.round(p.acc) + ' m • ' : ''}${escapeHTML(confidenceLabel(entry.locationConfidence))}${p.timestamp ? ' • ' + escapeHTML(MITTLib.formatLocationAge(p.timestamp)) : ''}</div>` +
+            `<div class="map-pop-btns"><button type="button" onclick="editEntryByUid(${escapeHTML(uid)})">Open record</button><button type="button" onclick="startMapPin(${escapeHTML(uid)})">Move pin</button><a href="${links.googleDirections}" target="_blank" rel="noopener">Directions</a></div></div>`;
+    }
+    function renderMap(opts) {
+        opts = opts || {};
+        if (!patientMap) return;
         mapMarkerCluster.clearLayers();
+        _mapCircles.clearLayers();
         if (ccsMarker) { patientMap.removeLayer(ccsMarker); ccsMarker = null; }
-        const bounds = [];
-        incidentLog.forEach(p => {
-            const loc = locationForEntry(p);
-            if (!loc || !loc.lat || !loc.lng) return;
-            const lat = parseFloat(loc.lat), lng = parseFloat(loc.lng);
+        const records = mapRecords();
+        const pts = mapPointsFor(records);
+        pts.forEach(p => {
+            const entry = incidentLog[indexByUid(p.uid)];
+            if (!entry) return;
+            p.tool = entry.tool;
             const info = MITTLib.CATEGORY_INFO[p.category] || { colour: '#005EB8' };
-            const icon = L.divIcon({ html: `<div style="background-color:${info.colour}; width:14px; height:14px; border-radius:50%; border:2px solid white;"></div>`, className: 'custom-div-icon', iconSize: [18, 18], iconAnchor: [9, 9] });
-            L.marker([lat, lng], { icon }).bindPopup(`<b>${escapeHTML(p.id)}</b><br>${escapeHTML(catShort(p.category))}<br>${escapeHTML(locationLabel(p))}`).addTo(mapMarkerCluster);
-            bounds.push([lat, lng]);
+            const m = L.marker([p.lat, p.lng], { icon: markerIcon(p), title: `${entry.id} ${catShort(entry.category)}` }).bindPopup(popupHtml(entry, p), { maxWidth: 260 });
+            m._mitUid = p.uid;
+            mapMarkerCluster.addLayer(m);
+            if (p.acc !== null && p.acc >= 15 && entry.locationConfidence !== 'manual-corrected') _mapCircles.addLayer(L.circle([p.lat, p.lng], { radius: p.acc, color: info.colour, weight: 1, fillColor: info.colour, fillOpacity: 0.08, interactive: false }));
         });
         if (cachedCcsLocation && cachedCcsLocation.lat) {
-            const ccsIcon = L.divIcon({ html: '<div style="background-color:#007F3B; color:white; width:24px; height:24px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white;">+</div>', className: 'ccs-div-icon', iconSize: [28, 28], iconAnchor: [14, 14] });
-            ccsMarker = L.marker([parseFloat(cachedCcsLocation.lat), parseFloat(cachedCcsLocation.lng)], { icon: ccsIcon, zIndexOffset: 1000 }).addTo(patientMap).bindPopup('<b>Casualty Clearing Station (CCS)</b>');
-            bounds.push([parseFloat(cachedCcsLocation.lat), parseFloat(cachedCcsLocation.lng)]);
+            const ccsIcon = L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] });
+            ccsMarker = L.marker([parseFloat(cachedCcsLocation.lat), parseFloat(cachedCcsLocation.lng)], { icon: ccsIcon, zIndexOffset: 1000 }).addTo(patientMap).bindPopup('<b>Casualty Clearing Station (CCS)</b><div class="map-pop-btns"><button type="button" onclick="startMapPin(\'CCS\')">Move CCS</button></div>');
         }
-        if (bounds.length) patientMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
-        else if (currentPosition) patientMap.setView([parseFloat(currentPosition.lat), parseFloat(currentPosition.lng)], 15);
-        setTimeout(() => { if (patientMap) patientMap.invalidateSize(); }, 300);
+        updateMapUserMarker();
+        renderMapLegend(records, pts);
+        renderMapList();
+        setText('map-n-onscene', String(incidentLog.filter(e => !e.evacuated).length));
+        setText('map-n-all', String(incidentLog.length));
+        $('map-chip-onscene').classList.toggle('on', _mapFilter === 'onscene');
+        $('map-chip-all').classList.toggle('on', _mapFilter === 'all');
+    }
+    function fitMap(opts) {
+        opts = opts || {};
+        const pts = mapPointsFor(mapRecords());
+        if (_mapPin && _mapPin.uid !== 'CCS') {
+            const e = incidentLog[indexByUid(_mapPin.uid)], loc = e && locationForEntry(e);
+            if (loc && loc.lat) { patientMap.setView([Number(loc.lat), Number(loc.lng)], 18); return; }
+            if (currentPosition) { patientMap.setView([Number(currentPosition.lat), Number(currentPosition.lng)], 18); return; }
+        }
+        const bounds = pts.map(p => [p.lat, p.lng]);
+        if (cachedCcsLocation && cachedCcsLocation.lat) bounds.push([parseFloat(cachedCcsLocation.lat), parseFloat(cachedCcsLocation.lng)]);
+        if (currentPosition && currentPosition.lat && bounds.length) bounds.push([Number(currentPosition.lat), Number(currentPosition.lng)]);
+        if (bounds.length > 1) patientMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+        else if (bounds.length === 1) patientMap.setView(bounds[0], 18);
+        else if (currentPosition && currentPosition.lat) patientMap.setView([Number(currentPosition.lat), Number(currentPosition.lng)], 16);
+    }
+    function updateMapUserMarker() {
+        if (!patientMap || !currentPosition || !currentPosition.lat) return;
+        const ll = [Number(currentPosition.lat), Number(currentPosition.lng)];
+        const acc = Number(currentPosition.acc) || 0;
+        if (!_mapUser) {
+            _mapUser = {
+                circle: L.circle(ll, { radius: acc, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.12, interactive: false }).addTo(patientMap),
+                dot: L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(patientMap).bindPopup('<b>You</b> (this phone)'),
+            };
+        } else { _mapUser.circle.setLatLng(ll).setRadius(acc); _mapUser.dot.setLatLng(ll); }
+    }
+    function mapCentreOnMe() {
+        if (!patientMap) return;
+        if (!currentPosition || !currentPosition.lat) { openLocationHelp(); return; }
+        updateMapUserMarker();
+        patientMap.setView([Number(currentPosition.lat), Number(currentPosition.lng)], Math.max(patientMap.getZoom(), 17));
+    }
+    function setMapFilter(f) { _mapFilter = f === 'all' ? 'all' : 'onscene'; renderMap(); fitMap(); }
+    function renderMapLegend(records, pts) {
+        const box = $('map-legend');
+        clearChildren(box);
+        const counts = {};
+        pts.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
+        MITTLib.CATEGORIES.forEach(c => { if (counts[c]) box.appendChild(el('span', { className: 'cat-chip cat-bg-' + c, text: `${catShort(c)} ${counts[c]}` })); });
+        const without = records.length - pts.length;
+        box.appendChild(el('span', { className: 'map-legend-note', text: pts.length ? `${pts.length} on the map${without ? ` • ${without} without a position` : ''}` : (records.length ? `${records.length} patient(s), none with a position yet` : 'No patients yet') }));
+    }
+    function bearingText(from, to) {
+        const φ1 = Number(from.lat) * Math.PI / 180, φ2 = Number(to.lat) * Math.PI / 180, Δλ = (Number(to.lng) - Number(from.lng)) * Math.PI / 180;
+        const y = Math.sin(Δλ) * Math.cos(φ2), x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+        const deg = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8];
+    }
+    function renderMapList() {
+        const box = $('map-list');
+        if (!box) return;
+        clearChildren(box);
+        const me = currentPosition && currentPosition.lat ? { lat: Number(currentPosition.lat), lng: Number(currentPosition.lng) } : null;
+        const pts = mapPointsFor(mapRecords()).map(p => Object.assign(p, { dist: me ? MITTLib.distanceMeters(me, p) : null }));
+        pts.sort((a, b) => me ? a.dist - b.dist : (b.timestamp || 0) - (a.timestamp || 0));
+        setText('map-list-sum', pts.length ? (me ? 'nearest first' : 'newest first (no phone position)') : 'none with a position');
+        pts.forEach(p => {
+            const entry = incidentLog[indexByUid(p.uid)];
+            if (!entry) return;
+            const grid = MITTLib.toOsGridRef(p.lat, p.lng);
+            const row = el('div', { className: 'map-row', onclick: () => focusMapOn(p.uid) }, [
+                el('span', { className: 'cat-chip cat-bg-' + p.category, text: catShort(p.category) }),
+                el('div', { className: 'map-row-main' }, [el('strong', { text: entry.id }), el('div', { className: 'map-row-meta', text: [p.place, grid, p.acc !== null ? '±' + Math.round(p.acc) + ' m' : ''].filter(Boolean).join(' • ') })]),
+                el('div', { className: 'map-row-dist', text: p.dist !== null ? (p.dist < 1000 ? `${Math.round(p.dist)} m ${bearingText(me, p)}` : `${(p.dist / 1000).toFixed(1)} km ${bearingText(me, p)}`) : '' }),
+                el('button', { type: 'button', className: 'btn btn-secondary rs-small', style: 'width:auto;margin:0;padding:0.5rem 0.7rem;', text: 'Open', onclick: (ev) => { ev.stopPropagation(); editEntryByUid(p.uid); } }),
+            ]);
+            box.appendChild(row);
+        });
+        if (!pts.length) box.appendChild(el('p', { className: 'location-mini', text: 'Patients get a position automatically when triage finishes (if the phone has one). Open a patient → Location to use your position, copy the last patient\'s, or pin them on the map.' }));
+    }
+    function focusMapOn(uid) {
+        if (!patientMap) return;
+        const e = incidentLog[indexByUid(uid)], loc = e && locationForEntry(e);
+        if (!loc || !loc.lat) return;
+        const ll = [Number(loc.lat), Number(loc.lng)];
+        patientMap.setView(ll, 18);
+        setTimeout(() => {
+            let target = null;
+            mapMarkerCluster.eachLayer(m => { if (m._mitUid === uid) target = m; });
+            if (target) mapMarkerCluster.zoomToShowLayer(target, () => target.openPopup());
+        }, 250);
+        $('patient-map').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    // ---- Pinning (tap the map to set a position) ----
+    function startMapPin(uid) {
+        if (uid !== 'CCS' && indexByUid(uid) === -1) return;
+        _mapPin = { uid };
+        if (patientMap) patientMap.closePopup();
+        const id = uid === 'CCS' ? 'the Casualty Clearing Station' : `patient ${incidentLog[indexByUid(uid)].id}`;
+        setMapPinBanner(`Tap the map exactly where ${id} is.`);
+        $('patient-map').classList.add('pinning');
+        if (!$('map-screen').classList.contains('active')) showMap();
+    }
+    function cancelMapPin() { _mapPin = null; setMapPinBanner(null); $('patient-map').classList.remove('pinning'); }
+    function setMapPinBanner(text) {
+        const b = $('map-pin-banner');
+        clearChildren(b);
+        if (!text) { b.style.display = 'none'; return; }
+        b.style.display = 'flex';
+        b.appendChild(el('span', { text: '📍 ' + text }));
+        b.appendChild(el('button', { type: 'button', className: 'btn btn-secondary', style: 'width:auto;margin:0;padding:0.5rem 0.8rem;', text: 'Cancel', onclick: cancelMapPin }));
+    }
+    async function onMapClick(e) {
+        if (!_mapPin) return;
+        const pin = _mapPin;
+        const ll = e.latlng;
+        const grid = MITTLib.toOsGridRef(ll.lat, ll.lng);
+        const who = pin.uid === 'CCS' ? 'the CCS' : incidentLog[indexByUid(pin.uid)].id;
+        const ok = await inAppConfirm({ title: `Place ${who} here?`, message: `${grid ? grid + '\n' : ''}${MITTLib.formatCoords(ll.lat, ll.lng)}`, okLabel: 'Place here', cancelLabel: 'Tap again' });
+        if (!ok) return;
+        if (pin.uid === 'CCS') {
+            cachedCcsLocation = MITTLib.normaliseLocation({ lat: ll.lat, lng: ll.lng, accuracy: 5, timestamp: Date.now(), source: 'map-pin' });
+            logAudit('CCS_SET', '-', `Pinned on map: ${cachedCcsLocation.lat}, ${cachedCcsLocation.lng}`, Date.now());
+            saveState();
+        } else if (!applyMapPin(pin.uid, ll)) return;
+        cancelMapPin();
+        renderMap();
+        showToast(pin.uid === 'CCS' ? 'CCS position saved.' : `${who} pinned on the map.`);
+    }
+    function setCCSLocation() {
+        const pos = freshPosition();
+        if (!pos) { startMapPin('CCS'); return; }
+        cachedCcsLocation = MITTLib.normaliseLocation(pos);
+        logAudit('CCS_SET', '-', `${cachedCcsLocation.lat}, ${cachedCcsLocation.lng} ±${cachedCcsLocation.acc}m`, Date.now());
+        saveState(); showToast('CCS set to your position. Tap "Move CCS" on its marker to adjust.'); renderMap(); fitMap();
+    }
+    // ---- Open elsewhere / export ----
+    let _mapsChooserPoints = [];
+    function openMapsChooserAll() {
+        const pts = mapPointsFor(mapRecords());
+        if (!pts.length) { showToast('No patients with a position to open.'); return; }
+        openMapsChooser(pts, `${pts.length} casualt${pts.length === 1 ? 'y' : 'ies'}${_mapFilter === 'onscene' ? ' on scene' : ''}`);
+    }
+    function openMapsChooser(points, title) {
+        _mapsChooserPoints = points.slice();
+        setText('maps-title', `Open ${title} in…`);
+        const box = $('maps-options');
+        clearChildren(box);
+        const me = currentPosition && currentPosition.lat ? { lat: Number(currentPosition.lat), lng: Number(currentPosition.lng) } : null;
+        const many = points.length > 1;
+        const add = (label, sub, action, href) => {
+            const b = href ? el('a', { className: 'btn btn-secondary maps-opt', href, target: '_blank', rel: 'noopener' }) : el('button', { type: 'button', className: 'btn btn-secondary maps-opt', onclick: action });
+            b.appendChild(el('span', { text: label }));
+            if (sub) b.appendChild(el('small', { text: sub }));
+            if (href) b.addEventListener('click', () => logAudit('MAP_OPENED_EXTERNALLY', many ? '-' : (points[0].id || '-'), label, Date.now()));
+            box.appendChild(b);
+        };
+        if (many) {
+            const r = MITTLib.googleMapsRouteUrl(points, me);
+            add('Google Maps', `Walking route through the ${r.included.length} nearest${r.omitted.length ? ` (Google allows ${MITTLib.GOOGLE_ROUTE_MAX_POINTS} stops; ${r.omitted.length} left out)` : ''}. Google cannot show plain pins from a link.`, null, r.url);
+            add('Save GPX file', 'All casualties as waypoints: OsmAnd, Organic Maps, Garmin, QGIS', () => exportMapFile('gpx'));
+            add('Save KML file', 'All casualties, colour-coded: Google Earth, Google My Maps', () => exportMapFile('kml'));
+            add('Save GeoJSON file', 'For control-room GIS / mapping software', () => exportMapFile('geojson'));
+            add('Copy list', 'ID, category, OS grid ref and coordinates for every casualty', () => copyAllCoords());
+        } else {
+            const p = points[0];
+            const links = MITTLib.mapsLinks(p.lat, p.lng, p.id);
+            add('Google Maps', 'Pin at the casualty', null, links.google);
+            if (isIOS()) add('Apple Maps', 'Pin at the casualty', null, links.apple);
+            if (devicePlatform() === 'android') add('Default maps app', 'Android geo: link (Google Maps, OsmAnd, etc.)', null, links.geo);
+            add('OpenStreetMap', 'Pin at the casualty', null, links.osm);
+            add('Walking directions', 'Google Maps directions from where you are', null, links.googleDirections);
+            add('Copy', `${MITTLib.toOsGridRef(p.lat, p.lng) || ''} ${MITTLib.formatCoords(p.lat, p.lng)}`.trim(), () => copyText(`${p.id}: ${MITTLib.toOsGridRef(p.lat, p.lng) ? MITTLib.toOsGridRef(p.lat, p.lng) + ' / ' : ''}${MITTLib.formatCoords(p.lat, p.lng)}`, 'Location copied.'));
+        }
+        $('maps-modal').style.display = 'flex';
+    }
+    function closeMapsChooser() { $('maps-modal').style.display = 'none'; }
+    function exportMapFile(kind) {
+        const records = incidentLog.filter(e => _mapsChooserPoints.some(p => p.uid === e.uid));
+        const opts = { name: `Major Incident Triage${incidentCode ? ' ' + incidentCode : ''} — casualties`, ccs: cachedCcsLocation };
+        const text = kind === 'gpx' ? MITTLib.buildGpx(records, opts) : kind === 'kml' ? MITTLib.buildKml(records, opts) : MITTLib.buildGeoJson(records, opts);
+        const type = kind === 'gpx' ? 'application/gpx+xml' : kind === 'kml' ? 'application/vnd.google-earth.kml+xml' : 'application/geo+json';
+        downloadBlob(`${filePrefix()}casualty_map_${deviceId}_${stamp()}.${kind}`, text, type);
+        logAudit('MAP_EXPORTED', '-', `${kind.toUpperCase()}: ${records.length} casualt${records.length === 1 ? 'y' : 'ies'}`, Date.now());
+        closeMapsChooser();
+        showToast(`${kind.toUpperCase()} file saved.`);
+    }
+    function copyAllCoords() {
+        const lines = _mapsChooserPoints.map(p => `${p.id}\t${catShort(p.category)}\t${MITTLib.toOsGridRef(p.lat, p.lng) || ''}\t${MITTLib.formatCoords(p.lat, p.lng)}${p.acc !== null ? '\t±' + Math.round(p.acc) + ' m' : ''}${p.place ? '\t' + p.place : ''}`);
+        copyText(lines.join('\n'), `${lines.length} location(s) copied.`);
+        closeMapsChooser();
     }
 
     // ================= PRINTABLE LABEL =================

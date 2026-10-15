@@ -974,6 +974,122 @@ async function test(name, fn) {
             }
         });
     });
+    console.log('\ne2e: v0.9.0 location, map and phone layout');
+    const M = await device('M', { permissions: ['geolocation', 'clipboard-read', 'clipboard-write'] });
+    await setup(M, 'Medic M');
+    let pinnedUid = null;
+    await test('home screen has a Map button and the location pill shows the phone\'s accuracy', async () => {
+        assert.ok(await M.isVisible('#btn-home-map'));
+        await M.waitForFunction(() => currentPosition && currentPosition.lat, null, { timeout: 8000 });
+        await M.evaluate(() => updateGPSIndicator());
+        const pill = await M.evaluate(() => ({ text: document.getElementById('gps-indicator').textContent, cls: document.getElementById('gps-indicator').className }));
+        assert.match(pill.text, /±8 m/);
+        assert.match(pill.cls, /loc-good/);
+    });
+    await test('a new patient opens with every detail section closed', async () => {
+        await triage(M, 'TST', [true]);
+        assert.ok(await M.evaluate(() => currentEntry().currentLocation && currentEntry().currentLocation.lat));
+        const open = await M.evaluate(() => Array.from(document.querySelectorAll('#details-container details.rs-sec')).filter(d => d.open).map(d => d.id));
+        assert.deepStrictEqual(open, []);
+        assert.ok(await M.evaluate(() => document.querySelectorAll('#details-container details.rs-sec').length >= 4));
+    });
+    await test('the location section shows an OS grid reference and an "Open in maps" button', async () => {
+        const txt = await M.evaluate(() => document.getElementById('sec-location').textContent);
+        assert.match(txt, /SJ \d{5} \d{5}/);
+        assert.ok(await M.evaluate(() => document.getElementById('btn-loc-open-maps').style.display !== 'none'));
+    });
+    await test('the map shows one marker per located patient', async () => {
+        await triage(M, 'MITT', [true]);
+        pinnedUid = await M.evaluate(() => currentEntry().uid);
+        await M.evaluate(() => showMap());
+        await M.waitForTimeout(300);
+        assert.ok(await M.isVisible('#map-screen'));
+        assert.strictEqual(await M.evaluate(() => mapMarkerCluster.getLayers().length), 2);
+        assert.match(await M.evaluate(() => document.getElementById('map-list').textContent), /-TST-001[\s\S]*-MITT-002/);
+    });
+    await test('pin on map: a tap places the patient and marks the position as manually corrected', async () => {
+        await M.evaluate(uid => showMap({ pinUid: uid }), pinnedUid);
+        assert.ok(await M.isVisible('#map-pin-banner'));
+        await Promise.all([
+            M.evaluate(() => patientMap.fire('click', { latlng: L.latLng(53.49, -2.25) })),
+            answerDialog(M, true),
+        ]);
+        await M.waitForFunction(() => document.getElementById('map-pin-banner').style.display === 'none');
+        const e = await M.evaluate(uid => incidentLog[indexByUid(uid)], pinnedUid);
+        assert.strictEqual(Number(e.currentLocation.lat).toFixed(2), '53.49');
+        assert.strictEqual(e.locationConfidence, 'manual-corrected');
+        assert.strictEqual(e.currentLocation.source, 'map-pin');
+        assert.ok(await M.evaluate(() => auditLog.some(a => a.action === 'LOCATION_UPDATE' && /Pinned on map/.test(a.details || a.detail || JSON.stringify(a)))));
+    });
+    await test('"Same place as last patient" copies the most recently positioned patient', async () => {
+        await M.evaluate(() => { currentPosition = Object.assign({}, currentPosition, { timestamp: Date.now() - 10 * 60 * 1000 }); });
+        await triage(M, 'TST', [false, true]);
+        assert.strictEqual(await M.evaluate(() => currentEntry().currentLocation), null);
+        await M.evaluate(() => copyLocationFromPrevious());
+        const e = await M.evaluate(() => currentEntry());
+        assert.strictEqual(Number(e.currentLocation.lat).toFixed(2), '53.49');
+        assert.strictEqual(e.locationConfidence, 'manual-corrected');
+        assert.match(e.currentLocation.source, /^copied:/);
+        await M.evaluate(() => { currentPosition = Object.assign({}, currentPosition, { timestamp: Date.now() }); });
+    });
+    await test('METHANE "My location" fills the exact-location box with a grid reference', async () => {
+        await M.evaluate(() => { showMethane(); document.getElementById('m-loc').value = ''; methaneUseMyLocation(); });
+        assert.match(await M.inputValue('#m-loc'), /^SJ \d{5} \d{5} \/ 53\.48080, -2\.24260 \(±8 m, /);
+    });
+    await test('ATMIST can be copied as plain text', async () => {
+        await M.evaluate(() => { generateAtmist(); copyAtmist(); });
+        const clip = await M.evaluate(() => navigator.clipboard.readText());
+        assert.match(clip, /ATMIST/);
+        assert.match(clip, /Allergies/);
+        assert.ok(await M.evaluate(() => auditLog.some(a => a.action === 'ATMIST_COPIED')));
+        await M.evaluate(() => closeAtmist());
+    });
+    await test('"Open in…" offers a Google route plus GPX/KML/GeoJSON; the GPX has a waypoint per patient', async () => {
+        await M.evaluate(() => { showMap(); openMapsChooserAll(); });
+        await page_visible(M, '#maps-modal');
+        const labels = await M.evaluate(() => Array.from(document.querySelectorAll('#maps-options .maps-opt > span')).map(s => s.textContent));
+        assert.deepStrictEqual(labels, ['Google Maps', 'Save GPX file', 'Save KML file', 'Save GeoJSON file', 'Copy list']);
+        const href = await M.evaluate(() => document.querySelector('#maps-options a').href);
+        assert.match(href, /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&origin=53\.480800,-2\.242600&destination=/);
+        const [dl] = await Promise.all([M.waitForEvent('download'), M.evaluate(() => exportMapFile('gpx'))]);
+        const gpx = fs.readFileSync(await dl.path(), 'utf8');
+        assert.strictEqual((gpx.match(/<wpt /g) || []).length, 3);
+        assert.match(dl.suggestedFilename(), /casualty_map_.*\.gpx$/);
+        assert.ok(await M.evaluate(() => auditLog.some(a => a.action === 'MAP_EXPORTED')));
+    });
+    await test('with location blocked the pill says so and tapping it explains how to allow it', async () => {
+        const D = await device('Denied', { permissions: [] });
+        await setup(D, 'Medic D');
+        await D.waitForFunction(() => LOC.lastError && LOC.lastError.code === 1, null, { timeout: 8000 });
+        await D.evaluate(() => updateGPSIndicator());
+        assert.match(await D.evaluate(() => document.getElementById('gps-indicator').textContent), /Location off/);
+        await D.click('#gps-indicator');
+        await page_visible(D, '#loc-modal');
+        assert.match(await D.evaluate(() => document.getElementById('loc-help-body').textContent), /blocked/);
+        await D.evaluate(() => closeLocationHelp());
+        await D._ctx.close();
+    });
+    await test('phone layout: home, result, map and location screens fit a 360px-wide phone without sideways scrolling', async () => {
+        const P = await device('Small phone', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+        await setup(P, 'Medic P');
+        const check = async (label) => {
+            const w = await P.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+            assert.ok(w[0] <= w[1] + 1, `${label}: page is ${w[0]}px wide for a ${w[1]}px screen`);
+        };
+        await check('home');
+        await triage(P, 'TST', [true]);
+        await check('result');
+        await P.evaluate(() => { document.getElementById('sec-location').open = true; });
+        await check('location section');
+        await P.evaluate(() => showMap());
+        await P.waitForTimeout(300);
+        await check('map');
+        const mapH = await P.evaluate(() => document.getElementById('patient-map').getBoundingClientRect().height);
+        assert.ok(mapH >= 300, 'map height ' + mapH);
+        await P._ctx.close();
+    });
+    await M._ctx.close();
+
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
 
     await browser.close();
