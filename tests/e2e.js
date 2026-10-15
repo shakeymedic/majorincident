@@ -629,6 +629,29 @@ async function test(name, fn) {
         assert.ok(await H.evaluate(() => document.getElementById('question-screen').classList.contains('active') && currentTool === 'TST'));
         await H._ctx.close();
     });
+    await test('v0.17.0 back to basics: Hand over is visible on home and result, More holds the patient details, setup is in Settings, a double tap answers once', async () => {
+        const B = await device('Basics', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(B, 'Medic B');
+        assert.ok(await B.isVisible('#btn-home-handover'));
+        assert.strictEqual(await B.evaluate(() => document.querySelector('#home-more').textContent.includes('Clear everything')), false, 'clearing lives in Settings');
+        await B.evaluate(() => initiateTriage('TST'));
+        await B.evaluate(() => { answerTap(false); answerTap(true); });   // second tap inside 0.4 s is ignored
+        assert.strictEqual(await B.evaluate(() => document.getElementById('question-screen').dataset.stepId), 'bleeding');
+        await B.evaluate(() => { _lastAnswerTap = 0; answerTap(true); });  // severe bleeding: P1
+        assert.ok(await B.isVisible('#btn-handover'));
+        const fits = await B.evaluate(() => { const m = document.querySelector('main'); const h = document.getElementById('btn-handover').getBoundingClientRect(); return m.scrollHeight <= m.clientHeight + 2 && h.bottom <= innerHeight; });
+        assert.ok(fits, 'result fits without scrolling');
+        assert.strictEqual(await B.isVisible('#sec-interventions'), false);
+        await B.click('#btn-patient-more');
+        assert.ok(await B.isVisible('#sec-interventions'));
+        assert.match(await B.textContent('#pm-id'), /TST-001/);
+        await B.evaluate(() => nextPatient());
+        assert.strictEqual(await B.isVisible('#patient-more'), false, 'panel closes when leaving the patient');
+        await B.evaluate(() => { resetToHome(); openModesMenu(); });
+        assert.match(await B.textContent('#set-you-sum'), /Medic B · Clinician/);
+        assert.ok(await B.isVisible('text=Change name or role'));
+        await B._ctx.close();
+    });
     await test('on a small phone (375x667 and 360x740) YES and NO are fully on screen for every TST and MITT question', async () => {
         for (const vp of [{ width: 375, height: 667 }, { width: 360, height: 740 }]) {
             const S = await device('Small ' + vp.width, { viewport: vp, isMobile: true, hasTouch: true });
@@ -700,7 +723,7 @@ async function test(name, fn) {
         for (const sel of ['#btn-reassess', '#btn-atmist', '#btn-mitt-now', '.int-btn[data-type="TXA"]', '.int-btn[data-type="Needle Decomp"]', '.int-btn[data-type="IO Access"]']) {
             assert.strictEqual(await P.evaluate(s => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0; }, sel), false, sel + ' should be hidden');
         }
-        assert.ok(await P.evaluate(() => { document.getElementById('sec-interventions').open = true; return document.querySelector('.int-btn[data-type="Tourniquet"]').getClientRects().length > 0; }));
+        assert.ok(await P.evaluate(() => { openPatientMore(); document.getElementById('sec-interventions').open = true; return document.querySelector('.int-btn[data-type="Tourniquet"]').getClientRects().length > 0; }));
         await P._ctx.close();
     });
     await test('each question shows its number, and "Not sure?" always points to the more urgent answer', async () => {

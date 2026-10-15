@@ -1018,6 +1018,105 @@
         body:not(.gloved) #details-container > details.rs-sec:not([open]) > summary .rs-sum { display: -webkit-box; margin-top: 2px; }
         body:not(.gloved) #details-container > details.rs-sec > summary .rs-sum { font-size: 0.8rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
     }
+
+    /* ===== Back to basics (v0.17.0) =====
+       One job per screen, big targets (48 px minimum), the buttons used most in the bottom half,
+       handing over always visible, and plainly worded menus. Gloved mode keeps its own larger sizes. */
+    #home-screen.active { display: flex; flex-direction: column; gap: 10px; }
+    /* Let home and result fill the space under the header, so the big button and the label can grow into it. */
+    #home-screen.active, body:not(.gloved) #result-screen.active { flex: 1 0 auto; height: auto; }
+    #home-screen > .btn, #home-screen > .home-row, #home-screen > details { margin: 0; }
+    body:not(.gloved) #btn-start-triage { flex: 1 1 auto; min-height: 104px; max-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    body:not(.gloved) #btn-mitt { flex: 0 1 auto; min-height: 72px; max-height: 120px; }
+    .home-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+    .home-pair .btn { margin: 0; min-height: 72px; font-size: 1.15rem; font-weight: 800; line-height: 1.2; padding: 0.7rem 0.4rem; }
+    .home-pair .btn span { display: block; font-size: 0.85rem; font-weight: 400; margin-top: 3px; line-height: 1.25; }
+    .home-pair .home-handover { background: var(--nhs-blue); color: #fff; border: 3px solid var(--nhs-dark-blue); }
+    .home-pair-small .btn { min-height: 52px; font-size: 1.05rem; font-weight: 700; background: var(--card-bg); color: var(--nhs-blue); border: 2px solid var(--nhs-blue); }
+    body.night-mode .home-pair-small .btn { color: var(--nhs-yellow); border-color: var(--nhs-yellow); }
+    body.panic .home-pair, body.panic .home-pair-small { display: none !important; }
+
+    /* Plain menus: one item per row, a bold name and one short line saying what it does. */
+    details.menu-list { border: 2px solid rgba(0,94,184,0.35); border-radius: 10px; background: var(--card-bg); }
+    details.menu-list > summary { list-style: none; cursor: pointer; padding: 12px 14px; min-height: 52px; box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 10px; font-weight: 800; font-size: 1.15rem; color: var(--nhs-blue); }
+    details.menu-list > summary::-webkit-details-marker { display: none; }
+    details.menu-list > summary::before { content: "▸"; width: 1em; }
+    details.menu-list[open] > summary::before { content: "▾"; }
+    details.menu-list > summary .rs-sum { font-size: 0.95rem; color: var(--nhs-grey); font-weight: 400; }
+    body.night-mode details.menu-list > summary { color: var(--nhs-yellow); }
+    .menu-items { padding: 0 6px 6px; }
+    .menu-item { display: block; width: 100%; box-sizing: border-box; text-align: left; text-decoration: none; background: none; border: 0; border-top: 1px solid rgba(0,0,0,0.12); padding: 12px 34px 12px 10px; min-height: 56px; cursor: pointer; color: var(--text-color); font: inherit; position: relative; }
+    .menu-item::after { content: "›"; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 1.6rem; color: var(--nhs-grey); }
+    .menu-item b { display: block; font-size: 1.1rem; line-height: 1.25; }
+    .menu-item span { display: block; font-size: 0.95rem; line-height: 1.3; color: var(--nhs-grey); margin-top: 2px; }
+    .menu-item:active { background: rgba(0,94,184,0.08); }
+    .menu-item.danger b { color: var(--nhs-red); }
+    body.night-mode .menu-item { border-top-color: rgba(255,255,255,0.15); }
+    #home-more .menu-items { max-height: 50vh; overflow-y: auto; }
+
+    /* Settings: the same readable rows. */
+    #modes-modal .settings-box { max-width: 520px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 12px; box-sizing: border-box; }
+    .settings-head, .pm-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+    .settings-head h3, .pm-head h3 { margin: 0; font-size: 1.35rem; }
+    .pm-done { width: auto; margin: 0; padding: 0 22px; min-height: 48px; font-size: 1.05rem; }
+    #modes-modal .settings-sec { margin-bottom: 10px; }
+    #modes-modal .settings-quick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 8px; margin: 0; }
+    #modes-modal .setting-row { padding: 12px 10px; min-height: 56px; box-sizing: border-box; border-bottom: 0; border-top: 1px solid rgba(0,0,0,0.12); gap: 12px; }
+    #modes-modal .setting-row strong { display: block; font-size: 1.1rem; }
+    #modes-modal .setting-row small { display: block; font-size: 0.95rem; color: var(--nhs-grey); line-height: 1.3; margin-top: 2px; }
+    #modes-modal .setting-row input[type="checkbox"] { width: 28px; height: 28px; flex: 0 0 auto; }
+    #modes-modal .setting-block { display: block; }
+    #modes-modal .setting-block textarea { width: 100%; box-sizing: border-box; padding: 8px; font-size: 16px; margin-top: 6px; font-family: inherit; }
+    #modes-modal .set-input-short { width: 8.5em; padding: 8px; font-size: 16px; min-height: 48px; box-sizing: border-box; }
+    #modes-modal .settings-danger { border-color: rgba(218,41,28,0.45); }
+    #modes-modal .settings-danger > summary { color: var(--nhs-red); }
+
+    /* Questions: the question first, YES above NO, full width, with a tick and a cross as well as colour. */
+    .yn-ico { font-size: 0.85em; margin-right: 0.3em; }
+    body:not(.gloved):not(.panic) .q-yn { flex-direction: column; gap: 14px; }
+    body:not(.gloved):not(.panic) .q-yn .btn { flex: 0 0 auto; height: 84px; font-size: 2rem; }
+    body:not(.gloved):not(.panic) #question-screen { padding-bottom: calc(262px + env(safe-area-inset-bottom, 0px)); }
+    .q-nav .btn { min-height: 48px; }
+    @media (max-height: 760px) {
+        body:not(.gloved):not(.panic) .q-yn { gap: 12px; }
+        body:not(.gloved):not(.panic) .q-yn .btn { height: 68px; font-size: 1.7rem; }
+        body:not(.gloved):not(.panic) #question-screen { padding-bottom: calc(220px + env(safe-area-inset-bottom, 0px)); }
+    }
+    .q-unsure { font-size: 1.05rem; }
+
+    /* Result: the label fills the space, then what to do, Next Patient, and Hand over beside More. */
+    body:not(.gloved) #result-screen.active { display: flex; flex-direction: column; }
+    body:not(.gloved) #result-screen .triage-tag { flex: 1 1 auto; min-height: 104px; max-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 3.4rem; }
+    .rs-main { display: grid !important; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px; }
+    .rs-main .btn { margin: 0; min-height: 60px; font-size: 1.1rem !important; font-weight: 800; }
+    .rs-handover { background: var(--nhs-blue); color: #fff; border: 3px solid var(--nhs-dark-blue); }
+    .rs-more-btn { background: var(--card-bg); color: var(--nhs-blue); border: 2px solid var(--nhs-blue); }
+    body.night-mode .rs-more-btn { color: var(--nhs-yellow); border-color: var(--nhs-yellow); }
+    .btn-next { min-height: 64px; font-size: 1.4rem !important; }
+    .rs-hcp-row .btn { min-height: 48px; }
+    body.panic .rs-main .rs-more-btn { display: none; }
+
+
+    @media (max-height: 700px) {
+        /* Very short screens: YES and NO go side by side so the question and any counting help stay in view. */
+        body:not(.gloved):not(.panic) .q-yn { flex-direction: row; }
+        body:not(.gloved):not(.panic) .q-yn .btn { flex: 1 1 0; height: 72px; }
+        body:not(.gloved):not(.panic) #question-screen { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+        .q-count { padding: 0.5rem; }
+    }
+    @media (max-width: 420px) { #question-header { display: none; } .q-meta { font-size: 0.9rem; } }
+    #result-screen .mini-btn { min-width: 48px; min-height: 48px; }
+    .rs-link { min-height: 44px; }
+    #sec-more .btn { min-height: 48px; }
+    /* The "More" panel for one patient. */
+    .pm-overlay { display: none; position: fixed; inset: 0; z-index: 1800; background: rgba(0,0,0,0.45); }
+    .pm-overlay.open { display: flex; align-items: flex-end; justify-content: center; }
+    .pm-sheet { width: 100%; max-width: 800px; max-height: 88vh; max-height: 88dvh; overflow-y: auto; box-sizing: border-box; background: var(--card-bg); color: var(--text-color); border-radius: 16px 16px 0 0; padding: 14px max(14px, env(safe-area-inset-left, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-right, 0px)); box-shadow: 0 -8px 30px rgba(0,0,0,0.3); }
+    .pm-quick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-bottom: 8px; }
+    .pm-quick .btn { margin: 0; min-height: 52px; font-size: 1.05rem; }
+    .pm-sheet #risk-container { margin-bottom: 8px; }
+    .pm-sheet .risk-toggle { min-height: 52px; box-sizing: border-box; }
+    .pm-sheet #details-container { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -1260,67 +1359,82 @@
 </div>
 
 <div id="modes-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modes-title">
-    <div class="modal-box" style="max-width:480px; max-height:90vh; overflow-y:auto;">
-        <h3 id="modes-title" style="margin-top:0;">Display, Interaction &amp; Settings</h3>
-        <div class="settings-quick">
-            <button type="button" class="btn btn-secondary" onclick="toggleNightMode()">☾ Night mode<br><small>on / off</small></button>
-            <button type="button" class="btn btn-secondary" style="background:#111;" onclick="closeModesMenu(); toggleBlackout();">⬛ Blackout screen<br><small>tap the screen to wake</small></button>
-        </div>
-        <details class="rs-sec settings-sec" open>
-            <summary>Display &amp; handling <span class="rs-sum">gloves, one hand, simple mode, screen</span></summary>
-            <div class="rs-body">
-                <label class="setting-row"><span><strong>Gloved-Use Mode</strong><br><small>Larger taps, higher contrast.</small></span><input type="checkbox" id="mode-gloved" style="width:24px; height:24px;" onchange="toggleGloved()"></label>
-                <label class="setting-row"><span><strong>One-Handed Mode</strong><br><small>Sticky bottom bar with key actions.</small></span><input type="checkbox" id="mode-onehand" style="width:24px; height:24px;" onchange="toggleOneHand()"></label>
-                <label class="setting-row"><span><strong>Panic / Simple Mode</strong><br><small>Hides non-essentials; fastest TST path.</small></span><input type="checkbox" id="mode-panic" style="width:24px; height:24px;" onchange="togglePanic()"></label>
-                <label class="setting-row"><span><strong>Keep screen on</strong><br><small>Uses more battery.</small></span><input type="checkbox" id="mode-wakelock" style="width:24px; height:24px;" onchange="toggleWakeLockSetting()"></label>
+    <div class="modal-box settings-box">
+        <div class="settings-head"><h3 id="modes-title">Settings</h3><button type="button" class="btn btn-primary pm-done" onclick="closeModesMenu()">Done</button></div>
+
+        <details class="menu-list settings-sec" open>
+            <summary>You <span class="rs-sum" id="set-you-sum"></span></summary>
+            <div class="menu-items">
+                <button class="menu-item" onclick="closeModesMenu(); resetApp();"><b>Change name or role</b><span>Goes back to the start screen. Patients stay on this phone.</span></button>
             </div>
         </details>
-        <details class="rs-sec settings-sec">
-            <summary>Incident &amp; training <span class="rs-sum">incident code, training mode</span></summary>
-            <div class="rs-body">
-                <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px; min-height:44px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
-                <div class="setting-row" style="display:block;"><label for="set-hospitals"><strong>Receiving hospitals</strong><br><small>One per line. Offered when a casualty is marked evacuated; the commander screen counts casualties by hospital.</small></label><textarea id="set-hospitals" rows="5" style="width:100%; padding:8px; font-size:16px; margin-top:6px; font-family:inherit;" onchange="saveHospitals(this.value)"></textarea></div>
-                <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
-                <button class="btn btn-danger" style="margin-top:8px;" onclick="closeModesMenu(); clearAndRestart();">🧹 Clear everything and start again<br><span style="font-size:0.8rem; font-weight:normal;">Removes every patient on this phone; name, role and settings stay</span></button>
-                <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
-                <button class="btn btn-secondary" style="margin-top:8px;" onclick="closeModesMenu(); startDemo();">▶ Load the demo incident<br><span style="font-size:0.8rem; font-weight:normal;">Made-up casualties for showing the app (training mode)</span></button>
-                <div class="setting-row" style="display:block; border-bottom:none;">
-                    <strong>Share live with an incident commander</strong><br>
-                    <small>Sends this phone's triage records (no names or NHS numbers) to a commander screen whenever there is signal. Protected by a code and PIN; the server copy is deleted 24 hours after the last update. The phone keeps working offline as normal.</small>
+
+        <details class="menu-list settings-sec" open>
+            <summary>Screen <span class="rs-sum">dark, gloves, one hand</span></summary>
+            <div class="menu-items">
+                <div class="settings-quick">
+                    <button type="button" class="menu-item" onclick="toggleNightMode()"><b>☾ Night mode</b><span>Dark screen, on or off</span></button>
+                    <button type="button" class="menu-item" onclick="closeModesMenu(); toggleBlackout();"><b>⬛ Blackout</b><span>Screen black; tap to wake</span></button>
+                </div>
+                <label class="setting-row"><span><strong>Gloves</strong><small>Bigger buttons and stronger outlines</small></span><input type="checkbox" id="mode-gloved" onchange="toggleGloved()"></label>
+                <label class="setting-row"><span><strong>One hand</strong><small>A bar of key buttons stays at the bottom</small></span><input type="checkbox" id="mode-onehand" onchange="toggleOneHand()"></label>
+                <label class="setting-row"><span><strong>Simple</strong><small>Hides everything except TST triage</small></span><input type="checkbox" id="mode-panic" onchange="togglePanic()"></label>
+                <label class="setting-row"><span><strong>Keep screen on</strong><small>Uses more battery</small></span><input type="checkbox" id="mode-wakelock" onchange="toggleWakeLockSetting()"></label>
+            </div>
+        </details>
+
+        <details class="menu-list settings-sec">
+            <summary>Incident <span class="rs-sum">code, hospitals, commander, training</span></summary>
+            <div class="menu-items">
+                <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><small>The same on every phone at this incident</small></label><input type="text" id="set-incident-code" class="set-input-short" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
+                <div class="setting-row setting-block"><label for="set-hospitals"><strong>Receiving hospitals</strong><small>One per line. Offered when a casualty is evacuated.</small></label><textarea id="set-hospitals" rows="4" onchange="saveHospitals(this.value)"></textarea></div>
+                <div class="setting-row setting-block">
+                    <span><strong>Share live with the incident commander</strong><small>Needs signal. Sends triage records (no names or NHS numbers), protected by a code and PIN. The server copy is deleted 24 hours after the last update.</small></span>
                     <p class="qr-meta" id="cmd-status" style="text-align:left; margin:8px 0;">Not sharing.</p>
                     <div id="cmd-off">
-                        <button type="button" class="btn btn-primary" onclick="cmdStart()">Start sharing<br><span style="font-size:0.8rem; font-weight:normal;">This phone creates the incident</span></button>
-                        <button type="button" class="btn btn-secondary" onclick="cmdOpenJoin()">Join an incident<br><span style="font-size:0.8rem; font-weight:normal;">Code and PIN from another phone</span></button>
+                        <button type="button" class="menu-item" onclick="cmdStart()"><b>Start sharing</b><span>This phone creates the incident</span></button>
+                        <button type="button" class="menu-item" onclick="cmdOpenJoin()"><b>Join an incident</b><span>With the code and PIN from another phone</span></button>
                     </div>
                     <div id="cmd-on" style="display:none;">
-                        <button type="button" class="btn btn-primary" onclick="cmdShowDetails()">Show code, PIN and link</button>
-                        <button type="button" class="btn btn-secondary" onclick="cmdPush(true)">Send now</button>
-                        <button type="button" class="btn btn-secondary" onclick="cmdStop()">Stop sharing from this phone</button>
+                        <button type="button" class="menu-item" onclick="cmdShowDetails()"><b>Show code, PIN and link</b><span>For other phones and the commander screen</span></button>
+                        <button type="button" class="menu-item" onclick="cmdPush(true)"><b>Send now</b><span>Normally automatic</span></button>
+                        <button type="button" class="menu-item" onclick="cmdStop()"><b>Stop sharing from this phone</b><span>Records stay on this phone</span></button>
                     </div>
                 </div>
+                <label class="setting-row"><span><strong>Training mode</strong><small>Practice patients, kept apart from real records</small></span><input type="checkbox" id="mode-training" onchange="toggleTrainingMode(this.checked)"></label>
+                <button class="menu-item" onclick="closeModesMenu(); startDemo();"><b>▶ Load the demo incident</b><span>Made-up casualties for showing the app</span></button>
             </div>
         </details>
-        <details class="rs-sec settings-sec">
-            <summary>Reassessment intervals <span class="rs-sum">P1 / P2 / P3 timers</span></summary>
-            <div class="rs-body">
-                <p class="qr-meta" style="text-align:left;">Local defaults — not specified by NHSE guidance. Agree with your clinical lead.</p>
-                <div class="setting-row"><span>P1</span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
-                <div class="setting-row"><span>P2</span><select id="interval-P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
-                <div class="setting-row"><span>P3</span><select id="interval-P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
+
+        <details class="menu-list settings-sec">
+            <summary>Reassessment timers <span class="rs-sum">P1, P2, P3</span></summary>
+            <div class="menu-items">
+                <p class="qr-meta" style="text-align:left;">Local defaults, not set by NHS England. Agree them with your clinical lead.</p>
+                <div class="setting-row"><span><strong>P1</strong></span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
+                <div class="setting-row"><span><strong>P2</strong></span><select id="interval-P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+                <div class="setting-row"><span><strong>P3</strong></span><select id="interval-P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
             </div>
         </details>
-        <details class="rs-sec settings-sec">
-            <summary>About &amp; help <span class="rs-sum">quick reference, location help, version</span></summary>
-            <div class="rs-body">
-                <a class="btn btn-secondary" href="quick-reference.html" target="_blank" rel="noopener" style="margin-top:8px;">📄 Quick reference card (print for the kit bag)</a>
-                <a class="btn btn-secondary" href="privacy.html" target="_blank" rel="noopener">🔒 Privacy notice</a>
-                <button class="btn btn-secondary" onclick="closeModesMenu(); openLocationHelp();">📍 Location status &amp; help</button>
-                <button class="btn btn-secondary" onclick="downloadTextReader()">⬇ Store the printed-number reader on this phone<br><span style="font-size:0.8rem; font-weight:normal;">About 6 MB, once; then it works without signal</span></button>
-                <button class="btn btn-danger" style="margin-top:8px;" onclick="closeModesMenu(); factoryReset();">Reset this phone completely<br><span style="font-size:0.8rem; font-weight:normal;">Everything goes: patients, training data, name, role, settings and stored files</span></button>
+
+        <details class="menu-list settings-sec">
+            <summary>Help <span class="rs-sum">quick reference, location, privacy</span></summary>
+            <div class="menu-items">
+                <a class="menu-item" href="quick-reference.html" target="_blank" rel="noopener"><b>📄 Quick reference card</b><span>Print it for the kit bag</span></a>
+                <button class="menu-item" onclick="closeModesMenu(); openLocationHelp();"><b>📍 Location help</b><span>If the position is missing or rough</span></button>
+                <button class="menu-item" onclick="downloadTextReader()"><b>⬇ Store the printed-number reader</b><span>About 6 MB, once; then it works without signal</span></button>
+                <a class="menu-item" href="privacy.html" target="_blank" rel="noopener"><b>🔒 Privacy notice</b><span>What the app stores and sends</span></a>
                 <p class="qr-meta" id="device-info" style="text-align:left;"></p>
             </div>
         </details>
-        <button class="btn btn-primary" style="margin-top:0.6rem;" onclick="closeModesMenu()">Done</button>
+
+        <details class="menu-list settings-sec settings-danger">
+            <summary>Clear data <span class="rs-sum">start again, reset the phone</span></summary>
+            <div class="menu-items">
+                <button class="menu-item danger" onclick="closeModesMenu(); clearAndRestart();"><b>🧹 Clear everything and start again</b><span>Removes every patient on this phone. Name, role and settings stay.</span></button>
+                <button class="menu-item" id="btn-clear-training" style="display:none;" onclick="clearTrainingData()"><b>Delete all training data</b><span>Real records are not affected</span></button>
+                <button class="menu-item danger" onclick="closeModesMenu(); factoryReset();"><b>Reset this phone completely</b><span>Patients, training data, name, role, settings and stored files all go</span></button>
+            </div>
+        </details>
     </div>
 </div>
 
@@ -1660,35 +1774,27 @@
             <button id="btn-mitt" class="btn btn-primary" onclick="initiateTriage('MITT')">
                 MITT triage<br><span style="font-size:0.9rem; font-weight:normal;">Clinicians at the CCP / CCS, when directed</span>
             </button>
-            <div class="home-row">
+            <!-- Back to basics (v0.17.0): handing over and receiving are visible on the home screen; the rest is in a short "More" list. -->
+            <div class="home-row home-pair">
+                <button class="btn home-handover" id="btn-home-handover" onclick="openAllPatientsTransfer()">
+                    ⇄ Hand over<br><span>Send patients to another phone</span>
+                </button>
                 <button class="btn btn-secondary home-receive" onclick="scanPatientQR()">
-                    📷 Receive patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan a phone's QR or a tag</span>
-                </button>
-                <button class="btn btn-secondary" onclick="showLog()">
-                    📋 Patient log<br><span style="font-size:0.8rem; font-weight:normal;">Records &amp; alerts</span>
-                </button>
-                <button class="btn btn-secondary home-map" id="btn-home-map" onclick="showMap()">
-                    🗺 Map<br><span style="font-size:0.8rem; font-weight:normal;">Where everyone is</span>
+                    📷 Receive<br><span>Scan a phone's QR or a tag</span>
                 </button>
             </div>
-            <details class="rs-sec home-more" id="home-more">
-                <summary>More <span class="rs-sum">send all patients, import file, METHANE, my ID</span></summary>
-                <div class="rs-body">
-                    <button class="btn btn-transfer-all" onclick="openAllPatientsTransfer()">
-                        Send patients to another device<br><span style="font-size:0.9rem; font-weight:normal;">All, one sector, or on-scene only • QR / file</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="openAllTransferFilePicker()">
-                        Import transfer file<br><span style="font-size:0.8rem; font-weight:normal;">Offline JSON</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="generateMyIdentityQR()">
-                        My ID<br><span style="font-size:0.8rem; font-weight:normal;">For a colleague taking over care</span>
-                    </button>
-                    <button class="btn btn-nfc nfc-only" style="display:none;" onclick="startNfcReceive()">
-                        Read NFC tag<br><span style="font-size:0.8rem; font-weight:normal;">Android Chrome only</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="showMethane()">METHANE Report<br><span style="font-size:0.9rem; font-weight:normal;">Major Incident Declaration</span></button>
-                    <button class="btn btn-secondary" style="background-color: #333;" onclick="resetApp()">Change User / Role</button>
-                    <button class="btn btn-danger" id="btn-home-clear" onclick="clearAndRestart()">🧹 Clear everything and start again</button>
+            <div class="home-row home-pair home-pair-small">
+                <button class="btn btn-secondary" onclick="showLog()">📋 Patient log</button>
+                <button class="btn btn-secondary home-map" id="btn-home-map" onclick="showMap()">🗺 Map</button>
+            </div>
+            <details class="menu-list home-more" id="home-more">
+                <summary>More <span class="rs-sum">METHANE, my ID, import a file</span></summary>
+                <div class="menu-items">
+                    <button class="menu-item" onclick="showMethane()"><b>METHANE report</b><span>Declare or update the major incident</span></button>
+                    <button class="menu-item" onclick="generateMyIdentityQR()"><b>Show my ID</b><span>For a colleague who is taking over care</span></button>
+                    <button class="menu-item" onclick="openAllTransferFilePicker()"><b>Import a transfer file</b><span>Patients sent to you as a file</span></button>
+                    <button class="menu-item nfc-only" style="display:none;" onclick="startNfcReceive()"><b>Read an NFC tag</b><span>Android Chrome only</span></button>
+                    <button class="menu-item" onclick="openModesMenu()"><b>Settings</b><span>Your name and role, screen, incident code, clearing data</span></button>
                 </div>
             </details>
         </div>
@@ -1706,8 +1812,8 @@
             <!-- YES / NO are pinned to the bottom of the screen so they are always reachable without scrolling. -->
             <div class="q-answer-bar" id="q-answer-bar">
                 <div class="q-yn">
-                    <button class="btn btn-yes" onclick="handleAnswer(true)">YES</button>
-                    <button class="btn btn-no" onclick="handleAnswer(false)">NO</button>
+                    <button class="btn btn-yes" onclick="answerTap(true)"><span class="yn-ico" aria-hidden="true">✓</span>YES</button>
+                    <button class="btn btn-no" onclick="answerTap(false)"><span class="yn-ico" aria-hidden="true">✕</span>NO</button>
                 </div>
                 <div class="q-nav">
                     <button id="btn-back" class="btn btn-secondary" style="background-color:#666;" onclick="stepBack()">↩ Back</button>
@@ -1730,23 +1836,31 @@
             <div id="action-box" class="rs-action"></div>
             <button id="btn-change-answer" class="rs-link" style="display:none;" onclick="changeLastAnswer()">↩ Tapped the wrong button? Change the last answer</button>
             <button class="btn btn-primary btn-next" onclick="nextPatient()">Next Patient →</button>
-            <div class="rs-row rs-row3">
-                <button class="btn btn-primary rs-small" onclick="generatePatientQR()">📱 Handover</button>
-                <button id="btn-retriage" class="btn btn-secondary rs-small" onclick="reTriage()">↻ Re-triage</button>
-                <button id="btn-reassess" class="btn btn-secondary rs-small hcp-only" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
+            <div class="rs-row rs-main">
+                <button class="btn btn-primary rs-handover" id="btn-handover" onclick="generatePatientQR()">📱 Hand over this patient</button>
+                <button class="btn btn-secondary rs-more-btn" id="btn-patient-more" onclick="openPatientMore()">☰ More</button>
             </div>
             <div class="rs-row rs-hcp-row" id="rs-hcp-row">
                 <button id="btn-mitt-now" class="btn rs-small" style="display:none; background:#B35900; color:#fff;" onclick="mittThisPatient()">MITT this patient now</button>
-                <div id="risk-container" style="display:none;">
-                    <label class="risk-toggle">
-                        <input type="checkbox" id="risk-check" onchange="onHighRiskChange()">
-                        <span>High risk of deterioration</span>
-                    </label>
-                </div>
+                <button id="btn-reassess" class="btn btn-secondary rs-small hcp-only" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
             </div>
 
             <details id="clinical-prompts" class="clinical-prompt rs-prompts"></details>
 
+            <!-- "More" for this patient: a panel that slides up over the result, so the result itself never needs scrolling. -->
+            <div id="patient-more" class="pm-overlay" onclick="if (event.target === this) closePatientMore()">
+            <div class="pm-sheet" role="dialog" aria-modal="true" aria-labelledby="pm-title">
+            <div class="pm-head"><h3 id="pm-title">More for <span id="pm-id"></span></h3><button type="button" class="btn btn-primary pm-done" onclick="closePatientMore()">Done</button></div>
+            <div class="pm-quick">
+                <button id="btn-retriage" class="btn btn-secondary" onclick="closePatientMore(); reTriage();">↻ Re-triage</button>
+                <button class="btn btn-secondary" onclick="closePatientMore(); showLog();">📋 Patient log</button>
+            </div>
+            <div id="risk-container" style="display:none;">
+                <label class="risk-toggle">
+                    <input type="checkbox" id="risk-check" onchange="onHighRiskChange()">
+                    <span>High risk of deterioration</span>
+                </label>
+            </div>
             <div id="details-container">
             <details class="rs-sec" id="sec-interventions">
                 <summary>Interventions <span class="rs-sum" id="sum-interventions"></span></summary>
@@ -1867,7 +1981,7 @@
             </details>
 
             <details class="rs-sec" id="sec-transport">
-                <summary>Handover <span class="rs-sum" id="sum-transport"></span></summary>
+                <summary>Evacuation &amp; care <span class="rs-sum" id="sum-transport"></span></summary>
                 <div class="rs-body">
                     <button id="btn-ccs" class="btn btn-secondary" style="margin-bottom:10px;" onclick="toggleCcs()">Mark as AT CCS (handed to casualty clearing)</button>
                     <div class="input-group"><label for="p-evac-dest">Destination hospital</label>
@@ -1907,9 +2021,7 @@
                 </div>
             </details>
             </div>
-
-            <div style="margin-top:auto; padding-top:1rem;">
-                <button class="btn btn-secondary" onclick="showLog()">View Log</button>
+            </div>
             </div>
         </div>
 
@@ -2029,8 +2141,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.16.0';
-    const APP_BUILD = '2026-10-15-shared-picture';
+    const APP_VERSION = '0.17.0';
+    const APP_BUILD = '2026-10-15-back-to-basics';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -3042,6 +3154,7 @@
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         $(id).classList.add('active');
         document.body.dataset.screen = id;
+        if (id !== 'result-screen') closePatientMore();
         if (id !== 'question-screen') stopCount();
         document.querySelector('main').scrollTop = 0;
         const dash = $('global-dashboard');
@@ -3422,7 +3535,27 @@
         else pill.textContent = `OK ${remaining}m`;
     }
     // Opens every section (used when a task needs the full record on screen).
-    function toggleDetails() { document.querySelectorAll('#details-container details.rs-sec').forEach(d => { d.open = true; }); }
+    function toggleDetails() { openPatientMore(); document.querySelectorAll('#details-container details.rs-sec').forEach(d => { d.open = true; }); }
+    // "More" for the current patient: a panel over the result screen (v0.17.0), so the result itself fits without scrolling.
+    function openPatientMore() {
+        const e = currentEntry();
+        setText('pm-id', e ? e.id : '');
+        $('patient-more').classList.add('open');
+    }
+    function closePatientMore() {
+        if (!$('patient-more').classList.contains('open')) return;
+        commitDirtyFields('Patient panel closed');
+        $('patient-more').classList.remove('open');
+    }
+    // YES / NO taps: a second tap within 0.4 s is ignored, so a double tap cannot also answer the next question
+    // (the buttons stay in the same place from question to question).
+    let _lastAnswerTap = 0;
+    function answerTap(answer) {
+        const now = Date.now();
+        if (now - _lastAnswerTap < 400) return;
+        _lastAnswerTap = now;
+        handleAnswer(answer);
+    }
     // Sections start closed for every patient (a busy screen hides the category and the next action);
     // closing a section saves any edits in it.
     function wireSectionState() {
@@ -5586,6 +5719,7 @@
         $('btn-clear-training').style.display = TRAINING ? 'block' : 'none';
         $('set-incident-code').value = incidentCode;
         ['P1', 'P2', 'P3'].forEach(c => { $('interval-' + c).value = String(Math.round((reassessIntervals[c] || MITTLib.REASSESS_INTERVALS[c]) / 60000)); });
+        setText('set-you-sum', `${triagerName || 'no name'} · ${userRole === 'HCP' ? 'Clinician' : userRole === 'NON_HCP' ? 'Non-clinical' : 'no role'}`);
         setText('device-info', `Device code ${deviceId} • ID prefix ${idPrefix()} • storage: ${storageMode} • app v${APP_VERSION} (${APP_BUILD})`);
         $('modes-modal').style.display = 'flex';
     }
