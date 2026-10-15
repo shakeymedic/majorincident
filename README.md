@@ -133,6 +133,7 @@ Off by default. When a phone starts or joins sharing, its triage records go over
 - **No names, DOB, or NHS numbers are stored by default.** The free-text demographics field accepts anything the user types; teams should set local guidance accordingly.
 - All patient data lives in **IndexedDB on the device** (no server). **Close / Reset Incident** requires an archive first (see Audit trail). Transfer and archive files contain patient data: handle them under your local information-governance rules.
 - Offline-first: no analytics, no third-party requests at runtime apart from OpenStreetMap tile fetches when the map view is opened.
+- **Voice notes** (🎙, optional) use the browser's built-in speech recognition, which may send the recording to the browser maker's online speech service (for example Google for Chrome). Real-use phones show a notice before first use. Do not dictate identifying details; check with your information governance lead before using voice notes with real patients.
 
 ## Running tests
 
@@ -153,6 +154,16 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.16.0 build 2026-10-15-shared-picture — ideas from Pulsara, Peak Response and Chronosoft
+
+Changes taken from a review of comparable products (Pulsara, Peak Response, KatApp, EMTrack, Chronosoft); the review is in the project files as `majorincident/competitor-review-2026-10-15.md`.
+
+- **Pick up a patient another phone recorded.** When a linked phone scans a tag it does not have (📷 Receive patient, or Scan tag when starting a patient), it asks the commander server whether another phone in the same incident recorded that tag. A match (exact patient ID or triage card number only) opens the normal review-and-accept screen, marked as copied from the server; accepting adds the record with the same uid, so later changes from either phone merge as usual. No signal or no sharing: the app carries on as before. Audited as `SERVER_LOOKUP` and `SERVER_PICKUP`. New endpoint `POST /api/incident/<code>/lookup` (full PIN only; the view-only PIN is refused; at most 5 matches).
+- **Shared map markings.** On the commander screen, *Mark the map for every phone* places an inner or outer cordon (circle with a radius), RVP, ambulance loading point, forward command post or hazard. Every linked phone receives them with its next report (within a minute) and shows them on its map; a toast says the map changed and the change is audited (`COMMANDER_MARKS`). Hidden on the wall display and for the view-only PIN. New endpoint `POST /api/incident/<code>/marks`; marks also come back in every push reply. In the commander demo, markings stay in the page.
+- **Debrief timings.** Patient log → Records & exports → **⏱ Debrief timings** (this phone's records) and a **Debrief timings** card on the commander screen (every linked phone; also in the printed summary): first casualty, first P1, last new casualty, everyone sorted with MITT, first at the CCS, first and last living casualty to leave, and the median P1 time on scene. Worked out from the records (`MITTLib.debriefTimings`), so no audit trail has to leave the phone.
+- **Rough count before triage.** On the METHANE screen, **🧮 Count** (next to Auto-Fill) opens a one-row tally (🚶 Walking, 🛌 Lying, Dead?, ↶ undo, → N) for the first crew on scene; it is folded away by default so the screen still fits without scrolling; → N writes "Rough count, not yet triaged: about N (walking, lying, apparently dead)" into N. Audited as `ROUGH_COUNT`; cleared with the incident.
+- **Voice notes privacy.** Browsers turn speech into text with their maker's online service, so a voice note can leave the phone. In real use the 🎙 button now explains this once and asks before first use (`VOICE_NOTICE_ACCEPTED` in the audit trail), and it refuses with no connection. Training mode does not ask.
 
 ### v0.15.0 build 2026-10-15-tags-and-calmer-screens — tag and wristband scanning, clear and restart, calmer screens
 

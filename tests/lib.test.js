@@ -22,6 +22,67 @@ group('escapeHTML', () => {
     });
 });
 
+group('debriefTimings (v0.16.0)', () => {
+    const T = 1760000000000, min = 60000;
+    const recs = [
+        { uid: 'a', id: 'A', category: 'P2', tool: 'TST', createdAt: T, triageHistory: [{ ts: T, tool: 'TST', category: 'P1' }, { ts: T + 12 * min, tool: 'MITT', category: 'P2' }], evacuated: true, evacAt: T + 40 * min, ccsAt: T + 20 * min },
+        { uid: 'b', id: 'B', category: 'P1', tool: 'MITT', createdAt: T + 3 * min, triageHistory: [{ ts: T + 3 * min, tool: 'MITT', category: 'P1' }], evacuated: true, evacAt: T + 25 * min },
+        { uid: 'c', id: 'C', category: 'P3', tool: 'TST', createdAt: T + 8 * min, triageHistory: [{ ts: T + 8 * min, tool: 'TST', category: 'P3' }] },
+        { uid: 'd', id: 'D', category: 'DEAD', tool: 'MITT', createdAt: T + 9 * min },
+    ];
+    const byKey = (t) => { const o = {}; t.rows.forEach(r => { o[r.key] = r; }); return o; };
+    test('works out the key times in minutes from the first record', () => {
+        const t = lib.debriefTimings(recs);
+        const k = byKey(t);
+        assert.strictEqual(t.count, 4);
+        assert.strictEqual(k.first.mins, 0);
+        assert.strictEqual(k.firstP1.mins, 0);          // A was P1 on TST before MITT downgraded it
+        assert.strictEqual(k.lastTriaged.mins, 9);
+        assert.strictEqual(k.firstCcs.mins, 20);
+        assert.strictEqual(k.firstEvac.mins, 25);
+    });
+    test('"everyone sorted with MITT" and "last left the scene" stay open while anyone is outstanding; Dead is ignored', () => {
+        const k = byKey(lib.debriefTimings(recs));
+        assert.strictEqual(k.mittAll.at, null);
+        assert.match(k.mittAll.note, /1 casualty has had TST only/);
+        assert.strictEqual(k.lastEvac.at, null);
+        assert.match(k.lastEvac.note, /1 living casualty still on scene/);
+        const done = recs.map(r => r.id === 'C' ? Object.assign({}, r, { tool: 'MITT', triageHistory: r.triageHistory.concat([{ ts: T + 30 * min, tool: 'MITT', category: 'P3' }]), evacuated: true, evacAt: T + 55 * min }) : r);
+        const k2 = byKey(lib.debriefTimings(done));
+        assert.strictEqual(k2.mittAll.mins, 30);
+        assert.strictEqual(k2.lastEvac.mins, 55);
+    });
+    test('median P1 scene time uses evacuated P1s only', () => {
+        const t = lib.debriefTimings(recs);
+        assert.strictEqual(t.p1SceneCount, 1);
+        assert.strictEqual(t.p1SceneMedianMins, 22);
+    });
+    test('an empty incident gives no rows and does not throw', () => {
+        assert.deepStrictEqual(lib.debriefTimings([]).rows, []);
+        assert.deepStrictEqual(lib.debriefTimings(null).rows, []);
+    });
+});
+
+group('normaliseMapMarks and roughCountText (v0.16.0)', () => {
+    test('keeps known types with valid coordinates, gives cordons a clamped radius and drops the rest', () => {
+        const out = lib.normaliseMapMarks([{ type: 'outer', lat: 52.4, lng: -1.9 }, { type: 'inner', lat: 52.4, lng: -1.9, radius: 1 }, { type: 'rvp', lat: '52.41', lng: '-1.91', label: '<b>Gate</b>' }, { type: 'bogus', lat: 1, lng: 1 }, { type: 'fcp', lat: 91, lng: 0 }, null, 'x']);
+        assert.deepStrictEqual(out.map(m => m.type), ['outer', 'inner', 'rvp']);
+        assert.strictEqual(out[0].radius, 400);
+        assert.strictEqual(out[1].radius, 10);
+        assert.strictEqual(out[2].radius, undefined);
+        assert.strictEqual(out[2].label, '<b>Gate</b>');   // stored as text; every screen escapes it
+    });
+    test('caps the number of markings', () => {
+        const many = Array.from({ length: 50 }, (_, i) => ({ type: 'hazard', lat: 52, lng: -1 - i / 1000 }));
+        assert.strictEqual(lib.normaliseMapMarks(many).length, lib.MAP_MARKS_MAX);
+        assert.deepStrictEqual(lib.normaliseMapMarks('nope'), []);
+    });
+    test('rough count text adds up and never goes negative', () => {
+        assert.match(lib.roughCountText({ walking: 12, lying: 5, dead: 1 }), /about 18 \(walking 12, lying 5, apparently dead 1\)/);
+        assert.match(lib.roughCountText({ walking: -3 }), /about 0 /);
+    });
+});
+
 group('fnv1a', () => {
     test('is deterministic and order-sensitive', () => {
         assert.strictEqual(lib.fnv1a('a'), lib.fnv1a('a'));
