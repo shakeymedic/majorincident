@@ -1430,6 +1430,22 @@ async function test(name, fn) {
         assert.strictEqual(await P.$$eval('#phones .phone', r => r.length), 4);
         await P.evaluate(() => { __skip(5 * 60 * 1000); refreshNow(); });
         await P.waitForFunction(() => /26 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 5000 });
+        // any row opens the patient's full details; TST-only patients are marked and can be filtered
+        assert.ok(await P.evaluate(() => document.querySelectorAll('#rows .tool-chip.tst').length > 0 && document.querySelectorAll('#rows .tool-chip.mitt').length > 0), 'both TST-only and MITT chips shown');
+        await P.click('#rows tr:first-child');
+        await P.waitForSelector('#pt-modal.open', { timeout: 3000 });
+        const pt = await P.evaluate(() => ({ id: document.getElementById('pt-id').textContent, body: document.getElementById('pt-body').textContent, chips: document.getElementById('pt-chips').textContent }));
+        assert.match(pt.id, /^DEMO-/);
+        assert.match(pt.body, /Triage/); assert.match(pt.body, /Interventions/); assert.match(pt.body, /Grid ref/); assert.match(pt.body, /Triaged by/);
+        assert.match(pt.chips, /P1|P2|P3/);
+        await P.keyboard.press('Escape');
+        assert.ok(!(await P.evaluate(() => document.getElementById('pt-modal').classList.contains('open'))));
+        await P.evaluate(() => setStageFilter('tst'));
+        const tstRows = await P.$$eval('#rows tr', r => r.length);
+        assert.ok(tstRows > 0 && tstRows < 21, 'TST-only filter narrows the list: ' + tstRows);
+        assert.strictEqual(await P.evaluate(() => document.querySelectorAll('#rows .tool-chip.mitt').length), 0);
+        assert.match(await P.textContent('#stages'), new RegExp(tstRows + '\\s*TST only'));
+        await P.evaluate(() => setStageFilter('scene'));
         await P.evaluate(() => toggleWall());
         assert.ok(await P.evaluate(() => document.body.classList.contains('wall')));
         await P.evaluate(() => { toggleWall(); signOut(); });

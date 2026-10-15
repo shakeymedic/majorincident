@@ -100,7 +100,8 @@
     #counts-note { margin:0.6rem 0 0; }
     .count .t { font-size:0.7rem; opacity:0.75; font-variant-numeric:tabular-nums; }
     /* Field / CCS / evacuated strip */
-    .stages { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; margin-top:10px; }
+    .stages { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-top:10px; }
+    @media (max-width:1000px) { .stages { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
     .stage { border-radius:12px; padding:0.55rem 0.8rem; background:var(--soft); border:1px solid var(--line); border-left:6px solid var(--nhs-blue); display:flex; align-items:center; gap:12px; min-width:0; }
     .stage.ccs { border-left-color:var(--nhs-green); }
     .stage.evac { border-left-color:var(--nhs-grey); }
@@ -122,6 +123,45 @@
     .where-h { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-weight:800; margin:8px 0 3px; }
     .where-h:first-child { margin-top:0; }
     .mk.mk-atccs { border-radius:8px; }
+    .stage.tst { border-left-color:#b35c00; }
+    .tool-chip { display:inline-block; padding:2px 7px; border-radius:6px; font-size:0.72rem; font-weight:800; letter-spacing:0.04em; white-space:nowrap; vertical-align:middle; border:2px solid var(--nhs-dark-blue); color:var(--nhs-dark-blue); background:transparent; }
+    .tool-chip.mitt { background:var(--nhs-dark-blue); color:#fff; }
+    .tool-chip.tst { border-color:#b35c00; color:#b35c00; border-style:dashed; }
+    tbody tr.pt { cursor:pointer; }
+    .att-row { cursor:pointer; }
+    .att-row:hover, tbody tr.pt:hover td { background:#eaf1fb; }
+    /* patient details */
+    .modal { position:fixed; inset:0; background:rgba(5,12,26,0.62); display:none; align-items:center; justify-content:center; z-index:1000; padding:12px; }
+    .modal.open { display:flex; }
+    .modal-box { background:var(--card); color:var(--text); border-radius:16px; max-width:900px; width:100%; max-height:94vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,0.45); border:1px solid var(--line); }
+    .pt-head { position:sticky; top:0; background:var(--card); padding:14px 18px 10px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; flex-wrap:wrap; z-index:1; }
+    .pt-head .pid { font-family:var(--mono); font-weight:900; font-size:1.35rem; letter-spacing:0.02em; }
+    .pt-head .x { margin-left:auto; }
+    .pt-body { padding:12px 18px 18px; display:grid; grid-template-columns:1fr 1fr; gap:12px 20px; }
+    @media (max-width:700px) { .pt-body { grid-template-columns:1fr; } }
+    .pt-sec h4 { margin:0 0 6px; font-size:0.74rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); }
+    .pt-sec.wide { grid-column:1 / -1; }
+    .kv { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:0.92rem; }
+    .kv dt { color:var(--muted); white-space:nowrap; }
+    .kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+    .tl { list-style:none; margin:0; padding:0; font-size:0.9rem; }
+    .tl li { display:grid; grid-template-columns:auto 1fr; gap:10px; padding:4px 0; border-bottom:1px solid var(--line); }
+    .tl li:last-child { border-bottom:none; }
+    .tl .t { font-family:var(--mono); color:var(--muted); font-size:0.82rem; white-space:nowrap; padding-top:2px; }
+    .ints { display:flex; flex-wrap:wrap; gap:6px; }
+    .int { background:var(--soft); border:1px solid var(--line); border-radius:8px; padding:4px 9px; font-size:0.85rem; font-weight:700; }
+    .int small { color:var(--muted); font-weight:500; margin-left:4px; }
+    .inj { display:flex; gap:14px; align-items:flex-start; }
+    .inj svg { width:90px; height:180px; flex:none; }
+    .inj ul { margin:0; padding-left:18px; font-size:0.9rem; }
+    .pt-note { white-space:pre-wrap; background:var(--soft); border-radius:8px; padding:8px 10px; font-size:0.92rem; }
+    .pt-flags { display:flex; gap:6px; flex-wrap:wrap; }
+    body.wall .modal-box { max-width:60vw; font-size:1.05vw; }
+    body.wall .pt-head .pid { font-size:1.8vw; }
+    body.wall .kv, body.wall .tl, body.wall .pt-note, body.wall .inj ul { font-size:1vw; }
+    body.wall .pt-sec h4 { font-size:0.8vw; }
+    body.wall .tool-chip, body.wall .stage-tag { font-size:0.8vw; }
+    body.wall .stages { grid-template-columns:minmax(0, 2fr) minmax(0, 3fr) minmax(0, 4fr) minmax(0, 2.5fr); }
 
     /* ---------- Map ---------- */
     #map { height:60vh; min-height:360px; border-radius:10px; border:1px solid var(--line); background:#e8ecef; z-index:1; }
@@ -247,7 +287,6 @@
     body.wall .stage .n { font-size:2.6vw; }
     body.wall .stage .lbl { font-size:0.95vw; }
     body.wall .stage .sub { font-size:0.85vw; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.25; }
-    body.wall .stages { grid-template-columns:minmax(0, 2fr) minmax(0, 3fr) minmax(0, 4fr); }
     body.wall .stage-tag { font-size:0.75vw; padding:0.15vw 0.5vw; border-radius:0.3vw; }
     body.wall .seg { display:none; }
     /* two columns: map left, attention + phones right */
@@ -384,6 +423,7 @@
                             <button type="button" data-stage="field" onclick="setStageFilter('field')">Field</button>
                             <button type="button" data-stage="ccs" onclick="setStageFilter('ccs')">CCS</button>
                             <button type="button" data-stage="evacuated" onclick="setStageFilter('evacuated')">Evacuated</button>
+                            <button type="button" data-stage="tst" onclick="setStageFilter('tst')">TST only</button>
                             <button type="button" data-stage="all" onclick="setStageFilter('all')">All</button>
                         </span>
                         <label style="margin:0; font-weight:normal; display:none;"><input type="checkbox" id="show-evac" onchange="render()"> Include evacuated</label>
@@ -400,6 +440,19 @@
         <div class="legend" id="legend"></div>
     </div>
 </main>
+<div class="modal" id="pt-modal" role="dialog" aria-modal="true" aria-labelledby="pt-id" onclick="if (event.target === this) closePatient()">
+    <div class="modal-box">
+        <div class="pt-head">
+            <span class="pid" id="pt-id"></span>
+            <span id="pt-chips" class="pt-flags"></span>
+            <span class="x row">
+                <button type="button" class="btn small sec" onclick="showPatientOnMap()">Show on map</button>
+                <button type="button" class="btn small" onclick="closePatient()">Close</button>
+            </span>
+        </div>
+        <div class="pt-body" id="pt-body"></div>
+    </div>
+</div>
 <footer>Major Incident Triage — commander view. An aid for a live incident, not a clinical record: the phones keep the audit trail.</footer>
 <script>
     const REFRESH_MS = 30 * 1000;
@@ -579,11 +632,16 @@
         render();
     }
     const stage = (r) => MITTLib.patientStage(r);
+    // TST = the sieve (first look, anyone); MITT = the sort (clinician). A patient who has only had the sieve still needs the sort.
+    function hadMitt(r) { return r.tool === 'MITT' || (r.triageHistory || []).some(t => t.tool === 'MITT'); }
+    function toolChip(r) { return hadMitt(r) ? '<span class="tool-chip mitt" title="Has had MITT (sort) triage">MITT</span>' : '<span class="tool-chip tst" title="TST sieve only: no MITT sort yet">TST only</span>'; }
+    const byUid = (uid) => ((data && data.records) || []).find(r => r.uid === uid) || null;
     function stageTag(r) { const st = stage(r); const i = MITTLib.STAGE_INFO[st]; return `<span class="stage-tag ${st}">${esc(i.short)}</span>`; }
     function visibleRecords() {
         const all = (data && data.records) || [];
         if (stageFilter === 'all') return all;
         if (stageFilter === 'scene') return all.filter(r => !r.evacuated);
+        if (stageFilter === 'tst') return all.filter(r => !r.evacuated && !hadMitt(r));
         return all.filter(r => stage(r) === stageFilter);
     }
 
@@ -606,7 +664,8 @@
         const hospSub = hosp.map(h => `${esc(h)} <b>${sc.hospitals[h]}</b>`).join(' • ') || 'none yet';
         $('stages').innerHTML = `<div class="stage"><div class="n">${sc.field}</div><div><div class="lbl">In the field</div><div class="sub">${fieldSub}</div></div></div>` +
             `<div class="stage ccs"><div class="n">${sc.ccs}</div><div><div class="lbl">At CCS</div><div class="sub">${ccsCats}</div></div></div>` +
-            `<div class="stage evac"><div class="n">${sc.evacuated}</div><div><div class="lbl">Evacuated</div><div class="sub">${hospSub}</div></div></div>`;
+            `<div class="stage evac"><div class="n">${sc.evacuated}</div><div><div class="lbl">Evacuated</div><div class="sub">${hospSub}</div></div></div>` +
+            (() => { const t = onScene.filter(r => !hadMitt(r)); const sub = order.filter(c => t.some(r => r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${t.filter(r => r.category === c).length}</b>`).join(' • '); return `<div class="stage tst"><div class="n">${t.length}</div><div><div class="lbl">TST only</div><div class="sub">${t.length ? 'no MITT sort yet: ' + sub : 'everyone on scene has had MITT'}</div></div></div>`; })();
         setText('counts-note', `Big number = on scene now (field + CCS); "in total" includes evacuated. CCS = casualty clearing station (set on the phone, or inferred from a "Casualty Clearing" sector on older phones). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
         // phones
         const devs = data.devices || [];
@@ -631,7 +690,7 @@
             if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' });
         });
         att.sort((a, b) => a.k - b.k);
-        $('attention').innerHTML = att.length ? `<div class="att">${att.map(a => `<div class="att-row k${a.k}">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}</div>` : '<div class="all-clear">Nothing outstanding</div>';
+        $('attention').innerHTML = att.length ? `<div class="att">${att.map(a => `<div class="att-row k${a.k}" onclick="openPatient('${esc(a.r.uid)}')">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))} ${toolChip(a.r)}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}</div>` : '<div class="all-clear">Nothing outstanding</div>';
         setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • overdue first` : 'overdue reassessments, tourniquets, high risk');
         // table
         const vis = visibleRecords();
@@ -642,11 +701,12 @@
             const ints = Object.keys(r.interventions || {}).map(k => `${esc(k)} ${esc((r.interventions[k] && r.interventions[k].time) || '')}`.trim()).join(', ');
             const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? 'Due now' : `Due ${hm(rs.dueAt)}`;
             const fresh = !r.evacuated && (now - (r.updatedAt || r.reportedAt || 0)) < 90000;
-            return `<tr class="${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}"><td><span class="id">${esc(r.id)}</span><div class="muted">${esc(r.tool || '')} ${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
-                `<td>${cat(r.category)}</td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
+            return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" onclick="openPatient('${esc(r.uid)}')"><td><span class="id">${esc(r.id)}</span><div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
+                `<td>${cat(r.category)}<div style="margin-top:4px">${toolChip(r)}</div></td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
                 `<td>${ints || '<span class="muted">none</span>'}</td><td>${re}</td><td>${esc(r.triager || '')}<div class="muted">${esc(r.reportedBy || '')} • ${age(r.updatedAt || r.reportedAt)}</div></td></tr>`;
         }).join('');
-        setText('list-note', `${vis.length} shown, priority first • highlighted = updated in the last 90 s`);
+        setText('list-note', `${vis.length} shown, priority first • tap a row for full details • highlighted = updated in the last 90 s`);
+        if (openUid) renderPatient(byUid(openUid));
         renderLegend();
         renderMap(vis);
     }
@@ -686,7 +746,8 @@
             const ll = [Number(l.lat), Number(l.lng)];
             const grid = MITTLib.toOsGridRef(ll[0], ll[1]);
             const m = L.marker(ll, { icon: markerIcon(r) });
-            m.bindPopup(`<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)} ${stageTag(r)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div></div>`);
+            m.bindPopup(`<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div><button type="button" class="btn small" style="margin-top:6px" onclick="openPatient('${esc(r.uid)}')">Full details</button></div>`);
+            m._uid = r.uid;
             cluster.addLayer(m);
             if (l.acc && l.acc > 15) circles.addLayer(L.circle(ll, { radius: Number(l.acc), color: MITTLib.CATEGORY_INFO[r.category] ? MITTLib.CATEGORY_INFO[r.category].colour : '#005EB8', weight: 1, opacity: 0.6, fillOpacity: 0.08 }));
         });
@@ -704,6 +765,60 @@
         if (!layers.length) return;
         const b = L.featureGroup(layers).getBounds();
         map.fitBounds(b.pad(0.2), { maxZoom: 18 });
+    }
+    // ---------- Patient details (any row, attention item or marker) ----------
+    let openUid = null;
+    function openPatient(uid) { const r = byUid(uid); if (!r) return; openUid = uid; renderPatient(r); $('pt-modal').classList.add('open'); }
+    function closePatient() { openUid = null; $('pt-modal').classList.remove('open'); }
+    function showPatientOnMap() {
+        const r = byUid(openUid); const l = r && loc(r);
+        if (!l || !l.lat || !map) return;
+        closePatient();
+        if (document.body.classList.contains('wall')) setWall(false);
+        map.setView([Number(l.lat), Number(l.lng)], Math.max(map.getZoom(), 18));
+        const m = cluster.getLayers().find(x => x._uid === r.uid);
+        if (m) setTimeout(() => cluster.zoomToShowLayer(m, () => m.openPopup()), 200);
+        $('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    function dhm(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'; }
+    function kv(rows) { return `<dl class="kv">${rows.filter(x => x[1] !== undefined && x[1] !== null && x[1] !== '').map(x => `<dt>${esc(x[0])}</dt><dd>${x[2] ? x[1] : esc(String(x[1]))}</dd>`).join('')}</dl>`; }
+    function renderPatient(r) {
+        if (!r) { closePatient(); return; }
+        const now = Date.now();
+        const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
+        const st = stage(r);
+        setText('pt-id', r.id);
+        $('pt-chips').innerHTML = `${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <span class="cat-chip" style="background:#DA291C;color:#fff">HIGH RISK</span>' : ''}${rs.state === 'overdue' ? ` <span class="cat-chip" style="background:#DA291C;color:#fff">Reassessment overdue ${Math.round(rs.overdueMs / 60000)} min</span>` : ''}`;
+        const hist = (r.triageHistory || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        const triage = `<ul class="tl">${hist.length ? hist.map(t => `<li><span class="t">${dhm(t.ts)}</span><span><b>${esc(t.tool || '')} ${esc(MITTLib.categoryShort(t.category))}</b> ${esc(t.reason || '')}${t.kind && t.kind !== 'triage' ? ` <span class="muted">(${esc(t.kind)})</span>` : ''}${t.by ? ` <span class="muted">by ${esc(t.by)}</span>` : ''}${t.action ? `<div class="muted">${esc(t.action)}</div>` : ''}</span></li>`).join('') : `<li><span class="t">${dhm(r.timestamp)}</span><span><b>${esc(r.tool || '')} ${esc(MITTLib.categoryShort(r.category))}</b> ${esc(r.reason || '')}</span></li>`}</ul>`;
+        const ints = Object.keys(r.interventions || {});
+        const intsHtml = ints.length ? `<div class="ints">${ints.map(k => `<span class="int">${esc(k)}<small>${esc((r.interventions[k] && r.interventions[k].time) || '')}</small></span>`).join('')}</div>` : '<span class="muted">None recorded</span>';
+        const inj = r.injuries || [];
+        const injHtml = inj.length ? `<div class="inj"><svg viewBox="0 0 200 400"><path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e8ecef" stroke="#555" stroke-width="2"/><path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e8ecef" stroke="#555" stroke-width="2"/>${inj.map(m => `<circle cx="${(m.x * 200).toFixed(1)}" cy="${(m.y * 400).toFixed(1)}" r="9" fill="${m.severity === 'severe' ? '#DA291C' : m.severity === 'moderate' ? '#ff9800' : '#005EB8'}" stroke="#fff" stroke-width="2"/>`).join('')}</svg><ul>${inj.map(m => `<li><b>${esc([m.side, m.region].filter(Boolean).join(' '))}</b>${m.label ? ' ' + esc(m.label) : ''}${m.severity && m.severity !== 'unspecified' ? ` <span class="muted">(${esc(m.severity)})</span>` : ''}${m.time ? ` <span class="muted">${esc(m.time)}</span>` : ''}</li>`).join('')}</ul></div>` : '<span class="muted">None marked</span>';
+        const l = loc(r);
+        const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : '';
+        const lh = (r.locationHistory || []).slice().sort((a, b) => (a.at || a.timestamp || 0) - (b.at || b.timestamp || 0));
+        const locHtml = kv([['Place', place(r) || '—'], ['Grid ref', grid ? `${grid}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}` : 'no position'], ['Confidence', r.locationConfidence || '']]) +
+            (lh.length > 1 ? `<ul class="tl" style="margin-top:6px">${lh.map(h => `<li><span class="t">${dhm(h.at || h.timestamp)}</span><span>${esc(h.reason || h.action || 'position')}${h.sector || h.landmark ? ` <span class="muted">${esc([h.sector, h.landmark, h.area].filter(Boolean).join(', '))}</span>` : ''}${h.lat ? ` <span class="muted">${esc(MITTLib.toOsGridRef(h.lat, h.lng) || '')}</span>` : ''}${h.user ? ` <span class="muted">by ${esc(h.user)}</span>` : ''}</span></li>`).join('')}</ul>` : '');
+        const chain = kv([
+            ['Stage', `${stageTag(r)} ${st === 'ccs' && r.ccsAt ? 'since ' + dhm(r.ccsAt) : ''}`, true],
+            ['Evacuated to', r.evacuated ? (r.evacDest || 'destination not recorded') : ''],
+            ['Vehicle / crew', r.evacVehicle || ''], ['Hospital ID', r.hospitalId || ''],
+            ['Care handed to', r.handoverTo ? `${r.handoverTo}${r.handoverState ? ' (' + r.handoverState + ')' : ''}${r.handoverAt ? ' at ' + dhm(r.handoverAt) : ''}` : (r.handoverState ? r.handoverState : '')],
+            ['Time of death', r.tod || ''],
+        ]);
+        const reass = kv([
+            ['Last reassessed', r.lastReassessed ? `${dhm(r.lastReassessed)}${r.reassessOutcome ? ' • ' + r.reassessOutcome : ''}` : 'not yet'],
+            ['Next due', rs.state === 'na' ? 'n/a' : rs.state === 'overdue' ? `<span class="flag">overdue by ${Math.round(rs.overdueMs / 60000)} min</span>` : rs.state === 'due-soon' ? 'now' : dhm(rs.dueAt), true],
+            ['Deteriorated', r.lastDeteriorationAt ? dhm(r.lastDeteriorationAt) : ''],
+        ]);
+        const who = kv([['Triaged by', `${r.triager || r.createdBy || '—'}${r.deviceId ? ' • phone ' + r.deviceId : ''}`], ['First triage', dhm(r.createdAt || r.timestamp)], ['Reported by', r.reportedBy ? `${r.reportedBy} • ${age(r.reportedAt || r.updatedAt)}` : ''], ['Last change', age(r.updatedAt)], ['Incident', r.incidentCode || '']]);
+        $('pt-body').innerHTML =
+            `<div class="pt-sec"><h4>Triage</h4>${triage}</div>` +
+            `<div class="pt-sec"><h4>Reassessment</h4>${reass}<h4 style="margin-top:10px">Where</h4>${locHtml}</div>` +
+            `<div class="pt-sec"><h4>Interventions</h4>${intsHtml}<h4 style="margin-top:10px">Injuries</h4>${injHtml}</div>` +
+            `<div class="pt-sec"><h4>CCS, evacuation and handover</h4>${chain}<h4 style="margin-top:10px">Recorded by</h4>${who}</div>` +
+            `<div class="pt-sec wide"><h4>Patient details and notes</h4>${kv([['Demographics', r.demos || ''], ['Allergies', r.allergies || '']])}${r.notes ? `<div class="pt-note">${esc(r.notes)}</div>` : '<span class="muted">No notes</span>'}</div>`;
     }
     function download(name, text, type) {
         const a = document.createElement('a');
@@ -727,6 +842,7 @@
         download(`MITT_commander_${data.code}_${stamp()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
     }
     document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && openUid) { closePatient(); return; }
         if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
         if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();
         if ((e.key === 'f' || e.key === 'F') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleFullscreen();
