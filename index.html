@@ -537,7 +537,9 @@
         white-space: nowrap; border: 0;
     }
     
-    #body-map-modal svg { max-height: 70vh; max-width: 90vw; background: white; border-radius: 10px; }
+    #body-map-modal svg { width: min(92vw, 320px); height: auto; max-height: calc(100vh - 290px); background: white; border-radius: 10px; }
+    #bodymap-form select { flex: 1 1 40%; min-height: 44px; }
+    #body-map-modal .btn-done { width: min(92vw, 320px); margin-top: 12px; }
     #scanner-reader { width: 100%; max-width: 500px; border-radius: 8px; overflow: hidden; background: black; }
 
     #toast {
@@ -790,7 +792,9 @@
     .btn-start span { display: block; font-size: 1rem; font-weight: normal; letter-spacing: 0; margin-top: 4px; }
     body.gloved .btn-start { min-height: 160px; font-size: 2.3rem; }
     .home-row { display: flex; gap: 10px; margin-bottom: 1rem; }
-    .home-row .btn { flex: 1; margin-bottom: 0; font-size: 1.05rem; padding: 1.1rem 0.5rem; }
+    .home-row .btn { flex: 1 1 0; min-width: 0; margin-bottom: 0; font-size: 1.05rem; padding: 1.1rem 0.5rem; }
+    body.gloved .home-row .btn { padding: 1.3rem 0.3rem; font-size: 1.15rem; min-height: 100px; }
+    body.gloved .rs-row .btn { padding: 1.3rem 0.5rem; font-size: 1.2rem; }
     .home-receive { background-color: var(--nhs-dark-blue); }
     .home-more .rs-body .btn { font-size: 1.05rem; padding: 1rem; }
     .install-banner { display: none; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(0,94,184,0.08); border-left: 6px solid var(--nhs-blue); padding: 0.7rem; border-radius: 8px; margin-bottom: 0.8rem; }
@@ -884,15 +888,15 @@
     .modal-actions { display:flex; gap:10px; flex-wrap:wrap; }
     .modal-actions .btn { flex:1; min-width:120px; }
     .setting-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid #ccc; }
-    .setting-row select { padding:8px; font-size:16px; }
+    .setting-row select { padding:8px; font-size:16px; min-height:44px; }
     /* ---- v0.9.0 location + map (15 Oct 2026) ---- */
     /* Location pill: a button that explains itself when tapped */
-    .gps-status { border:1px solid rgba(255,255,255,0.5); cursor:pointer; font-family:inherit; line-height:1.2; white-space:nowrap; }
+    .gps-status { border:1px solid rgba(255,255,255,0.5); cursor:pointer; font-family:inherit; line-height:1.2; white-space:nowrap; min-height:32px; padding:4px 10px; display:inline-flex; align-items:center; }
     .gps-status.loc-good { color:#ccffcc; border-color:#ccffcc; }
     .gps-status.loc-coarse, .gps-status.loc-stale { color:#fff3a8; border-color:#fff3a8; }
     .gps-status.loc-searching { color:#dbe7ff; border-color:#dbe7ff; }
     .gps-status.loc-denied, .gps-status.loc-none { color:#ffcccc; border-color:#ffcccc; }
-    @media (max-width: 520px) { #header-device, #header-incident:empty { display:none; } .status-bar { padding:0.4rem 0.7rem; font-size:0.8rem; flex-wrap:wrap; row-gap:0.3rem; overflow-x:hidden; } .status-bar .status-item { margin-right:10px; } #gps-indicator { flex-shrink:0; } }
+    @media (max-width: 520px) { #header-device, #header-incident:empty { display:none; } .status-bar { padding:0.4rem 0.7rem; font-size:0.8rem; flex-wrap:wrap; row-gap:0.3rem; overflow-x:hidden; } .status-bar .status-item { margin-right:10px; } #gps-indicator, .status-pills { flex-shrink:0; } }
     @media (max-width: 420px) { #header-user { display:none; } }
     .home-row .home-map { background-color: var(--nhs-green); }
     @media (max-width: 380px) { .home-row .btn { font-size:0.95rem; padding:0.9rem 0.3rem; } .home-row .btn span { font-size:0.72rem !important; } }
@@ -977,7 +981,7 @@
             <path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e0e0e0" stroke="#333" stroke-width="2"/>
             <g id="bodymap-marks"></g>
         </svg>
-        <button class="btn btn-secondary" style="width: auto; margin-top: 14px;" onclick="closeBodyMap()">Done</button>
+        <button class="btn btn-primary btn-done" onclick="closeBodyMap()">Done</button>
     </div>
 </div>
 
@@ -1006,7 +1010,7 @@
         <div class="input-group"><label for="cmd-join-code">Incident code</label><input type="text" id="cmd-join-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="6 letters / digits"></div>
         <div class="input-group"><label for="cmd-join-pin">PIN</label><input type="text" id="cmd-join-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 digits"></div>
         <div class="modal-actions">
-            <button type="button" class="btn btn-primary" onclick="cmdJoin()">Join and start sending</button>
+            <button type="button" class="btn btn-primary" onclick="cmdJoin()">Join</button>
             <button type="button" class="btn btn-secondary" onclick="closeCmdJoin()">Cancel</button>
         </div>
     </div>
@@ -1096,7 +1100,7 @@
         <details class="rs-sec settings-sec">
             <summary>Incident &amp; training <span class="rs-sum">incident code, training mode</span></summary>
             <div class="rs-body">
-                <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
+                <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px; min-height:44px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
                 <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
                 <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
                 <div class="setting-row" style="display:block; border-bottom:none;">
@@ -1104,11 +1108,11 @@
                     <small>Sends this phone's triage records (no names or NHS numbers) to a commander screen whenever there is signal. Protected by a code and PIN; the server copy is deleted 24 hours after the last update. The phone keeps working offline as normal.</small>
                     <p class="qr-meta" id="cmd-status" style="text-align:left; margin:8px 0;">Not sharing.</p>
                     <div id="cmd-off">
-                        <button type="button" class="btn btn-primary" onclick="cmdStart()">Start sharing (this phone creates the incident)</button>
-                        <button type="button" class="btn btn-secondary" onclick="cmdOpenJoin()">Join an incident (code + PIN)</button>
+                        <button type="button" class="btn btn-primary" onclick="cmdStart()">Start sharing<br><span style="font-size:0.8rem; font-weight:normal;">This phone creates the incident</span></button>
+                        <button type="button" class="btn btn-secondary" onclick="cmdOpenJoin()">Join an incident<br><span style="font-size:0.8rem; font-weight:normal;">Code and PIN from another phone</span></button>
                     </div>
                     <div id="cmd-on" style="display:none;">
-                        <button type="button" class="btn btn-primary" onclick="cmdShowDetails()">Show code, PIN and commander link</button>
+                        <button type="button" class="btn btn-primary" onclick="cmdShowDetails()">Show code, PIN and link</button>
                         <button type="button" class="btn btn-secondary" onclick="cmdPush(true)">Send now</button>
                         <button type="button" class="btn btn-secondary" onclick="cmdStop()">Stop sharing from this phone</button>
                     </div>
@@ -1267,7 +1271,7 @@
         <p class="qr-meta" id="qr-expiry"></p>
         <button class="btn btn-secondary" style="width:100%; padding:0.8rem; font-size:0.95rem;" onclick="copyCurrentQrText()">Copy QR text</button>
         <div class="modal-actions" style="width:100%;">
-            <button class="btn btn-secondary" style="margin-bottom:0;" onclick="toggleQrFullscreen()" id="btn-qr-full">⛶ Full Screen</button>
+            <button class="btn btn-secondary" style="margin-bottom:0;" onclick="toggleQrFullscreen()" id="btn-qr-full" style="white-space:nowrap;">⛶ Full screen</button>
             <button class="btn btn-secondary" style="margin-bottom:0;" onclick="closeQR()">Close</button>
         </div>
     </div>
@@ -1306,7 +1310,7 @@
         <h3 id="loc-title" style="margin-top:0;">Your location</h3>
         <div id="loc-help-body"></div>
         <div class="modal-actions" style="margin-top:1rem;">
-            <button class="btn btn-primary" onclick="retryLocation()">↻ Try again</button>
+            <button class="btn btn-primary" style="white-space:nowrap;" onclick="retryLocation()">↻ Try again</button>
             <button class="btn btn-secondary" onclick="closeLocationHelp(); showMap();">🗺 Map</button>
             <button class="btn btn-secondary" onclick="closeLocationHelp()">Close</button>
         </div>
@@ -1363,8 +1367,10 @@
         <span class="status-item" id="header-sector" style="color:var(--nhs-yellow);"></span>
         <span class="status-item" id="header-incident" style="font-weight:bold;"></span>
         <span class="status-item" id="header-device" title="Device code (default patient-ID prefix)"></span>
-        <button type="button" id="cmd-pill" class="gps-status loc-searching" style="display:none; margin-right:6px;" onclick="cmdShowDetails()" title="Live sharing with the incident commander">☁ Commander</button>
-        <button type="button" id="gps-indicator" class="gps-status loc-searching" style="margin-left: auto;" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
+        <span class="status-pills" style="margin-left:auto; display:inline-flex; gap:6px; flex-shrink:0;">
+            <button type="button" id="cmd-pill" class="gps-status loc-searching" style="display:none;" onclick="cmdShowDetails()" title="Live sharing with the incident commander">☁ Commander</button>
+            <button type="button" id="gps-indicator" class="gps-status loc-searching" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
+        </span>
     </div>
 
     <div id="global-dashboard" class="dashboard">
@@ -1749,7 +1755,7 @@
             <h2>Patient Log <small style="font-weight:normal; font-size:0.9rem;">(tap a row to open)</small></h2>
             <div id="alert-strip" style="margin-bottom:10px;"></div>
             <div class="log-tools">
-                <input type="search" id="log-search" placeholder="Search ID, notes, sector, hospital no…" oninput="renderLogTable()" aria-label="Search patients">
+                <input type="search" id="log-search" placeholder="Search patients…" oninput="renderLogTable()" aria-label="Search patients">
                 <select id="log-filter" onchange="renderLogTable()" aria-label="Filter by category">
                     <option value="">All categories</option>
                     <option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option>
@@ -3574,7 +3580,7 @@
         box.style.height = _qrFullscreen ? window.innerHeight + 'px' : ''; // 100vh overshoots the visible area in iOS Safari
         box.style.justifyContent = _qrFullscreen ? 'center' : '';
         box.style.background = _qrFullscreen ? '#fff' : '';
-        setText('btn-qr-full', _qrFullscreen ? '↙ Exit Full Screen' : '⛶ Full Screen');
+        setText('btn-qr-full', _qrFullscreen ? '↙ Exit' : '⛶ Full screen');
     }
 
     // ---------- NFC tags (Android Chrome only; tag read/write — not phone-to-phone) ----------
