@@ -153,6 +153,14 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.12.0 build 2026-10-15-demo-roles — demo roles and transfer practice
+
+- **Try the demo incident** now asks **who you are**: everything on this device; one of the four phones (HART 1, Medic 2, MERIT doctor, Fire crew 3), which loads only that phone's casualties with its name, role, sector and ID prefix; the **commander screen** for this device only (`commander.html#DEMO`); or the **commander of a live practice**, which creates a training incident (needs internet) that other devices link to by scanning its code, so their demo casualties, handovers and new patients appear on the commander screen.
+- **Transfer practice** in the demo guide: *Practise receiving a patient* (a casualty from another phone arrives as a real patient QR through the normal review-and-accept screen) and *Practise handing a patient over* (shows the real handover QR; the demo-only button "the receiver scanned it" sends back the confirmation a receiving phone would). With two devices, real QR handovers work as normal.
+- **One screen, no scrolling** on a normal-size phone (checked at 412×915, 390×844 and 360×740): the start screen (no casualty counts there, shorter buttons), home, the triage questions, the patient screen (smaller tag, care prompts folded to one line, the six sections as a two-column grid of tiles; an opened section spans the width) and METHANE fit without scrolling. Large phones fit the patient screen down to the last section; the View Log button below may need a scroll on smaller phones. Gloved mode keeps its bigger targets. Section titles shortened to "Injuries & notes" and "Handover".
+- **✕ Leave demo**: a black button in the orange DEMO banner at the top of every screen (and in the demo guide) leaves the demo in one tap, switches training mode off and goes straight back to the start screen with the real name and role. Practice records stay in the training database.
+- Training mode now keeps its own name, role, sector and ID prefix (starting from the real-use values), so the demo's phone names never carry back into real use.
+
 ### v0.11.1 build 2026-10-15-location-help — "Location off" in the installed app
 
 - An installed web app has no address bar, so the old "tap the padlock" instruction could not be followed, and an app installed from Firefox or Samsung Internet keeps *that* browser's permissions, not Chrome's. The location pill now shows **Location off** as soon as the permission is found to be off (not only after a failed fix), and tapping it gives numbered steps for the exact case: installed or in the browser, Chrome / Firefox / Samsung Internet on Android, Safari or Home Screen app on iPhone, including the phone's own app permission and the phone-wide location toggle. "Try again" re-checks the permission and says plainly if it is still off instead of pretending to search.
