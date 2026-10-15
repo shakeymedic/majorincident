@@ -8,7 +8,7 @@ const firestore = require('../lib/firestore-store.js');
 
 let core = null, storeName = '';
 function getCore() {
-    if (!core) { const p = pickStore(firestore); storeName = p.name; core = createCore({ store: p.store, log: (...a) => console.log('[incident]', ...a) }); }
+    if (!core) { const p = pickStore(firestore); storeName = p.name; console.log('[incident] store', storeName); core = createCore({ store: p.store, log: (...a) => console.log('[incident]', ...a) }); }
     return core;
 }
 
