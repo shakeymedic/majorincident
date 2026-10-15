@@ -19,6 +19,8 @@ jobs:
     defaults:
       run:
         working-directory: android
+    env:
+      KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -32,9 +34,7 @@ jobs:
         with:
           gradle-version: '8.14.3'
       - name: Restore the upload keystore (only when the secrets exist)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        env:
-          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        if: ${{ env.KS != '' }}
         run: |
           echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.keystore"
           echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"

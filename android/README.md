@@ -63,7 +63,7 @@ if the app is cleared for real incidents and a Trust requires attestation.
 
 ## Changing the app
 
-- Site address: `hostName`, `defaultUrl` and `assetStatements` in `app/build.gradle`, the shortcut in
-  `res/xml/shortcuts.xml`, and `.well-known/assetlinks.json` on the site.
+- Site address: `hostName` and `defaultUrl` in `app/build.gradle`, `asset_statements` in `res/values/strings.xml`, the
+  shortcut in `res/xml/shortcuts.xml`, and `.well-known/assetlinks.json` on the site.
 - Version: `versionProps` in `app/build.gradle`; `code` must rise on every Play upload.
 - Icons: generated from the site's `icon-512.png` and `icon-maskable-512.png`.

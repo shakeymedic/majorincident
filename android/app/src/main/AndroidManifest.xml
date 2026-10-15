@@ -19,7 +19,7 @@
         android:theme="@android:style/Theme.Translucent.NoTitleBar"
         tools:targetApi="31">
 
-        <meta-data android:name="asset_statements" android:value="${assetStatements}" />
+        <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
         <!-- Shown by Chrome's TWA quality check and the Play listing: the web app's manifest provides the rest. -->
         <meta-data android:name="web_manifest_url" android:value="https://${hostName}/manifest.json" />
 

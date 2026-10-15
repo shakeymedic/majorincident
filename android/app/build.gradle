@@ -12,8 +12,8 @@ android {
         targetSdk 36          // Play requires the current API level for new apps and updates (36 from 31 Aug 2026)
         versionCode versionProps.code
         versionName versionProps.name
-        // The web app the launcher opens. Change these if the site moves to a custom domain (and assetlinks.json with it).
-        manifestPlaceholders = [hostName: 'majorincident.netlify.app', defaultUrl: 'https://majorincident.netlify.app/index.html', launcherName: 'MI Triage', assetStatements: '[{ "relation": ["delegate_permission/common.handle_all_urls"], "target": {"namespace": "web", "site": "https://majorincident.netlify.app"}}]']
+        // The web app the launcher opens. Change these if the site moves to a custom domain (plus asset_statements in strings.xml and assetlinks.json).
+        manifestPlaceholders = [hostName: 'majorincident.netlify.app', defaultUrl: 'https://majorincident.netlify.app/index.html', launcherName: 'MI Triage']
     }
 
     // Release signing comes from the environment (GitHub secrets); a build without them is unsigned and will not install.

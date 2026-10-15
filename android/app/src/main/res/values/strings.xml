@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">Major Incident Triage</string>
     <string name="shortcut_commander">Commander screen</string>
+    <!-- Digital Asset Links: which site this app may show full screen (the site's .well-known/assetlinks.json names the app back). -->
+    <string name="asset_statements">[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": {\"namespace\": \"web\", \"site\": \"https://majorincident.netlify.app\"}}]</string>
 </resources>
