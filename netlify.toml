@@ -1,0 +1,15 @@
+# Static PWA plus two serverless functions (incident commander backend). No build step for the site itself.
+[build]
+  publish = "."
+  command = "echo 'no build step'"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Only the runtime dependency (@netlify/blobs) is needed on Netlify; the test tooling stays local.
+  NPM_FLAGS = "--omit=dev --no-audit --no-fund"
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  included_files = ["lib.js", "netlify/lib/**"]

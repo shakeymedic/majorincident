@@ -12,9 +12,24 @@ try { require.resolve('qrcode'); } catch (e) { module.paths.push(require('child_
 
 const ROOT = path.join(__dirname, '..');
 const TYPES = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
+// The incident commander backend runs in-process with an in-memory store, so the e2e suite covers the
+// real page code and the real request handling without Netlify.
+const { createCore, memoryStore } = require('../netlify/lib/incident-core.js');
+const apiCore = createCore({ store: memoryStore() });
 function serve() {
     return new Promise(resolve => {
         const srv = http.createServer((req, res) => {
+            if (req.url.startsWith('/api/')) {
+                let body = '';
+                req.on('data', c => { body += c; });
+                req.on('end', () => {
+                    apiCore.handle(req.method, req.url.split('?')[0], req.headers, body, req.socket.remoteAddress).then(r => {
+                        res.writeHead(r.status, r.headers);
+                        res.end(r.body === null || r.body === undefined ? '' : JSON.stringify(r.body));
+                    });
+                });
+                return;
+            }
             const p = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]).replace(/^\/$/, '/index.html'));
             if (!p.startsWith(ROOT) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404); res.end(); return; }
             res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream' });
@@ -1089,6 +1104,129 @@ async function test(name, fn) {
         await P._ctx.close();
     });
     await M._ctx.close();
+
+    console.log('\ne2e: incident commander (live sharing)');
+    const CA = await device('Cmd A');
+    await setup(CA, 'Medic Alpha');
+    let share = null;
+    await test('"Start sharing" creates an incident and shows the code, PIN, link and join QR', async () => {
+        assert.strictEqual(await CA.evaluate(() => document.getElementById('cmd-pill').style.display), 'none');
+        await CA.evaluate(() => { cmdStart(); });
+        await answerDialog(CA, true);
+        await CA.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        await page_visible(CA, '#cmd-modal');
+        share = await CA.evaluate(() => ({ code: CMD.cfg.code, pin: CMD.cfg.pin, role: CMD.cfg.role, link: document.getElementById('cmd-link').href, qr: document.querySelector('#cmd-qr canvas, #cmd-qr img') !== null }));
+        assert.match(share.code, /^[A-HJ-NP-Z2-9]{6}$/);
+        assert.match(share.pin, /^\d{6}$/);
+        assert.strictEqual(share.role, 'creator');
+        assert.ok(share.link.endsWith('/commander.html#' + share.code), share.link);
+        assert.ok(share.qr, 'join QR drawn');
+        assert.ok(await CA.evaluate(() => auditLog.some(a => a.action === 'COMMANDER_SHARE_START')));
+        await CA.evaluate(() => closeCmdDetails());
+        assert.notStrictEqual(await CA.evaluate(() => document.getElementById('cmd-pill').style.display), 'none');
+    });
+    await test('a new patient is sent in the background within a few seconds', async () => {
+        await triage(CA, 'TST', [true]);
+        await CA.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        assert.match(await CA.evaluate(() => document.getElementById('cmd-pill').textContent), /✓/);
+        assert.ok(await CA.evaluate(() => auditLog.some(a => a.action === 'COMMANDER_PUSH')));
+    });
+    const CC = await device('Commander', { viewport: { width: 1280, height: 900 }, permissions: [] });
+    await test('the commander page needs the code and PIN, then shows the casualty, the map marker and the phone', async () => {
+        await CC.goto(url.replace('index.html', 'commander.html#' + share.code));
+        assert.strictEqual(await CC.inputValue('#in-code'), share.code);
+        await CC.fill('#in-pin', '000000');
+        await CC.click('#signin button');
+        await page_visible(CC, '#signin-error');
+        assert.match(await CC.evaluate(() => document.getElementById('signin-error').textContent), /Wrong PIN/);
+        await CC.fill('#in-pin', share.pin);
+        await CC.click('#signin button');
+        await CC.waitForFunction(() => document.querySelectorAll('#rows tr').length === 1, null, { timeout: 8000 });
+        assert.match(await CC.evaluate(() => document.getElementById('status-pill').textContent), /Live/);
+        assert.match(await CC.evaluate(() => document.getElementById('rows').textContent), /-TST-001/);
+        assert.match(await CC.evaluate(() => document.getElementById('phones').textContent), /Medic Alpha/);
+        assert.strictEqual(await CC.evaluate(() => cluster.getLayers().length), 1);
+        assert.match(await CC.evaluate(() => document.getElementById('counts').textContent), /P3/);
+    });
+    const CB = await device('Cmd B');
+    await setup(CB, 'Medic Bravo');
+    await test('a second phone joins with the code and PIN; the commander sees both phones and both patients', async () => {
+        assert.strictEqual(await CB.evaluate((s) => cmdJoin(s.code, s.pin), share), true);
+        await triage(CB, 'MITT', [true]);
+        await CB.evaluate(() => { const e = currentEntry(); e.highRisk = true; touch(e, ['highRisk']); saveState(); });
+        await CB.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.querySelectorAll('#rows tr').length === 2, null, { timeout: 8000 });
+        const rows = await CC.evaluate(() => Array.from(document.querySelectorAll('#rows tr')).map(r => r.textContent));
+        assert.match(rows[0], /-MITT-/); // P1 first
+        assert.match(rows[0], /HIGH RISK/);
+        assert.match(await CC.evaluate(() => document.getElementById('attention').textContent), /high risk/);
+        assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('.phone').length), 2);
+        assert.strictEqual(await CC.evaluate(() => cluster.getLayers().length), 2);
+    });
+    await test('a wrong training state cannot join, and a join QR scanned on a third phone joins after confirmation', async () => {
+        const CD = await device('Cmd D');
+        await setup(CD, 'Medic Delta');
+        await CD.evaluate((s) => onScanSuccess(JSON.stringify({ t: 'MIT_JOIN', c: s.code, p: s.pin })), share);
+        await answerDialog(CD, true);
+        await CD.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        assert.strictEqual(await CD.evaluate(() => CMD.cfg.role), 'member');
+        await CD.waitForFunction(() => CMD.lastSentAt > 0, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.querySelectorAll('.phone').length === 3, null, { timeout: 8000 });
+        await CD._ctx.close();
+    });
+    await test('commander exports a GPX with a waypoint per located casualty', async () => {
+        const [dl] = await Promise.all([CC.waitForEvent('download'), CC.evaluate(() => exportFile('gpx'))]);
+        const gpx = fs.readFileSync(await dl.path(), 'utf8');
+        assert.strictEqual((gpx.match(/<wpt /g) || []).length, 2);
+    });
+    await test('an unchanged incident costs a 304 and the page keeps its data', async () => {
+        const before = await CC.evaluate(() => data.seq);
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => /no change/.test(document.getElementById('hdr-updated').textContent), null, { timeout: 8000 });
+        assert.strictEqual(await CC.evaluate(() => data.seq), before);
+        assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('#rows tr').length), 2);
+    });
+    await test('"Stop sharing" on one phone leaves the others sending', async () => {
+        await CB.evaluate(() => { cmdStop(); });
+        await answerDialog(CB, true);
+        await CB.waitForFunction(() => !cmdActive());
+        assert.strictEqual(await CB.evaluate(() => document.getElementById('cmd-pill').style.display), 'none');
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'COMMANDER_STOPPED')));
+        assert.ok(await CA.evaluate(() => cmdActive()));
+    });
+    await test('the creator can end the incident for everyone; the commander page says so and a joined phone stops', async () => {
+        const CE = await device('Cmd E');
+        await setup(CE, 'Medic Echo');
+        assert.strictEqual(await CE.evaluate((s) => cmdJoin(s.code, s.pin), share), true);
+        await CE.waitForFunction(() => CMD.lastSentAt > 0, null, { timeout: 10000 });
+        await CA.evaluate(() => { cmdShowDetails(); cmdEndIncident(); });
+        await answerDialog(CA, true);
+        await CA.waitForFunction(() => !cmdActive(), null, { timeout: 8000 });
+        assert.ok(await CA.evaluate(() => auditLog.some(a => a.action === 'COMMANDER_ENDED')));
+        await CE.evaluate(() => cmdPush(true));
+        await CE.waitForFunction(() => !cmdActive(), null, { timeout: 8000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => /refused|expired|No such/i.test(document.getElementById('conn-warn').textContent + document.getElementById('status-pill').textContent), null, { timeout: 8000 });
+        await CE._ctx.close();
+    });
+    await test('sharing survives a reload of the phone (settings are kept, records re-sent)', async () => {
+        const CF = await device('Cmd F');
+        await setup(CF, 'Medic Foxtrot');
+        await CF.evaluate(() => { cmdStart(); });
+        await answerDialog(CF, true);
+        await CF.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        await CF.evaluate(() => closeCmdDetails());
+        await triage(CF, 'TST', [true]);
+        await CF.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        const code = await CF.evaluate(() => CMD.cfg.code);
+        await CF.reload(); await CF.waitForFunction(() => dbReady === true);
+        await CF.waitForFunction(() => cmdActive() && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        assert.strictEqual(await CF.evaluate(() => CMD.cfg.code), code);
+        await CF._ctx.close();
+    });
+    await CA._ctx.close(); await CB._ctx.close(); await CC._ctx.close();
 
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
 

@@ -1,0 +1,4 @@
+# Never serve the repository's tooling or server code as static files.
+/node_modules/*   /   404!
+/netlify/*        /   404!
+/tests/*          /   404!
