@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v22-2026-10-15-commander-wall';
+const CACHE_NAME = 'mit-triage-v23-2026-10-15-commander-wall';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 const TILE_CACHE_MAX = 600;

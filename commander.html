@@ -355,6 +355,7 @@
             <button type="button" class="btn small ghost" id="btn-wall" onclick="toggleWall()" style="display:none;">Wall display</button>
             <button type="button" class="btn small ghost" id="btn-fs" onclick="toggleFullscreen()" style="display:none;" title="Full screen (F)">⛶</button>
             <button type="button" class="btn small ghost" id="btn-signout" onclick="signOut()" style="display:none;">Sign out</button>
+            <a class="btn small ghost" id="btn-start-page" href="index.html#start" style="display:none; text-decoration:none;">↩ Start page</a>
         </div>
     </div>
 </header>
@@ -504,7 +505,7 @@
         cfg = null; data = null; etag = ''; knownSeq = '';
         try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
         if (timer) clearTimeout(timer);
-        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none';
+        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none'; $('btn-start-page').style.display = 'none';
         $('training-banner').classList.add('hidden');
         lastOkAt = 0; setStatus('wait', 'Not connected'); renderHeader(); setUpdated('');
     }
@@ -556,7 +557,7 @@
         demo = { startedAt: Date.now() };
         $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
         $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
-        $('btn-signout').textContent = 'Leave demo';
+        $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
         demoTick();
     }
     function demoTick() {
@@ -574,7 +575,7 @@
         setUpdated(`Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
         $('conn-warn').classList.add('hidden');
         render();
-        setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Leave and reopen the demo to start again.');
+        setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Tap ↩ Start page to go back and pick another role.');
         timer = setTimeout(demoTick, next ? Math.min(10000, next + 200) : 30000);
     }
     async function refreshNow() {

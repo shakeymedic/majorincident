@@ -1321,7 +1321,6 @@ async function test(name, fn) {
         await triage(D, 'TST', [true]);
         const realUid = await D.evaluate(() => incidentLog[0].uid);
         await D.evaluate(() => { demoChoose('all'); });
-        await answerDialog(D, true);
         await D.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
         await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
         await page_visible(D, '#demo-modal');
@@ -1355,11 +1354,13 @@ async function test(name, fn) {
     await test('as one of the phones: only its casualties, its name and role; real name untouched afterwards', async () => {
         const E = await device('DemoPhone');
         await setup(E, 'Dr Real');
-        await E.evaluate(() => startDemo());
+        // One ▶ Demo button at the top of the start screen, then pick a role: commander, one of the four phones, or everything
+        await E.evaluate(() => showScreen('intro-screen'));
+        await E.click('#btn-demo');
         await page_visible(E, '#demo-role-modal');
         assert.strictEqual(await E.$$eval('#demo-phone-choices button', b => b.length), 4);
-        await E.evaluate(() => { demoChoose('p3'); });
-        await answerDialog(E, true);
+        assert.strictEqual(await E.getAttribute('#demo-choose-cmd', 'href'), 'commander.html#DEMO');
+        await E.click('#demo-phone-choices button:nth-child(4)');
         await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 8, null, { timeout: 10000 });
         assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, demoMode()]), ['Fire crew 3', 'NON_HCP', 'p3']);
         assert.ok(await E.evaluate(() => incidentLog.every(r => r.deviceId === 'DEMOFR')));
@@ -1384,24 +1385,23 @@ async function test(name, fn) {
         // "Leave demo" in the orange banner: back to real use on the start screen, with the real name and role
         await E.evaluate(() => document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; }));
         assert.ok(await E.isVisible('#btn-leave-demo'));
+        assert.match(await E.textContent('#btn-leave-demo'), /Start page/);
         await E.click('#btn-leave-demo');
-        await answerDialog(E, true);
         await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === false && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
         await E.waitForFunction(() => document.getElementById('intro-screen').classList.contains('active'), null, { timeout: 5000 });
         assert.ok(await E.isHidden('#btn-leave-demo'));
         assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, devicePrefix]), ['Dr Real', 'HCP', '']);
+        assert.ok(await E.isVisible('#btn-demo'), 'pick another role from the start page');
         await E._ctx.close();
     });
     await test('live practice: one device is the commander, a phone links and its casualties appear on the commander screen', async () => {
         const K = await device('DemoCmd');
         await K.evaluate(() => { demoChoose('cmd'); });
-        await answerDialog(K, true);
         await K.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof cmdActive === 'function' && cmdActive() && CMD.cfg.commander, null, { timeout: 15000 });
         const share = await K.evaluate(() => ({ code: CMD.cfg.code, pin: CMD.cfg.pin }));
         assert.strictEqual(await K.evaluate(() => incidentLog.length), 0);
         const F = await device('DemoHART');
         await F.evaluate(() => { demoChoose('p0'); });
-        await answerDialog(F, true);
         await F.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 7, null, { timeout: 10000 });
         assert.strictEqual(await F.evaluate(s => cmdJoin(s.code, s.pin), share), true);
         await F.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
@@ -1452,6 +1452,21 @@ async function test(name, fn) {
         assert.ok(await P.isVisible('#signin'));
         assert.deepStrictEqual(api, []);
         await ctx.close();
+    });
+    await test('commander demo "↩ Start page" goes back to the start screen and leaves the demo', async () => {
+        const G = await device('DemoBack');
+        await setup(G, 'Dr Back');
+        await G.evaluate(() => { demoChoose('p1'); });
+        await G.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length > 0, null, { timeout: 10000 });
+        await G.goto(url.replace('index.html', 'commander.html#DEMO'));
+        await G.waitForFunction(() => document.querySelectorAll('#rows tr').length > 0, null, { timeout: 8000 });
+        assert.ok(await G.isVisible('#btn-start-page'));
+        assert.ok(await G.isHidden('#btn-signout'));
+        await G.click('#btn-start-page');
+        await G.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === false && typeof dbReady !== 'undefined' && dbReady === true && document.getElementById('intro-screen').classList.contains('active'), null, { timeout: 15000 });
+        assert.ok(!/#start/.test(G.url()));
+        assert.deepStrictEqual(await G.evaluate(() => [triagerName, userRole]), ['Dr Back', 'HCP']);
+        await G._ctx.close();
     });
 
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
