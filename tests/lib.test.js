@@ -1002,6 +1002,17 @@ group('review v0.9.0: reading a device fix', () => {
         assert.ok(ios.help.indexOf('iPhone') >= 0);
         const and = lib.describeGeoError(1, 'android');
         assert.ok(and.help.indexOf('Android') >= 0);
+        assert.ok(and.help.indexOf('padlock') >= 0, 'browser on Android: padlock route');
+        const inst = lib.describeGeoError(1, 'android', true);
+        assert.ok(inst.help.indexOf('padlock') < 0, 'installed app has no address bar, so no padlock step');
+        assert.ok(inst.help.indexOf('App info') >= 0 && inst.help.indexOf('Permissions') >= 0, 'installed app: App info → Permissions');
+        assert.ok(Array.isArray(inst.steps) && inst.steps.length >= 3);
+        assert.ok(inst.note && inst.note.indexOf('will not ask again') >= 0);
+        assert.ok(lib.describeGeoError(1, 'ios', true).help.indexOf('Add to Home Screen') >= 0);
+        const fx = lib.describeGeoError(1, 'android', true, 'firefox');
+        assert.ok(fx.help.indexOf('Firefox') >= 0 && fx.help.indexOf('Site permissions') >= 0, 'installed from Firefox: Firefox steps');
+        assert.ok(fx.help.indexOf('App info') < 0, 'no Chrome WebAPK step for a Firefox install');
+        assert.ok(lib.describeGeoError(1, 'android', false, 'samsung').help.indexOf('Samsung Internet') >= 0);
         assert.strictEqual(lib.describeGeoError(2).kind, 'unavailable');
         assert.strictEqual(lib.describeGeoError(2).retry, true);
         assert.strictEqual(lib.describeGeoError(3).kind, 'timeout');

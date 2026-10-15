@@ -1835,14 +1835,68 @@
         return { ok: true, likelySource, ageMs, ageState, accuracy: acc, indoorHint: likelySource === 'network' || (acc !== null && acc > 50) };
     }
     // Plain-English explanation of a Geolocation API error, with the fix for the phone in hand.
-    function describeGeoError(code, platform) {
+    // installed: true when the app runs from the home screen (no address bar, so "tap the padlock" is impossible).
+    // browser: 'chrome' | 'firefox' | 'samsung' | 'safari' | 'other' — an installed web app keeps the permissions of
+    // the browser it was installed from, so the steps name that browser.
+    function describeGeoError(code, platform, installed, browser) {
         platform = platform || 'other';
-        const enable = platform === 'ios'
-            ? 'On iPhone: Settings → Privacy & Security → Location Services must be on, then allow Safari Websites (or this app, if installed to the Home Screen) "While Using the App". Also allow it when the browser asks.'
-            : platform === 'android'
-                ? 'On Android: tap the padlock next to the web address → Permissions → Location → Allow (or Settings → Site settings → Location). Phone-wide location must also be on.'
-                : 'Allow location for this site in the browser\'s site settings, and make sure location is switched on for the device.';
-        if (code === 1) return { kind: 'denied', title: 'Location is blocked for this app', help: enable, retry: false };
+        browser = browser || (platform === 'ios' ? 'safari' : platform === 'android' ? 'chrome' : 'other');
+        var site = 'majorincident.netlify.app';
+        var phoneToggle = 'Swipe down from the top of the screen and check the phone\'s own Location toggle is on.';
+        var steps;
+        if (platform === 'android' && browser === 'firefox') {
+            steps = installed ? [
+                'Open the Firefox browser itself (not this app) and go to ' + site + '. Tap the padlock / shield icon next to the address → Permissions → Location → Allow. If Firefox asks, choose Allow.',
+                'Still in Firefox: ⋮ → Settings → Site permissions → Location → "Ask to allow", and remove ' + site + ' from any Blocked list.',
+                'Phone Settings → Apps → Firefox → Permissions → Location → "Allow only while using the app". The installed app uses Firefox\'s permission.',
+                phoneToggle,
+                'Open this app again and tap "Try again" here.'
+            ] : [
+                'Tap the padlock / shield icon next to the web address → Permissions → Location → Allow.',
+                '⋮ → Settings → Site permissions → Location → "Ask to allow", and remove ' + site + ' from any Blocked list.',
+                'Phone Settings → Apps → Firefox → Permissions → Location → "Allow only while using the app".',
+                phoneToggle,
+                'Then tap "Try again" here.'
+            ];
+        } else if (platform === 'android' && browser === 'samsung') {
+            steps = [
+                (installed ? 'Open the Samsung Internet browser and go to ' + site + '. ' : '') + 'Tap the padlock next to the address → Permissions → Location → Allow.',
+                'Samsung Internet → ☰ → Settings → Sites and downloads → Site permissions → Location → allow ' + site + '.',
+                'Phone Settings → Apps → Samsung Internet → Permissions → Location → "Allow only while using the app".',
+                phoneToggle,
+                'Open this app again and tap "Try again" here.'
+            ];
+        } else if (platform === 'android' && installed) {
+            steps = [
+                'Close this app. On the home screen, press and hold the Major Incident Triage icon, then tap App info (ⓘ).',
+                'Tap Permissions → Location → "Allow only while using the app". If Location is not listed, open Chrome → ⋮ → Settings → Site settings → Location and allow ' + site + '.',
+                phoneToggle,
+                'Open the app again and tap "Try again" here.'
+            ];
+        } else if (platform === 'android') {
+            steps = [
+                'Tap the padlock (or ⓘ) next to the web address → Permissions → Location → Allow.',
+                'If there is no padlock: Chrome → ⋮ → Settings → Site settings → Location → allow ' + site + '.',
+                phoneToggle,
+                'Then tap "Try again" here.'
+            ];
+        } else if (platform === 'ios' && installed) {
+            steps = [
+                'Open the iPhone Settings app → Privacy & Security → Location Services → on.',
+                'In the same list, find Safari Websites (and, if listed, Major Incident Triage) → "While Using the App".',
+                'Open the app again and tap "Try again" here. If it still says blocked, remove the app from the Home Screen and add it again from Safari (Share → Add to Home Screen), then allow location when asked.'
+            ];
+        } else if (platform === 'ios') {
+            steps = [
+                'Open the iPhone Settings app → Privacy & Security → Location Services → on, and Safari Websites → "While Using the App".',
+                'Settings → Safari → Location → Ask or Allow (if that option is shown).',
+                'Reload this page and allow location when Safari asks.'
+            ];
+        } else {
+            steps = ['Allow location for this site in the browser\'s site settings.', 'Make sure location is switched on for the device.', 'Then tap "Try again" here.'];
+        }
+        var enable = (platform === 'ios' ? 'On iPhone: ' : platform === 'android' ? 'On Android: ' : '') + steps.join(' ');
+        if (code === 1) return { kind: 'denied', title: installed ? 'Location is switched off for this app' : 'Location is blocked for this app', help: enable, steps: steps, retry: false, note: 'The phone will not ask again by itself; it has to be turned on in the settings above.' };
         if (code === 2) return { kind: 'unavailable', title: 'Location unavailable right now', help: 'The phone could not work out where it is. Indoors, GPS cannot see satellites; the phone falls back to Wi-Fi and mobile masts, which can take a minute and is less precise. Move near a window or doorway if you can, and record the floor and room.', retry: true };
         if (code === 3) return { kind: 'timeout', title: 'Still finding your location', help: 'No fix yet. Indoors this can take a minute or more. Wi-Fi being on helps even without a network connection. Record the floor and room, or pin the position on the map.', retry: true };
         return { kind: 'unsupported', title: 'Location not supported', help: 'This browser cannot report a position. Record the sector, floor and room, or pin the position on the map.', retry: false };
