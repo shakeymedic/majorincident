@@ -641,7 +641,7 @@
         const order = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
         const records = d.records.map(r => Object.assign(MITTLib.sanitisePatientRecord(r), { reportedBy: r.deviceId, reportedAt: r.updatedAt }))
             .sort((x, y) => ((x.category in order ? order[x.category] : 99) - (y.category in order ? order[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
-        data = { code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
+        data = { code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, methane: Object.assign({}, d.incident.methane, { timestamp: d.incident.createdAt + 7 * 60 * 1000, by: 'MERIT doctor', device: 'DEMODR' }), devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
         lastOkAt = now;
         setStatus('live', 'Demo');
         const next = d.incident.nextEventInMs;
