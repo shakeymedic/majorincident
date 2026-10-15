@@ -1101,6 +1101,18 @@
         <button type="button" class="btn btn-secondary" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue);" onclick="cmdDismissLink()">No commander / not now</button>
     </div>
 </div>
+<div id="hospital-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="hospital-title">
+    <div class="modal-box" style="max-width:420px;">
+        <h3 id="hospital-title" style="margin-top:0;">Which hospital?</h3>
+        <p class="qr-meta" style="text-align:left;" id="hospital-sub">Where is this casualty being taken? Shown on the commander screen. The list is editable in ⚙ Settings → Incident &amp; training.</p>
+        <div id="hospital-btns" style="display:flex; flex-direction:column; gap:6px; max-height:50vh; overflow:auto;"></div>
+        <div class="input-group" style="margin-top:8px;"><label for="hospital-other">Other destination</label><input type="text" id="hospital-other" autocomplete="off" placeholder="Type a hospital or place"></div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="pickHospital(document.getElementById('hospital-other').value)">Use this</button>
+            <button type="button" class="btn btn-secondary" onclick="closeHospitalChooser()">Not known yet</button>
+        </div>
+    </div>
+</div>
 <div id="cmd-join-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-join-title">
     <div class="modal-box" style="max-width:420px;">
         <h3 id="cmd-join-title" style="margin-top:0;">Join an incident</h3>
@@ -1201,6 +1213,7 @@
             <summary>Incident &amp; training <span class="rs-sum">incident code, training mode</span></summary>
             <div class="rs-body">
                 <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px; min-height:44px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
+                <div class="setting-row" style="display:block;"><label for="set-hospitals"><strong>Receiving hospitals</strong><br><small>One per line. Offered when a casualty is marked evacuated; the commander screen counts casualties by hospital.</small></label><textarea id="set-hospitals" rows="5" style="width:100%; padding:8px; font-size:16px; margin-top:6px; font-family:inherit;" onchange="saveHospitals(this.value)"></textarea></div>
                 <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
                 <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
                 <button class="btn btn-secondary" style="margin-top:8px;" onclick="closeModesMenu(); startDemo();">▶ Load the demo incident<br><span style="font-size:0.8rem; font-weight:normal;">Made-up casualties for showing the app (training mode)</span></button>
@@ -1768,7 +1781,14 @@
             <details class="rs-sec" id="sec-transport">
                 <summary>Handover <span class="rs-sum" id="sum-transport"></span></summary>
                 <div class="rs-body">
-                    <div class="input-group"><label for="p-evac-dest">Destination</label><input type="text" id="p-evac-dest" class="rec-field" placeholder="e.g. Royal Infirmary, CCS"></div>
+                    <button id="btn-ccs" class="btn btn-secondary" style="margin-bottom:10px;" onclick="toggleCcs()">Mark as AT CCS (handed to casualty clearing)</button>
+                    <div class="input-group"><label for="p-evac-dest">Destination hospital</label>
+                        <div style="display:flex; gap:5px;">
+                            <input type="text" id="p-evac-dest" class="rec-field" list="hospital-list" placeholder="e.g. QEHB, Heartlands" style="flex:1; min-width:0;">
+                            <button type="button" class="btn btn-secondary" style="width:auto; min-width:52px; flex:0 0 auto; padding:0 10px; margin:0;" onclick="openHospitalChooser()" aria-label="Choose hospital">Pick</button>
+                        </div>
+                        <datalist id="hospital-list"></datalist>
+                    </div>
                     <div class="input-group"><label for="p-evac-vehicle">Vehicle / crew</label><input type="text" id="p-evac-vehicle" class="rec-field" placeholder="e.g. AMB-404, HART Team 1"></div>
                     <div class="input-group"><label for="p-hospital-id">Hospital / receiving ID number</label><input type="text" id="p-hospital-id" class="rec-field" placeholder="Pre-assigned hospital number, if known"></div>
                     <button class="btn btn-secondary btn-handover" style="margin-bottom:10px; background-color:#555;" onclick="scanHandover()">Hand over care to a colleague (scan their ID)</button>
@@ -1912,8 +1932,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.12.2';
-    const APP_BUILD = '2026-10-15-demo-flow';
+    const APP_VERSION = '0.13.0';
+    const APP_BUILD = '2026-10-15-commander-wall';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2070,6 +2090,7 @@
         auditLog = storedAudit;
         auditLoaded = true;
         dbReady = true;
+        renderHospitalDatalist();
         setTimeout(cmdInit, 0);
         migrated.events.forEach(ev => logAudit(ev.action, ev.patientId, ev.details, Date.now()));
         const queued = pendingAudit; pendingAudit = [];
@@ -2671,8 +2692,9 @@
         const entry = currentEntry();
         if (!entry) return;
         if (action === 'At CCS/loading area') {
-            if (!$('p-sector').value) $('p-sector').value = 'CCS / Loading area';
+            if (!$('p-sector').value) $('p-sector').value = 'Casualty Clearing';
             if (!$('p-area').value) $('p-area').value = 'Loading area';
+            markAtCcs(entry, 'move recorded');
         }
         if (action === 'Found at current location' && freshPosition()) { useCurrentGpsForPatient(action); return; }
         const changed = applyLocationFormToEntry(entry, action);
@@ -2681,6 +2703,7 @@
             entry.evacuated = true;
             touch(entry, ['evacuated']);
             logAudit('EVACUATION', entry.id, `Vehicle: ${entry.evacVehicle || '-'}, Dest: ${entry.evacDest || '-'} (location quick action)`, Date.now(), { uid: entry.uid });
+            if (!entry.evacDest) setTimeout(openHospitalChooser, 50);
         } else if (!changed) {
             // Record the operator's explicit confirmation even if the fields were already right.
             Object.assign(entry, MITTLib.appendLocationHistory(entry, Object.assign({}, locationForEntry(entry) || { timestamp: Date.now(), source: 'operator-label' }), { user: triagerName, reason: action, at: Date.now(), sector: entry.sector, landmark: entry.landmark, floor: entry.floor, area: entry.area, confidence: entry.locationConfidence }));
@@ -3127,6 +3150,7 @@
             sector: currentSector, landmark: '', floor: '', area: '', incidentCode,
             demos: '', allergies: '', notes: '', highRisk: false, interventions: {}, injuries: [],
             evacuated: false, evacDest: '', evacVehicle: '', hospitalId: '', handoverState: '', _rev: 1,
+            atCcs: MITTLib.isCcsLabel(currentSector), ccsAt: MITTLib.isCcsLabel(currentSector) ? now : null,
         };
         if (pos) Object.assign(entry, MITTLib.appendLocationHistory(entry, pos, { user: triagerName, source: 'gps-watch', reason: 'initial capture', confidence: entry.locationConfidence, sector: entry.sector }));
         else if (entry.sector) Object.assign(entry, MITTLib.appendLocationHistory(entry, { timestamp: now, source: 'sector-label' }, { user: triagerName, reason: 'initial sector label', source: 'sector-label', confidence: 'sector-only', sector: entry.sector }));
@@ -3229,6 +3253,9 @@
         $('p-evac-dest').value = entry.evacDest || '';
         $('p-hospital-id').value = entry.hospitalId || '';
         $('time-offset').value = '0';
+        const ccsBtn = $('btn-ccs');
+        ccsBtn.textContent = entry.atCcs ? 'At CCS ✓ (tap to undo)' : 'Mark as AT CCS (handed to casualty clearing)';
+        ccsBtn.style.backgroundColor = entry.atCcs ? 'var(--nhs-green)' : '';
         const evacBtn = $('btn-evac');
         evacBtn.textContent = entry.evacuated ? 'Mark as ON SCENE (undo evacuation)' : 'Mark as EVACUATED';
         evacBtn.style.backgroundColor = entry.evacuated ? '#555' : 'var(--nhs-dark-blue)';
@@ -3306,6 +3333,7 @@
         setText('sum-notes', n.join(' • ') || 'none recorded');
         const t = [];
         if (entry.evacuated) t.push('EVACUATED');
+        else if (entry.atCcs) t.push('AT CCS');
         if (entry.evacDest) t.push('→ ' + entry.evacDest);
         if (entry.evacVehicle) t.push(entry.evacVehicle);
         if (entry.handoverTo) t.push('care: ' + entry.handoverTo);
@@ -3480,6 +3508,74 @@
         logAudit(entry.evacuated ? 'EVACUATION' : 'EVACUATION_UNDO', entry.id, `Vehicle: ${entry.evacVehicle || '-'}, Dest: ${entry.evacDest || '-'}, Hospital ID: ${entry.hospitalId || '-'}`, ts, { uid: entry.uid });
         saveState(); updateDashboard();
         renderResultScreen(entry, { keepDetailsOpen: true });
+        if (entry.evacuated && !entry.evacDest) openHospitalChooser();
+    }
+    // Handed over to the Casualty Clearing Station (CCS / casualty clearing zone): the commander screen splits
+    // casualties into "in the field", "at CCS" and "evacuated". Set here, by the "At CCS" move button, when a
+    // phone whose sector is the CCS receives a handover, and for every patient a CCS phone creates.
+    function markAtCcs(entry, how) {
+        if (!entry || entry.atCcs) return false;
+        entry.atCcs = true; entry.ccsAt = Date.now();
+        if (!entry.sector || !MITTLib.isCcsLabel(entry.sector)) { entry.sector = 'Casualty Clearing'; touch(entry, ['sector']); }
+        touch(entry, ['atCcs']);
+        logAudit('CCS_ARRIVAL', entry.id, `Handed over to the casualty clearing station (${how})`, Date.now(), { uid: entry.uid });
+        return true;
+    }
+    function toggleCcs() {
+        const entry = currentEntry();
+        if (!entry) return;
+        commitDirtyFields('CCS');
+        if (entry.atCcs) {
+            entry.atCcs = false; entry.ccsAt = null; touch(entry, ['atCcs']);
+            logAudit('CCS_UNDO', entry.id, 'No longer marked as at the casualty clearing station', Date.now(), { uid: entry.uid });
+        } else {
+            markAtCcs(entry, 'patient screen');
+            if ($('p-sector').value !== entry.sector) $('p-sector').value = entry.sector;
+        }
+        saveState(); updateDashboard();
+        renderResultScreen(entry, { keepDetailsOpen: true });
+    }
+    function hospitalList() {
+        try { const v = JSON.parse(localStorage.getItem('mit_hospitals') || 'null'); if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean); } catch (e) {}
+        return MITTLib.DEFAULT_HOSPITALS.slice();
+    }
+    function saveHospitals(text) {
+        const list = String(text || '').split('\n').map(x => x.trim()).filter(Boolean);
+        try { if (list.length) localStorage.setItem('mit_hospitals', JSON.stringify(list)); else localStorage.removeItem('mit_hospitals'); } catch (e) {}
+        renderHospitalDatalist();
+        showToast(list.length ? `${list.length} hospitals saved.` : 'Default hospital list restored.');
+    }
+    function renderHospitalDatalist() {
+        const dl = $('hospital-list'); if (!dl) return;
+        clearChildren(dl);
+        hospitalList().forEach(h => dl.appendChild(el('option', { value: h })));
+    }
+    function openHospitalChooser() {
+        const entry = currentEntry(); if (!entry) return;
+        const box = $('hospital-btns'); clearChildren(box);
+        hospitalList().forEach(h => {
+            const b = el('button', { className: 'btn btn-secondary', text: h });
+            b.type = 'button'; b.style.margin = '0'; b.style.textAlign = 'left';
+            if (entry.evacDest === h) b.classList.add('active');
+            b.onclick = () => pickHospital(h);
+            box.appendChild(b);
+        });
+        $('hospital-other').value = entry.evacDest && hospitalList().indexOf(entry.evacDest) === -1 ? entry.evacDest : '';
+        $('hospital-modal').style.display = 'flex';
+    }
+    function closeHospitalChooser() { $('hospital-modal').style.display = 'none'; }
+    function pickHospital(name) {
+        const entry = currentEntry();
+        name = String(name || '').trim().slice(0, MITTLib.FIELD_INPUT_LIMITS.evacDest);
+        closeHospitalChooser();
+        if (!entry || !name) return;
+        $('p-evac-dest').value = name;
+        if (entry.evacDest !== name) {
+            entry.evacDest = name; touch(entry, ['evacDest']);
+            logAudit('EVAC_DESTINATION', entry.id, `Destination: ${name}`, Date.now(), { uid: entry.uid });
+            saveState(); updateDashboard();
+        }
+        updateSectionSummaries(entry);
     }
 
     // ---------- Body map ----------
@@ -4054,6 +4150,7 @@
             target = entry;
             logAudit('QR_ACCEPTED', entry.id, `Imported new record from ${sender} (rev ${meta.recordVersion}, hash ${wrapper && wrapper.h || '-'}${meta.expired ? ', OLDER THAN 8 H' : ''})`, Date.now(), { uid: entry.uid });
         }
+        if (MITTLib.isCcsLabel(currentSector) && !target.evacuated) markAtCcs(target, `received by ${triagerName || 'this phone'} at the CCS`);
         _pendingImport = null;
         $('preview-modal').style.display = 'none';
         saveState(); updateDashboard();
@@ -4555,8 +4652,8 @@
         setCount('count-p1', c.P1); setCount('count-p2', c.P2); setCount('count-p3', c.P3);
         setCount('count-nb', c.NOT_BREATHING); setCount('count-dead', c.DEAD); setCount('count-hold', c.P1_HOLD);
         $('dash-hold').style.display = c.P1_HOLD.total ? '' : 'none';
-        const evac = incidentLog.filter(e => e.evacuated).length;
-        setText('evac-summary', `Evacuated: ${evac} | On scene: ${incidentLog.length - evac} | Total records: ${incidentLog.length}`);
+        const st = MITTLib.stageCounts(incidentLog);
+        setText('evac-summary', `Field: ${st.field} | CCS: ${st.ccs} | Evacuated: ${st.evacuated} | Total records: ${incidentLog.length}`);
     }
     function patientAlerts(now) {
         const dups = duplicateIdSet();
@@ -5093,6 +5190,7 @@
 
     // ================= MODES & SETTINGS =================
     function openModesMenu() {
+        $('set-hospitals').value = hospitalList().join('\n');
         $('mode-gloved').checked = document.body.classList.contains('gloved');
         $('mode-onehand').checked = document.body.classList.contains('one-hand');
         $('mode-panic').checked = document.body.classList.contains('panic');
@@ -5247,7 +5345,7 @@
         incidentLog.forEach(e => {
             if (!e || !e.uid) return;
             live.add(e.uid);
-            const sig = `${e._rev || 0}:${e.updatedAt || 0}:${e.timestamp || 0}:${e.category}:${e.evacuated ? 1 : 0}:${e.lastReassessed || 0}`;
+            const sig = `${e._rev || 0}:${e.updatedAt || 0}:${e.timestamp || 0}:${e.category}:${e.evacuated ? 1 : 0}:${e.atCcs ? 1 : 0}:${e.evacDest || ''}:${e.lastReassessed || 0}`;
             if (CMD.seen[e.uid] !== sig) { CMD.seen[e.uid] = sig; CMD.dirty.add(e.uid); changed = true; }
         });
         Object.keys(CMD.seen).forEach(u => { if (!live.has(u)) delete CMD.seen[u]; });

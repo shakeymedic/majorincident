@@ -995,6 +995,29 @@ group('review v0.9.0: reading a device fix', () => {
         assert.strictEqual(n.likelySource, 'none');
         assert.strictEqual(lib.classifyLocationFix({}, now).ok, false);
     });
+    test('patientStage: explicit atCcs wins, sector label is the fallback, evacuated beats both', () => {
+        assert.strictEqual(lib.patientStage({ sector: 'Inner Cordon' }), 'field');
+        assert.strictEqual(lib.patientStage({ sector: 'Casualty Clearing' }), 'ccs');
+        assert.strictEqual(lib.patientStage({ area: 'CCS bay 2' }), 'ccs');
+        assert.strictEqual(lib.patientStage({ sector: 'Casualty Clearing', atCcs: false }), 'field');
+        assert.strictEqual(lib.patientStage({ sector: 'Inner Cordon', atCcs: true }), 'ccs');
+        assert.strictEqual(lib.patientStage({ atCcs: true, evacuated: true }), 'evacuated');
+        assert.strictEqual(lib.patientStage(null), 'field');
+        const c = lib.stageCounts([{ sector: 'A' }, { atCcs: true }, { evacuated: true, evacDest: 'QEHB' }, { evacuated: true, evacDest: ' QEHB ' }, { evacuated: true }]);
+        assert.deepStrictEqual(c, { field: 1, ccs: 1, evacuated: 3, hospitals: { QEHB: 2, 'Destination not recorded': 1 } });
+        assert.ok(lib.DEFAULT_HOSPITALS.length > 5);
+    });
+    test('atCcs and ccsAt survive the sanitiser, the handover QR and the all-patient transfer', () => {
+        const s = lib.sanitisePatientRecord({ id: 'X-TST-001', category: 'P2', atCcs: true, ccsAt: 1700000000000, evacDest: 'Heartlands Hospital' });
+        assert.strictEqual(s.atCcs, true); assert.strictEqual(s.ccsAt, 1700000000000);
+        assert.strictEqual(lib.sanitisePatientRecord({ id: 'X', category: 'P2' }).atCcs, undefined, 'older phones leave it unset so the sector fallback applies');
+        const w = lib.buildPatientPayload({ id: 'X-TST-001', uid: 'u1', category: 'P2', atCcs: true, ccsAt: 123, timestamp: 1 }, {}, { now: 1700000000000 });
+        assert.strictEqual(w.d.cc, 1); assert.strictEqual(w.d.ca, 123);
+        const dec = lib.decompressData(w.d);
+        assert.strictEqual(dec.atCcs, true); assert.strictEqual(dec.ccsAt, 123);
+        assert.strictEqual(lib.decompressData({ i: 'Y', c: 'P3' }).atCcs, false);
+        assert.ok(lib.ALL_PATIENT_FIELD_ORDER.indexOf('atCcs') > -1 && lib.ALL_PATIENT_FIELD_ORDER.indexOf('ccsAt') > -1);
+    });
     test('describeGeoError explains each code and tailors the fix to the phone', () => {
         const ios = lib.describeGeoError(1, 'ios');
         assert.strictEqual(ios.kind, 'denied');

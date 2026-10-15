@@ -15,128 +15,386 @@
 <script src="vendor/leaflet.js"></script>
 <script src="vendor/markercluster.js"></script>
 <style>
-    :root { --nhs-blue:#005EB8; --nhs-dark-blue:#003087; --nhs-green:#007F3B; --nhs-red:#DA291C; --nhs-yellow:#FAE100; --nhs-grey:#4C6272; --bg:#F0F4F5; --card:#fff; --text:#212b32; }
+    :root {
+        --nhs-blue:#005EB8; --nhs-dark-blue:#003087; --nhs-green:#007F3B; --nhs-red:#DA291C; --nhs-yellow:#FAE100; --nhs-grey:#4C6272;
+        --bg:#EEF2F5; --card:#fff; --text:#1c232b; --muted:#5a6b78; --line:#dfe5ea; --soft:#f5f7f9;
+        --radius:14px; --shadow:0 1px 2px rgba(16,24,40,0.06), 0 4px 16px rgba(16,24,40,0.06);
+        --font:"Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        --mono:"SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    }
     * { box-sizing:border-box; }
-    html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size:16px; }
-    header { background:var(--nhs-dark-blue); color:#fff; padding:0.6rem 1rem; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-    header h1 { font-size:1.15rem; margin:0; flex:1; min-width:200px; }
-    header .meta { font-size:0.85rem; opacity:0.95; }
-    .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:0.8rem; font-weight:bold; border:1px solid rgba(255,255,255,0.6); white-space:nowrap; }
-    .pill.live { color:#ccffcc; border-color:#ccffcc; }
-    .pill.bad { color:#ffcccc; border-color:#ffcccc; }
-    .pill.wait { color:#fff3a8; border-color:#fff3a8; }
-    main { padding:0.8rem; max-width:1500px; margin:0 auto; }
-    .card { background:var(--card); border-radius:10px; padding:0.9rem 1rem; margin-bottom:0.8rem; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
-    .card h2 { font-size:1.05rem; margin:0 0 0.5rem; color:var(--nhs-blue); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .card h2 small { font-weight:normal; color:var(--nhs-grey); font-size:0.85rem; }
-    .btn { border:none; border-radius:8px; padding:0.7rem 1rem; font-size:1rem; font-weight:bold; color:#fff; background:var(--nhs-blue); cursor:pointer; font-family:inherit; min-height:44px; }
+    html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--font); font-size:16px; line-height:1.35; -webkit-font-smoothing:antialiased; }
+    button { font-family:inherit; }
+    a { color:var(--nhs-blue); }
+
+    /* ---------- Header ---------- */
+    header { background:linear-gradient(90deg, #001f5c 0%, var(--nhs-dark-blue) 55%, #0a3c9e 100%); color:#fff; padding:0.55rem 1rem; display:flex; align-items:center; gap:14px; flex-wrap:wrap; box-shadow:0 2px 10px rgba(0,0,0,0.25); position:relative; z-index:2; }
+    .brand { display:flex; align-items:center; gap:12px; min-width:0; flex:1 1 320px; }
+    .brand .logo { width:40px; height:40px; border-radius:10px; background:#fff; padding:5px; flex:none; display:flex; align-items:center; justify-content:center; }
+    .brand .logo img { width:100%; height:100%; display:block; }
+    .brand h1 { font-size:1.05rem; margin:0; letter-spacing:0.01em; font-weight:800; line-height:1.15; }
+    .brand h1 small { display:block; font-size:0.72rem; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; opacity:0.75; }
+    #hdr-incident { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; font-size:0.95rem; }
+    #hdr-incident .inc-name { font-weight:800; font-size:1.05rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:38vw; }
+    .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:0.78rem; font-weight:700; background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.22); white-space:nowrap; letter-spacing:0.02em; }
+    .chip b { font-family:var(--mono); letter-spacing:0.12em; font-weight:700; }
+    .hdr-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-left:auto; }
+    .pill { display:inline-flex; align-items:center; gap:7px; padding:4px 12px 4px 9px; border-radius:999px; font-size:0.8rem; font-weight:800; border:1px solid rgba(255,255,255,0.35); white-space:nowrap; background:rgba(255,255,255,0.08); letter-spacing:0.03em; text-transform:uppercase; }
+    .pill::before { content:""; width:9px; height:9px; border-radius:50%; background:currentColor; box-shadow:0 0 0 0 currentColor; flex:none; }
+    .pill.live { color:#7ef0a2; border-color:rgba(126,240,162,0.6); }
+    .pill.live::before { animation:pulse 2s ease-out infinite; }
+    .pill.bad { color:#ff9f97; border-color:rgba(255,159,151,0.7); background:rgba(218,41,28,0.25); }
+    .pill.wait { color:#ffe27a; border-color:rgba(255,226,122,0.6); }
+    @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(126,240,162,0.7); } 70% { box-shadow:0 0 0 9px rgba(126,240,162,0); } 100% { box-shadow:0 0 0 0 rgba(126,240,162,0); } }
+    .meta { font-size:0.82rem; opacity:0.9; font-variant-numeric:tabular-nums; }
+    #hdr-updated { white-space:nowrap; }
+    #clock { font-size:1.15rem; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:0.02em; padding-left:10px; border-left:1px solid rgba(255,255,255,0.25); }
+    .hdr-btns { display:flex; gap:6px; }
+    .btn { border:none; border-radius:10px; padding:0.7rem 1.1rem; font-size:1rem; font-weight:700; color:#fff; background:var(--nhs-blue); cursor:pointer; min-height:44px; transition:background 0.15s, transform 0.05s; }
+    .btn:hover { background:#0a6fd0; }
+    .btn:active { transform:translateY(1px); }
     .btn.sec { background:var(--nhs-grey); }
-    .btn.small { padding:0.4rem 0.7rem; font-size:0.85rem; min-height:36px; }
-    .btn:disabled { opacity:0.5; }
-    input[type=text], input[type=password] { font-size:1.1rem; padding:0.7rem; border:2px solid #aeb7bd; border-radius:8px; width:100%; font-family:inherit; }
-    label { display:block; font-weight:bold; margin:0.6rem 0 0.25rem; }
-    .counts { display:grid; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); gap:8px; }
-    .count { border-radius:8px; padding:0.6rem; text-align:center; color:#fff; }
-    .count .n { font-size:2rem; font-weight:900; line-height:1; }
-    .count .l { font-size:0.8rem; font-weight:bold; margin-top:4px; }
-    .count .s { font-size:0.75rem; opacity:0.9; }
-    .grid2 { display:grid; grid-template-columns:1fr; gap:0.8rem; }
-    .grid2 > * , .card { min-width:0; }
-    #table-card { overflow-x:auto; }
-    @media (max-width:600px) { .card h2 small { display:block; width:100%; } header h1 { flex:1 1 100%; } }
+    .btn.sec:hover { background:#5d7585; }
+    .btn.ghost { background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.3); color:#fff; }
+    .btn.ghost:hover { background:rgba(255,255,255,0.22); }
+    .btn.small { padding:0.4rem 0.75rem; font-size:0.82rem; min-height:34px; border-radius:8px; }
+    .btn:disabled { opacity:0.5; cursor:default; }
+    .training { background:#ff9800; color:#000; text-align:center; font-weight:800; padding:6px 10px; letter-spacing:0.02em; font-size:0.92rem; }
+
+    /* ---------- Layout ---------- */
+    main { padding:0.9rem; max-width:1560px; margin:0 auto; }
+    .card { background:var(--card); border-radius:var(--radius); padding:0.95rem 1.05rem; margin-bottom:0.9rem; box-shadow:var(--shadow); border:1px solid rgba(16,24,40,0.04); }
+    .card h2 { font-size:0.95rem; margin:0 0 0.6rem; color:var(--text); display:flex; align-items:center; gap:10px; flex-wrap:wrap; letter-spacing:0.01em; }
+    .card h2 small { font-weight:500; color:var(--muted); font-size:0.82rem; margin-left:auto; text-align:right; }
+    .grid2 { display:grid; grid-template-columns:1fr; gap:0.9rem; }
+    .grid2 > *, .card { min-width:0; }
     @media (min-width:1000px) { .grid2 { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1fr); } }
-    #map { height:60vh; min-height:360px; border-radius:8px; border:2px solid #ccc; background:#e8ecef; z-index:1; }
-    table { width:100%; border-collapse:collapse; font-size:0.9rem; }
-    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #e3e7ea; vertical-align:top; }
-    th { background:var(--bg); font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; color:var(--nhs-grey); position:sticky; top:0; }
-    tr.evac td { opacity:0.55; }
-    tr.overdue td:first-child { border-left:4px solid var(--nhs-red); }
-    .tbl-wrap { max-height:70vh; overflow:auto; }
-    .cat-chip { display:inline-block; padding:3px 10px; border-radius:12px; font-weight:bold; font-size:0.85rem; white-space:nowrap; }
-    .muted { color:var(--nhs-grey); font-size:0.85rem; }
-    .warn { background:#fff3a8; border-left:5px solid #c9a700; padding:8px 10px; border-radius:6px; margin-bottom:0.6rem; }
-    .danger { background:#ffe3e0; border-left:5px solid var(--nhs-red); padding:8px 10px; border-radius:6px; margin-bottom:0.6rem; }
-    .training { background:#ff9800; color:#000; text-align:center; font-weight:bold; padding:6px; }
-    .phones { display:flex; gap:8px; flex-wrap:wrap; }
-    .phone { border:1px solid #d7dde2; border-radius:8px; padding:6px 10px; font-size:0.85rem; min-width:160px; }
-    .phone.stale { border-color:var(--nhs-red); background:#ffe3e0; }
-    .phone b { display:block; }
+    .hidden { display:none !important; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .muted { color:var(--muted); font-size:0.85rem; }
+    .warn { background:#fff3a8; border-left:5px solid #c9a700; padding:8px 12px; border-radius:8px; margin-bottom:0.7rem; }
+    .danger { background:#ffe3e0; border-left:5px solid var(--nhs-red); padding:8px 12px; border-radius:8px; margin-bottom:0.7rem; }
+
+    /* ---------- Sign in ---------- */
+    #signin { max-width:560px; margin:2.5rem auto 1rem; padding:1.6rem 1.6rem 1.4rem; }
+    #signin h2 { font-size:1.35rem; margin-bottom:0.3rem; }
+    #signin .lead { margin:0 0 1rem; }
+    .fields { display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width:520px) { .fields { grid-template-columns:3fr 2fr; } }
+    label { display:block; font-weight:700; margin:0 0 0.3rem; font-size:0.9rem; }
+    input[type=text], input[type=password] { font-size:1.35rem; padding:0.7rem 0.8rem; border:2px solid #b9c3cb; border-radius:10px; width:100%; font-family:var(--mono); letter-spacing:0.18em; text-transform:uppercase; background:#fff; color:var(--text); }
+    input[type=password] { letter-spacing:0.3em; }
+    input:focus { outline:3px solid rgba(0,94,184,0.35); border-color:var(--nhs-blue); }
+    .signin-foot { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:1rem; }
+    .signin-foot .muted { margin:0; }
+    .how { margin:1rem 0 0; padding:0.8rem 0.9rem; background:var(--soft); border-radius:10px; font-size:0.88rem; color:var(--muted); }
+    .how b { color:var(--text); }
+
+    /* ---------- Counts ---------- */
+    .count-wrap { padding:0.75rem 0.9rem; }
+    .counts { display:grid; grid-template-columns:repeat(auto-fit, minmax(118px, 1fr)); gap:10px; }
+    .count { border-radius:12px; padding:0.65rem 0.6rem 0.6rem; text-align:center; color:#fff; position:relative; overflow:hidden; box-shadow:inset 0 -3px 0 rgba(0,0,0,0.12); }
+    .count .n { font-size:2.4rem; font-weight:900; line-height:1; font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
+    .count .l { font-size:0.78rem; font-weight:800; margin-top:5px; letter-spacing:0.08em; text-transform:uppercase; }
+    .count .s { font-size:0.74rem; opacity:0.85; margin-top:2px; font-variant-numeric:tabular-nums; }
+    #counts-note { margin:0.6rem 0 0; }
+    .count .t { font-size:0.7rem; opacity:0.75; font-variant-numeric:tabular-nums; }
+    /* Field / CCS / evacuated strip */
+    .stages { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-top:10px; }
+    @media (max-width:1000px) { .stages { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+    .stage { border-radius:12px; padding:0.55rem 0.8rem; background:var(--soft); border:1px solid var(--line); border-left:6px solid var(--nhs-blue); display:flex; align-items:center; gap:12px; min-width:0; }
+    .stage.ccs { border-left-color:var(--nhs-green); }
+    .stage.evac { border-left-color:var(--nhs-grey); }
+    .stage .n { font-size:1.8rem; font-weight:900; line-height:1; font-variant-numeric:tabular-nums; }
+    .stage .lbl { font-weight:800; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.06em; }
+    .stage .sub { color:var(--muted); font-size:0.8rem; line-height:1.3; min-width:0; }
+    .stage .sub b { color:var(--text); }
+    .stage-tag { display:inline-block; padding:2px 7px; border-radius:6px; font-size:0.72rem; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; color:#fff; background:var(--nhs-blue); white-space:nowrap; vertical-align:middle; }
+    .stage-tag.ccs { background:var(--nhs-green); }
+    .stage-tag.evacuated { background:var(--nhs-grey); }
+    .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .seg button { border:none; background:#fff; color:var(--text); padding:6px 12px; font-size:0.85rem; font-weight:700; cursor:pointer; min-height:34px; }
+    .seg button + button { border-left:1px solid var(--line); }
+    .seg button.on { background:var(--nhs-blue); color:#fff; }
+    .hosp-row { display:flex; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); }
+    .hosp-row:last-child { border-bottom:none; }
+    .hosp-row .hname { flex:1; font-weight:700; }
+    .hosp-row .hn { font-weight:900; font-variant-numeric:tabular-nums; }
+    .where-h { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); font-weight:800; margin:8px 0 3px; }
+    .where-h:first-child { margin-top:0; }
+    .mk.mk-atccs { border-radius:8px; }
+    .stage.tst { border-left-color:#b35c00; }
+    .tool-chip { display:inline-block; padding:2px 7px; border-radius:6px; font-size:0.72rem; font-weight:800; letter-spacing:0.04em; white-space:nowrap; vertical-align:middle; border:2px solid var(--nhs-dark-blue); color:var(--nhs-dark-blue); background:transparent; }
+    .tool-chip.mitt { background:var(--nhs-dark-blue); color:#fff; }
+    .tool-chip.tst { border-color:#b35c00; color:#b35c00; border-style:dashed; }
+    tbody tr.pt { cursor:pointer; }
+    .att-row { cursor:pointer; }
+    .att-row:hover, tbody tr.pt:hover td { background:#eaf1fb; }
+    /* patient details */
+    .modal { position:fixed; inset:0; background:rgba(5,12,26,0.62); display:none; align-items:center; justify-content:center; z-index:1000; padding:12px; }
+    .modal.open { display:flex; }
+    .modal-box { background:var(--card); color:var(--text); border-radius:16px; max-width:900px; width:100%; max-height:94vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,0.45); border:1px solid var(--line); }
+    .pt-head { position:sticky; top:0; background:var(--card); padding:14px 18px 10px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; flex-wrap:wrap; z-index:1; }
+    .pt-head .pid { font-family:var(--mono); font-weight:900; font-size:1.35rem; letter-spacing:0.02em; }
+    .pt-head .x { margin-left:auto; }
+    .pt-body { padding:12px 18px 18px; display:grid; grid-template-columns:1fr 1fr; gap:12px 20px; }
+    @media (max-width:700px) { .pt-body { grid-template-columns:1fr; } }
+    .pt-sec h4 { margin:0 0 6px; font-size:0.74rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); }
+    .pt-sec.wide { grid-column:1 / -1; }
+    .kv { display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:0.92rem; }
+    .kv dt { color:var(--muted); white-space:nowrap; }
+    .kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
+    .tl { list-style:none; margin:0; padding:0; font-size:0.9rem; }
+    .tl li { display:grid; grid-template-columns:auto 1fr; gap:10px; padding:4px 0; border-bottom:1px solid var(--line); }
+    .tl li:last-child { border-bottom:none; }
+    .tl .t { font-family:var(--mono); color:var(--muted); font-size:0.82rem; white-space:nowrap; padding-top:2px; }
+    .ints { display:flex; flex-wrap:wrap; gap:6px; }
+    .int { background:var(--soft); border:1px solid var(--line); border-radius:8px; padding:4px 9px; font-size:0.85rem; font-weight:700; }
+    .int small { color:var(--muted); font-weight:500; margin-left:4px; }
+    .inj { display:flex; gap:14px; align-items:flex-start; }
+    .inj svg { width:90px; height:180px; flex:none; }
+    .inj ul { margin:0; padding-left:18px; font-size:0.9rem; }
+    .pt-note { white-space:pre-wrap; background:var(--soft); border-radius:8px; padding:8px 10px; font-size:0.92rem; }
+    .pt-flags { display:flex; gap:6px; flex-wrap:wrap; }
+    body.wall .modal-box { max-width:60vw; font-size:1.05vw; }
+    body.wall .pt-head .pid { font-size:1.8vw; }
+    body.wall .kv, body.wall .tl, body.wall .pt-note, body.wall .inj ul { font-size:1vw; }
+    body.wall .pt-sec h4 { font-size:0.8vw; }
+    body.wall .tool-chip, body.wall .stage-tag { font-size:0.8vw; }
+    body.wall .stages { grid-template-columns:minmax(0, 2fr) minmax(0, 3fr) minmax(0, 4fr) minmax(0, 2.5fr); }
+
+    /* ---------- Map ---------- */
+    #map { height:60vh; min-height:360px; border-radius:10px; border:1px solid var(--line); background:#e8ecef; z-index:1; }
+    .map-btns { margin-top:8px; }
     .mk-wrap { background:none; border:none; }
-    .mk { width:34px; height:34px; border-radius:50%; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:0.72rem; letter-spacing:-0.3px; }
+    .mk { width:34px; height:34px; border-radius:50%; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:0.72rem; letter-spacing:-0.3px; font-family:var(--font); }
     .mk.mk-tst { border:3px dashed #222; }
     .mk.mk-evac { opacity:0.55; }
     .mk.mk-ccs { width:40px; height:28px; border-radius:6px; background:#007F3B; color:#fff; font-size:0.8rem; }
     .map-pop { font-size:0.95rem; min-width:190px; }
     .map-pop-meta { font-size:0.82rem; color:#4C6272; margin-top:3px; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .hidden { display:none !important; }
-    /* Wall display: one screen, no scrolling, readable from across a room */
-    body.wall { overflow:hidden; height:100vh; display:flex; flex-direction:column; }
-    body.wall header { font-size:1.2rem; padding:0.5rem 1.2rem; }
-    body.wall header h1 { font-size:1.6rem; }
-    body.wall header .meta, body.wall .pill { font-size:1.05rem; }
-    body.wall #clock { font-size:1.6rem; font-weight:900; font-variant-numeric:tabular-nums; }
-    body.wall main { flex:1; min-height:0; display:flex; flex-direction:column; padding:0.6rem; max-width:none; width:100%; }
-    body.wall #dash { flex:1; min-height:0; display:flex; flex-direction:column; gap:0.6rem; }
-    body.wall .wall-grid { flex:1; }
-    body.wall .count-wrap { margin:0; }
-    body.wall .counts { grid-template-columns:repeat(7, 1fr); }
-    body.wall .count .n { font-size:4.2rem; }
-    body.wall .count .l { font-size:1.15rem; }
-    body.wall .count .s { font-size:0.95rem; }
+
+    /* ---------- Attention list ---------- */
+    .att { display:flex; flex-direction:column; gap:6px; }
+    .att-row { display:grid; grid-template-columns:auto auto minmax(0,1fr) auto; align-items:center; gap:10px; padding:8px 12px 8px 0; border-radius:10px; background:var(--soft); border-left:6px solid var(--nhs-grey); overflow:hidden; }
+    .att-row .cat-chip { margin-left:10px; }
+    .att-row .id { font-weight:900; font-family:var(--mono); letter-spacing:0.02em; white-space:nowrap; }
+    .att-row .why { min-width:0; }
+    .att-row .why b { display:block; }
+    .att-row .why span { color:var(--muted); font-size:0.85em; }
+    .att-row .age { color:var(--muted); font-size:0.85em; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .att-row.k0 { border-left-color:var(--nhs-red); }
+    .att-row.k1 { border-left-color:#b35c00; }
+    .att-row.k2 { border-left-color:#c9a700; }
+    .all-clear { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; background:#e8f5ee; color:#0d5c2d; font-weight:700; }
+    .all-clear::before { content:"✓"; width:28px; height:28px; border-radius:50%; background:var(--nhs-green); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:900; flex:none; }
+    .cat-chip { display:inline-block; padding:3px 10px; border-radius:8px; font-weight:800; font-size:0.82rem; white-space:nowrap; letter-spacing:0.02em; }
+
+    /* ---------- Table ---------- */
+    #table-card { overflow-x:auto; }
+    table { width:100%; border-collapse:separate; border-spacing:0; font-size:0.9rem; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { background:var(--soft); font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); position:sticky; top:0; z-index:1; }
+    th:first-child { border-radius:8px 0 0 0; } th:last-child { border-radius:0 8px 0 0; }
+    tbody tr:hover td { background:#f8fafc; }
+    tr.evac td { opacity:0.55; }
+    tr.overdue td:first-child { box-shadow:inset 4px 0 0 var(--nhs-red); }
+    tr.fresh td { background:#eef6ff; }
+    td .id { font-weight:800; font-family:var(--mono); letter-spacing:0.02em; white-space:nowrap; }
+    .tbl-wrap { max-height:70vh; overflow:auto; border-radius:8px; }
+    .flag { color:var(--nhs-red); font-weight:800; }
+
+    /* ---------- Phones ---------- */
+    .phones { display:flex; gap:8px; flex-wrap:wrap; }
+    .phone { border:1px solid var(--line); border-radius:10px; padding:8px 12px 8px 10px; font-size:0.85rem; min-width:170px; display:grid; grid-template-columns:auto 1fr; gap:3px 9px; align-items:center; background:var(--soft); }
+    .phone .dot { width:10px; height:10px; border-radius:50%; background:var(--nhs-green); grid-row:1 / span 2; box-shadow:0 0 0 3px rgba(0,127,59,0.15); }
+    .phone b { display:block; font-size:0.95rem; }
+    .phone b .muted { font-weight:500; font-family:var(--mono); font-size:0.75rem; }
+    .phone .ph-meta { color:var(--muted); font-size:0.8rem; }
+    .phone.stale { border-color:var(--nhs-red); background:#ffe3e0; }
+    .phone.stale .dot { background:var(--nhs-red); box-shadow:0 0 0 3px rgba(218,41,28,0.18); }
+    .phone.stale .ph-meta b { color:var(--nhs-red); }
+
+    /* ---------- Sectors ---------- */
+    .sector-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); }
+    .sector-row:last-child { border-bottom:none; }
+    .sector-row .sname { flex:1; font-weight:700; }
+
+    footer { text-align:center; color:var(--muted); font-size:0.8rem; padding:1rem; }
+    .legend { display:none; }
+
+    @media (max-width:600px) {
+        .stages { grid-template-columns:1fr; gap:6px; }
+        header { padding:0.5rem 0.7rem; gap:8px; }
+        .brand h1 small { display:none; }
+        #hdr-incident .inc-name { max-width:100%; }
+        .hdr-right { width:100%; margin-left:0; justify-content:space-between; }
+        #clock { display:none; }
+        .card h2 small { margin-left:0; width:100%; text-align:left; }
+        .count .n { font-size:2rem; }
+        .att-row { grid-template-columns:auto auto 1fr; row-gap:2px; }
+        .att-row .cat-chip { justify-self:start; }
+        .att-row .why { grid-column:1 / -1; grid-row:2; padding-left:10px; }
+        .att-row .age { grid-column:3; grid-row:1; justify-self:end; padding-right:2px; }
+    }
+
+    /* =====================================================================
+       Wall display: a TV or large screen in the command post. One screen, no
+       scrolling, dark theme for glare, sized in viewport units so 1080p and 4K
+       both read from across the room.
+       ===================================================================== */
+    body.wall { --bg:#0b1220; --card:#131c2e; --text:#eef2f7; --muted:#9fb0c3; --line:#243352; --soft:#1a2540; --shadow:none; background:var(--bg); color:var(--text); overflow:hidden; height:100vh; display:flex; flex-direction:column; font-size:clamp(14px, 1.05vw, 40px); }
+    body.wall header { background:linear-gradient(90deg, #0b1a3d 0%, #0f2a66 60%, #0b1a3d 100%); padding:0.5vw 1.2vw; gap:1.2vw; box-shadow:0 2px 14px rgba(0,0,0,0.5); flex-wrap:nowrap; }
+    body.wall .brand { flex:0 0 auto; gap:0.6vw; }
+    body.wall .brand .logo { width:2.6vw; height:2.6vw; border-radius:0.5vw; padding:0.3vw; }
+    body.wall .brand h1 { font-size:1.05vw; }
+    body.wall .brand h1 small { font-size:0.62vw; letter-spacing:0.16em; }
+    body.wall #btn-refresh { display:none; }
+    body.wall .hdr-right .pill, body.wall .hdr-right #hdr-updated { grid-column:1; }
+    body.wall .hdr-right { display:grid; grid-template-columns:auto auto auto; grid-template-rows:auto auto; align-items:center; column-gap:1vw; row-gap:0.25vw; }
+    body.wall .hdr-right #clock { grid-column:2; grid-row:1 / span 2; }
+    body.wall .hdr-right .hdr-btns { grid-column:3; grid-row:1 / span 2; }
+    body.wall .hdr-right .pill { justify-self:start; }
+    body.wall #hdr-updated { font-size:0.85vw; white-space:normal; }
+    body.wall #hdr-incident { flex:1 1 0; gap:0.3vw 0.6vw; font-size:1.1vw; min-width:0; flex-wrap:wrap; align-content:center; }
+    body.wall #hdr-incident .inc-name { font-size:1.5vw; font-weight:900; max-width:100%; flex:1 1 100%; letter-spacing:-0.01em; line-height:1.15; white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    body.wall .chip { font-size:0.95vw; padding:0.25vw 0.8vw; border-radius:999px; }
+    body.wall .hdr-right { gap:1vw; flex:0 0 auto; flex-wrap:nowrap; }
+    body.wall .hdr-btns { gap:0.4vw; }
+    body.wall .pill { font-size:0.95vw; padding:0.3vw 0.9vw 0.3vw 0.7vw; }
+    body.wall .pill::before { width:0.6vw; height:0.6vw; }
+    body.wall .meta { font-size:0.95vw; }
+    body.wall #clock { font-size:2.2vw; padding-left:1vw; }
+    body.wall .btn.small { font-size:0.85vw; min-height:0; padding:0.35vw 0.8vw; border-radius:0.5vw; }
+    body.wall .training { font-size:1.1vw; padding:0.35vw; }
+    body.wall main { flex:1; min-height:0; display:flex; flex-direction:column; padding:0.7vw; max-width:none; width:100%; }
+    body.wall #dash { flex:1; min-height:0; display:flex; flex-direction:column; gap:0.7vw; }
+    body.wall .card { border-radius:0.9vw; padding:0.8vw 1vw; margin:0; border:1px solid var(--line); }
+    body.wall .card h2 { font-size:1.25vw; margin-bottom:0.6vw; color:var(--text); }
+    body.wall .card h2 small { font-size:0.95vw; color:var(--muted); }
+    body.wall .danger { font-size:1.1vw; padding:0.5vw 0.9vw; margin:0; border-radius:0.5vw; background:#4a1410; color:#ffd9d6; border-left-width:0.4vw; }
     body.wall #counts-note, body.wall #signin, body.wall footer, body.wall #sectors-card, body.wall #table-card, body.wall .map-btns { display:none !important; }
-    body.wall .wall-grid { display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr); grid-template-rows:minmax(0, 1fr); gap:0.6rem; min-height:0; }
-    body.wall .wall-left, body.wall .wall-right { display:flex; flex-direction:column; min-height:0; gap:0.6rem; }
-    body.wall .wall-left .card, body.wall .wall-right .card { margin:0; }
-    body.wall #map-card { flex:1; display:flex; flex-direction:column; min-height:0; }
-    body.wall #map { flex:1; height:auto; min-height:0; }
-    body.wall #attention-card { flex:1; min-height:0; overflow:auto; font-size:1.3rem; }
-    body.wall #attention-card h2, body.wall #phones-card h2 { font-size:1.3rem; }
-    body.wall #attention .cat-chip { font-size:1.1rem; padding:5px 14px; }
-    body.wall #phones-card { max-height:32%; overflow:auto; }
-    body.wall .phone { font-size:1.05rem; }
-    body.wall .count-wrap { padding:0.6rem 0.8rem; margin:0; }
-    @media (max-width:1100px) { body.wall .wall-grid { grid-template-columns:1fr; grid-template-rows:minmax(0, 3fr) minmax(0, 2fr); } body.wall .counts { grid-template-columns:repeat(4, 1fr); } body.wall .count .n { font-size:3rem; } }
-    footer { text-align:center; color:var(--nhs-grey); font-size:0.8rem; padding:1rem; }
+    /* counts: seven tiles across */
+    body.wall .count-wrap { padding:0.6vw 0.8vw; }
+    body.wall .counts { grid-template-columns:repeat(7, 1fr); gap:0.6vw; }
+    body.wall .count { border-radius:0.7vw; padding:0.6vw 0.4vw 0.6vw; box-shadow:inset 0 -0.3vw 0 rgba(0,0,0,0.18); }
+    body.wall .count .n { font-size:5.6vw; letter-spacing:-0.03em; }
+    body.wall .count .l { font-size:1.15vw; margin-top:0.3vw; }
+    body.wall .count .s { font-size:0.95vw; margin-top:0.15vw; }
+    body.wall .count .t { font-size:0.8vw; }
+    body.wall .stages { gap:0.6vw; margin-top:0.6vw; }
+    body.wall .stage { border-radius:0.7vw; padding:0.4vw 0.9vw; gap:0.9vw; border-left-width:0.45vw; }
+    body.wall .stage .n { font-size:2.6vw; }
+    body.wall .stage .lbl { font-size:0.95vw; }
+    body.wall .stage .sub { font-size:0.85vw; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.25; }
+    body.wall .stage-tag { font-size:0.75vw; padding:0.15vw 0.5vw; border-radius:0.3vw; }
+    body.wall .seg { display:none; }
+    /* two columns: map left, attention + phones right */
+    body.wall .wall-grid { flex:1; display:grid; grid-template-columns:minmax(0, 3fr) minmax(0, 2fr); grid-template-rows:minmax(0, 1fr); gap:0.7vw; min-height:0; }
+    body.wall .wall-left, body.wall .wall-right { display:flex; flex-direction:column; min-height:0; gap:0.7vw; }
+    body.wall #map-card { flex:1; display:flex; flex-direction:column; min-height:0; padding:0.6vw; }
+    body.wall #map-card h2 { position:absolute; left:1.4vw; top:1.2vw; z-index:2; margin:0; background:rgba(11,18,32,0.78); padding:0.35vw 0.8vw; border-radius:0.5vw; font-size:1vw; backdrop-filter:blur(4px); }
+    body.wall #map-card { position:relative; }
+    body.wall #map { flex:1; height:auto; min-height:0; border-radius:0.6vw; border:none; background:#0e1626; }
+    body.wall .leaflet-tile-pane { filter:brightness(0.62) invert(1) contrast(2.6) hue-rotate(195deg) saturate(0.35) brightness(0.75); }
+    body.wall .leaflet-control-attribution { background:rgba(11,18,32,0.7); color:#9fb0c3; font-size:0.65vw; }
+    body.wall .leaflet-control-attribution a { color:#c3d0de; }
+    body.wall .leaflet-control-scale-line { background:rgba(11,18,32,0.7); color:#e5ebf2; border-color:#9fb0c3; font-size:0.7vw; }
+    body.wall .leaflet-control-zoom { display:none; }
+    body.wall .mk { width:2.1vw; height:2.1vw; font-size:0.78vw; border-width:0.16vw; }
+    body.wall .mk.mk-ccs { width:2.6vw; height:1.7vw; font-size:0.85vw; }
+    body.wall .marker-cluster { font-size:1vw; }
+    body.wall .marker-cluster div { width:2.2vw; height:2.2vw; line-height:2.2vw; margin:0.2vw; }
+    body.wall .marker-cluster { width:2.6vw !important; height:2.6vw !important; margin-left:-1.3vw !important; margin-top:-1.3vw !important; }
+    body.wall #attention-card { flex:1; min-height:0; display:flex; flex-direction:column; }
+    body.wall #attention { flex:1; min-height:0; overflow:hidden; position:relative; }
+    body.wall #attention::after { content:""; position:absolute; left:0; right:0; bottom:0; height:2.5vw; background:linear-gradient(rgba(19,28,46,0), var(--card)); pointer-events:none; }
+    body.wall .att { gap:0.45vw; }
+    body.wall .att-row { font-size:1.12vw; gap:0.7vw; padding:0.55vw 0.9vw 0.55vw 0; border-radius:0.6vw; border-left-width:0.45vw; background:var(--soft); }
+    body.wall .att-row .cat-chip { margin-left:0.8vw; }
+    body.wall .att-row .why span { font-size:0.85em; }
+    body.wall .cat-chip { font-size:1vw; padding:0.25vw 0.7vw; border-radius:0.4vw; }
+    body.wall .all-clear { font-size:1.4vw; padding:1vw; border-radius:0.7vw; background:#0f3a24; color:#8ff0b4; }
+    body.wall .all-clear::before { width:2vw; height:2vw; font-size:1.2vw; }
+    body.wall #phones-card { flex:0 0 auto; max-height:34%; overflow:hidden; }
+    body.wall .phones { gap:0.5vw; }
+    body.wall .phone { font-size:1vw; min-width:0; flex:1 1 calc(50% - 0.5vw); max-width:calc(50% - 0.25vw); padding:0.4vw 0.8vw 0.4vw 0.7vw; border-radius:0.6vw; background:var(--soft); border-color:var(--line); display:flex; align-items:center; gap:0.6vw; white-space:nowrap; overflow:hidden; }
+    body.wall .phone b { display:inline; flex:none; }
+    body.wall .phone .ph-meta { overflow:hidden; text-overflow:ellipsis; }
+    body.wall .phone .dot { width:0.8vw; height:0.8vw; box-shadow:0 0 0 0.25vw rgba(126,240,162,0.2); background:#7ef0a2; }
+    body.wall .phone b { font-size:1.1vw; }
+    body.wall .phone .ph-meta { font-size:0.9vw; }
+    body.wall .phone.stale { background:#4a1410; border-color:var(--nhs-red); }
+    body.wall .phone.stale .dot { background:#ff6b61; box-shadow:0 0 0 0.25vw rgba(255,107,97,0.25); animation:blink 1.2s steps(2) infinite; }
+    @keyframes blink { to { opacity:0.35; } }
+    body.wall .muted { color:var(--muted); font-size:0.95em; }
+    /* legend strip along the bottom */
+    body.wall .legend { display:flex; gap:0.3vw 1.1vw; align-items:center; justify-content:center; flex-wrap:wrap; padding:0.3vw 1vw; font-size:0.85vw; color:var(--muted); background:var(--card); border:1px solid var(--line); border-radius:0.7vw; }
+    body.wall .legend .lg { display:inline-flex; align-items:center; gap:0.45vw; white-space:nowrap; }
+    body.wall .legend .sw { width:1.1vw; height:1.1vw; border-radius:50%; border:0.14vw solid #fff; flex:none; }
+    body.wall .legend .sw.dash { border:0.14vw dashed #ddd; }
+    body.wall .legend .sw.sq { border-radius:0.2vw; }
+    body.wall .legend .spacer { flex:1; }
+    @media (max-aspect-ratio: 4/3) { body.wall .wall-grid { grid-template-columns:1fr; grid-template-rows:minmax(0, 3fr) minmax(0, 2fr); } body.wall .count .n { font-size:4.2vw; } body.wall .count .l { font-size:0.95vw; } body.wall .count .s { font-size:0.8vw; } body.wall .legend .spacer, body.wall .legend .lg.opt { display:none; } }
+    @media (max-width:1100px) { body.wall { font-size:14px; } body.wall header { flex-wrap:wrap; } body.wall #hdr-incident { flex-wrap:wrap; } body.wall #hdr-incident .inc-name { font-size:1.3rem; } body.wall .legend { display:none; } }
 </style>
 </head>
 <body>
 <header>
-    <h1>Incident Commander <span class="meta" id="hdr-incident"></span></h1>
-    <span class="pill wait" id="status-pill">Not connected</span>
-    <span class="meta" id="hdr-updated"></span>
-    <span id="clock" class="meta"></span>
-    <button type="button" class="btn small sec" id="btn-refresh" onclick="refreshNow()">Refresh now</button>
-    <button type="button" class="btn small sec" id="btn-wall" onclick="toggleWall()" style="display:none;">Wall display</button>
-    <button type="button" class="btn small sec" id="btn-signout" onclick="signOut()" style="display:none;">Sign out</button>
-    <a class="btn small" id="btn-start-page" href="index.html#start" style="display:none; background:#000; text-decoration:none;">↩ Start page</a>
+    <div class="brand">
+        <div class="logo"><img src="icon.svg" alt=""></div>
+        <h1><small>Major Incident Triage</small>Incident Commander</h1>
+    </div>
+    <div id="hdr-incident"></div>
+    <div class="hdr-right">
+        <span class="pill wait" id="status-pill">Not connected</span>
+        <span class="meta" id="hdr-updated"></span>
+        <span id="clock" class="meta"></span>
+        <div class="hdr-btns">
+            <button type="button" class="btn small ghost" id="btn-refresh" onclick="refreshNow()">Refresh</button>
+            <button type="button" class="btn small ghost" id="btn-wall" onclick="toggleWall()" style="display:none;">Wall display</button>
+            <button type="button" class="btn small ghost" id="btn-fs" onclick="toggleFullscreen()" style="display:none;" title="Full screen (F)">⛶</button>
+            <button type="button" class="btn small ghost" id="btn-signout" onclick="signOut()" style="display:none;">Sign out</button>
+            <a class="btn small ghost" id="btn-start-page" href="index.html#start" style="display:none; text-decoration:none;">↩ Start page</a>
+        </div>
+    </div>
 </header>
 <div class="training hidden" id="training-banner">TRAINING INCIDENT — practice data, not real patients</div>
 <main>
     <div class="card" id="signin">
         <h2>Open an incident</h2>
-        <p class="muted">Enter the code and PIN shown on the commander's phone (start screen → "I'm the incident commander", or ⚙ Settings → Incident &amp; training). On that phone this page signs in by itself. It refreshes every 30 seconds while open. Data is held for 24 hours after the last update, then deleted.</p>
-        <label for="in-code">Incident code</label>
-        <input type="text" id="in-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="e.g. K7M2QX">
-        <label for="in-pin">PIN</label>
-        <input type="password" id="in-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 digits">
-        <div class="danger hidden" id="signin-error"></div>
-        <button type="button" class="btn" style="margin-top:0.8rem;" onclick="signIn()">Open dashboard</button>
-        <p class="muted" style="margin:1rem 0 0;">No incident? <a href="#DEMO">See the demo incident</a> (made up, updates by itself, nothing sent or received).</p>
+        <p class="muted lead">Enter the code and PIN shown on the commander's phone. The page refreshes every 30 seconds while open.</p>
+        <div class="fields">
+            <div>
+                <label for="in-code">Incident code</label>
+                <input type="text" id="in-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="K7M2QX">
+            </div>
+            <div>
+                <label for="in-pin">PIN</label>
+                <input type="password" id="in-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••">
+            </div>
+        </div>
+        <div class="danger hidden" id="signin-error" style="margin-top:0.8rem;"></div>
+        <div class="signin-foot">
+            <button type="button" class="btn" onclick="signIn()">Open dashboard</button>
+            <p class="muted">No incident? <a href="#DEMO">See the demo incident</a> (made up, updates by itself, nothing sent or received).</p>
+        </div>
+        <div class="how"><b>Where the code comes from:</b> the commander's phone shows it on the start screen under <b>"I'm the incident commander"</b>, or in ⚙ Settings → Incident &amp; training. On that phone this page signs in by itself. Data is held for 24 hours after the last update, then deleted. For a TV in the command post, use <b>Wall display</b> (or add <b>/wall</b> to the link) and the ⛶ button for full screen.</div>
     </div>
 
     <div id="dash" class="hidden">
         <div class="danger hidden" id="conn-warn"></div>
         <div class="card count-wrap">
             <div class="counts" id="counts"></div>
-            <p class="muted" id="counts-note" style="margin:0.5rem 0 0;"></p>
+            <div class="stages" id="stages"></div>
+            <p class="muted" id="counts-note"></p>
         </div>
         <div class="grid2 wall-grid">
             <div class="wall-left">
                 <div class="card" id="map-card">
                     <h2>Map <small id="map-note"></small></h2>
                     <div id="map"></div>
-                    <div class="row map-btns" style="margin-top:8px;">
+                    <div class="row map-btns">
                         <button type="button" class="btn small sec" onclick="fitMap()">Fit all</button>
                         <button type="button" class="btn small sec" onclick="exportFile('gpx')">Save GPX</button>
                         <button type="button" class="btn small sec" onclick="exportFile('kml')">Save KML</button>
@@ -149,19 +407,27 @@
                     <div class="phones" id="phones"></div>
                 </div>
                 <div class="card" id="sectors-card">
-                    <h2>By sector</h2>
+                    <h2>Where casualties are <small id="where-note"></small></h2>
                     <div id="sectors"></div>
                 </div>
             </div>
             <div class="wall-right">
                 <div class="card" id="attention-card">
-                    <h2>Needs attention <small>overdue reassessments, tourniquets, high risk</small></h2>
+                    <h2>Needs attention <small id="attention-note">overdue reassessments, tourniquets, high risk</small></h2>
                     <div id="attention"></div>
                 </div>
                 <div class="card" id="table-card">
                     <h2>Casualties <small id="list-note"></small></h2>
-                    <div class="row" style="margin-bottom:6px;">
-                        <label style="margin:0; font-weight:normal;"><input type="checkbox" id="show-evac" onchange="render()"> Include evacuated</label>
+                    <div class="row" style="margin-bottom:8px;">
+                        <span class="seg" id="stage-seg">
+                            <button type="button" class="on" data-stage="scene" onclick="setStageFilter('scene')">On scene</button>
+                            <button type="button" data-stage="field" onclick="setStageFilter('field')">Field</button>
+                            <button type="button" data-stage="ccs" onclick="setStageFilter('ccs')">CCS</button>
+                            <button type="button" data-stage="evacuated" onclick="setStageFilter('evacuated')">Evacuated</button>
+                            <button type="button" data-stage="tst" onclick="setStageFilter('tst')">TST only</button>
+                            <button type="button" data-stage="all" onclick="setStageFilter('all')">All</button>
+                        </span>
+                        <label style="margin:0; font-weight:normal; display:none;"><input type="checkbox" id="show-evac" onchange="render()"> Include evacuated</label>
                     </div>
                     <div class="tbl-wrap">
                         <table id="tbl">
@@ -172,8 +438,22 @@
                 </div>
             </div>
         </div>
+        <div class="legend" id="legend"></div>
     </div>
 </main>
+<div class="modal" id="pt-modal" role="dialog" aria-modal="true" aria-labelledby="pt-id" onclick="if (event.target === this) closePatient()">
+    <div class="modal-box">
+        <div class="pt-head">
+            <span class="pid" id="pt-id"></span>
+            <span id="pt-chips" class="pt-flags"></span>
+            <span class="x row">
+                <button type="button" class="btn small sec" onclick="showPatientOnMap()">Show on map</button>
+                <button type="button" class="btn small" onclick="closePatient()">Close</button>
+            </span>
+        </div>
+        <div class="pt-body" id="pt-body"></div>
+    </div>
+</div>
 <footer>Major Incident Triage — commander view. An aid for a live incident, not a clinical record: the phones keep the audit trail.</footer>
 <script>
     const REFRESH_MS = 30 * 1000;
@@ -225,13 +505,32 @@
         cfg = null; data = null; etag = ''; knownSeq = '';
         try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
         if (timer) clearTimeout(timer);
-        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = 'none';
+        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none'; $('btn-start-page').style.display = 'none';
         $('training-banner').classList.add('hidden');
-        setStatus('wait', 'Not connected'); setText('hdr-incident', ''); setText('hdr-updated', '');
+        lastOkAt = 0; setStatus('wait', 'Not connected'); renderHeader(); setUpdated('');
     }
     function setText(id, t) { $(id).textContent = t; }
+    let updBase = '';
+    function setUpdated(t) { updBase = t; tickClock(); }
+    function agoShort(ms) { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? s + ' s ago' : s < 3600 ? Math.floor(s / 60) + ' min ago' : Math.floor(s / 3600) + ' h ' + Math.floor((s % 3600) / 60) + ' min ago'; }
+    function elapsedText(ms) { const m = Math.max(0, Math.floor(ms / 60000)); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min'; }
+    function toggleFullscreen() {
+        try {
+            if (document.fullscreenElement) document.exitFullscreen();
+            else document.documentElement.requestFullscreen();
+        } catch (e) {}
+    }
+    function renderHeader() {
+        if (!data) { $('hdr-incident').innerHTML = ''; return; }
+        const bits = [];
+        if (data.name) bits.push(`<span class="inc-name">${esc(data.name)}</span>`);
+        bits.push(`<span class="chip">Code <b>${esc(data.code || '')}</b></span>`);
+        if (data.incidentCode) bits.push(`<span class="chip">Incident <b>${esc(data.incidentCode)}</b></span>`);
+        if (data.createdAt) bits.push(`<span class="chip">Running <b id="hdr-elapsed">${elapsedText(Date.now() - data.createdAt)}</b></span>`);
+        $('hdr-incident').innerHTML = bits.join('');
+    }
     function start() {
-        $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = '';
+        $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
         $('btn-signout').textContent = 'Sign out';
         refreshNow();
     }
@@ -243,7 +542,11 @@
         if (map) setTimeout(() => { map.invalidateSize(); fitMap(); }, 150);
     }
     function toggleWall() { setWall(!document.body.classList.contains('wall')); }
-    function tickClock() { $('clock').textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+    function tickClock() {
+        $('clock').textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        $('hdr-updated').textContent = updBase ? updBase + (lastOkAt ? ' · ' + agoShort(Date.now() - lastOkAt) : '') : '';
+        const el = $('hdr-elapsed'); if (el && data && data.createdAt) el.textContent = elapsedText(Date.now() - data.createdAt);
+    }
     setInterval(tickClock, 1000); tickClock();
     // Demo: the made-up incident from MITTLib.buildDemoScenario, built in the page. Casualties arrive, deteriorate and
     // are evacuated over the first few minutes. Nothing is fetched or sent.
@@ -253,7 +556,7 @@
         try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
         demo = { startedAt: Date.now() };
         $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
-        $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = '';
+        $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
         $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
         demoTick();
     }
@@ -269,7 +572,7 @@
         lastOkAt = now;
         setStatus('live', 'Demo');
         const next = d.incident.nextEventInMs;
-        setText('hdr-updated', `Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
+        setUpdated(`Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
         $('conn-warn').classList.add('hidden');
         render();
         setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Tap ↩ Start page to go back and pick another role.');
@@ -288,7 +591,7 @@
             if (knownSeq) headers['X-Incident-Seq'] = knownSeq;
             const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}`, { headers, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
             if (to) clearTimeout(to);
-            if (r.status === 304) { lastOkAt = Date.now(); setStatus('live', 'Live'); setText('hdr-updated', `Checked ${time(Date.now())} • no change`); $('conn-warn').classList.add('hidden'); render(); return; }
+            if (r.status === 304) { lastOkAt = Date.now(); setStatus('live', 'Live'); setUpdated(`Checked ${time(Date.now())} • no change`); $('conn-warn').classList.add('hidden'); render(); return; }
             if (r.status === 401 || r.status === 404 || r.status === 410 || r.status === 429) {
                 let msg = 'Could not open this incident.';
                 try { msg = (await r.json()).message || msg; } catch (e) {}
@@ -304,7 +607,7 @@
             knownSeq = r.headers.get('X-Incident-Seq') || (data.seq !== undefined ? String(data.seq) : '');
             lastOkAt = Date.now();
             setStatus('live', 'Live');
-            setText('hdr-updated', `Updated ${time(Date.now())}`);
+            setUpdated(`Updated ${time(Date.now())}`);
             $('conn-warn').classList.add('hidden');
             render();
         } catch (e) {
@@ -322,27 +625,62 @@
     function place(r) { return [r.sector, r.landmark, r.floor ? 'Floor ' + r.floor : '', r.area].filter(Boolean).join(', '); }
     function loc(r) { return r.currentLocation || r.location || null; }
     function cat(c) { const i = MITTLib.CATEGORY_INFO[c] || { short: c, colour: '#4C6272', text: '#fff' }; return `<span class="cat-chip" style="background:${i.colour};color:${i.text}">${esc(i.short)}</span>`; }
-    function visibleRecords() { const all = (data && data.records) || []; return $('show-evac').checked ? all : all.filter(r => !r.evacuated); }
+    let stageFilter = 'scene';   // scene | field | ccs | evacuated | all
+    function setStageFilter(f) {
+        stageFilter = f;
+        $('show-evac').checked = f === 'all' || f === 'evacuated';
+        document.querySelectorAll('#stage-seg button').forEach(b => b.classList.toggle('on', b.getAttribute('data-stage') === f));
+        render();
+    }
+    const stage = (r) => MITTLib.patientStage(r);
+    // TST = the sieve (first look, anyone); MITT = the sort (clinician). A patient who has only had the sieve still needs the sort.
+    function hadMitt(r) { return r.tool === 'MITT' || (r.triageHistory || []).some(t => t.tool === 'MITT'); }
+    function toolChip(r) { return hadMitt(r) ? '<span class="tool-chip mitt" title="Has had MITT (sort) triage">MITT</span>' : '<span class="tool-chip tst" title="TST sieve only: no MITT sort yet">TST only</span>'; }
+    const byUid = (uid) => ((data && data.records) || []).find(r => r.uid === uid) || null;
+    function stageTag(r) { const st = stage(r); const i = MITTLib.STAGE_INFO[st]; return `<span class="stage-tag ${st}">${esc(i.short)}</span>`; }
+    function visibleRecords() {
+        const all = (data && data.records) || [];
+        if (stageFilter === 'all') return all;
+        if (stageFilter === 'scene') return all.filter(r => !r.evacuated);
+        if (stageFilter === 'tst') return all.filter(r => !r.evacuated && !hadMitt(r));
+        return all.filter(r => stage(r) === stageFilter);
+    }
 
     function render() {
         if (!data) return;
         const now = Date.now();
-        setText('hdr-incident', `${data.name ? data.name + ' • ' : ''}code ${data.code}${data.incidentCode ? ' • incident ' + data.incidentCode : ''}`);
+        renderHeader();
         $('training-banner').classList.toggle('hidden', !data.training);
         const all = data.records || [];
         const onScene = all.filter(r => !r.evacuated);
         const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
-        $('counts').innerHTML = order.map(c => { const i = MITTLib.CATEGORY_INFO[c]; const n = onScene.filter(r => r.category === c).length, t = all.filter(r => r.category === c).length; return `<div class="count" style="background:${i.colour};color:${i.text}"><div class="n">${n}</div><div class="l">${esc(i.short)}</div><div class="s">${t} in total</div></div>`; }).join('') +
-            `<div class="count" style="background:#4C6272"><div class="n">${all.filter(r => r.evacuated).length}</div><div class="l">Evacuated</div><div class="s">${all.length} casualties in total</div></div>`;
-        setText('counts-note', `On scene counts (big number) and totals including evacuated. Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
+        $('counts').innerHTML = order.map(c => { const i = MITTLib.CATEGORY_INFO[c]; const here = onScene.filter(r => r.category === c); const n = here.length, t = all.filter(r => r.category === c).length, cc = here.filter(r => stage(r) === 'ccs').length; return `<div class="count" style="background:${i.colour};color:${i.text}"><div class="n">${n}</div><div class="l">${esc(i.short)}</div><div class="s">${n - cc} field • ${cc} CCS</div><div class="t">${t} in total</div></div>`; }).join('') +
+            `<div class="count" style="background:#4C6272"><div class="n">${all.filter(r => r.evacuated).length}</div><div class="l">Evacuated</div><div class="s">${Object.keys(MITTLib.stageCounts(all).hospitals).length} destination${Object.keys(MITTLib.stageCounts(all).hospitals).length === 1 ? '' : 's'}</div><div class="t">${all.length} casualties in total</div></div>`;
+        const sc = MITTLib.stageCounts(all);
+        const hosp = Object.keys(sc.hospitals).sort((a, b) => sc.hospitals[b] - sc.hospitals[a]);
+        const fieldSectors = {};
+        onScene.filter(r => stage(r) === 'field').forEach(r => { const k = r.sector || 'No sector'; fieldSectors[k] = (fieldSectors[k] || 0) + 1; });
+        const fieldSub = Object.keys(fieldSectors).sort().map(k => `${esc(k)} <b>${fieldSectors[k]}</b>`).join(' • ') || 'nobody left in the field';
+        const ccsCats = order.filter(c => onScene.some(r => stage(r) === 'ccs' && r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${onScene.filter(r => stage(r) === 'ccs' && r.category === c).length}</b>`).join(' • ') || 'none yet';
+        const hospSub = hosp.map(h => `${esc(h)} <b>${sc.hospitals[h]}</b>`).join(' • ') || 'none yet';
+        $('stages').innerHTML = `<div class="stage"><div class="n">${sc.field}</div><div><div class="lbl">In the field</div><div class="sub">${fieldSub}</div></div></div>` +
+            `<div class="stage ccs"><div class="n">${sc.ccs}</div><div><div class="lbl">At CCS</div><div class="sub">${ccsCats}</div></div></div>` +
+            `<div class="stage evac"><div class="n">${sc.evacuated}</div><div><div class="lbl">Evacuated</div><div class="sub">${hospSub}</div></div></div>` +
+            (() => { const t = onScene.filter(r => !hadMitt(r)); const sub = order.filter(c => t.some(r => r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${t.filter(r => r.category === c).length}</b>`).join(' • '); return `<div class="stage tst"><div class="n">${t.length}</div><div><div class="lbl">TST only</div><div class="sub">${t.length ? 'no MITT sort yet: ' + sub : 'everyone on scene has had MITT'}</div></div></div>`; })();
+        setText('counts-note', `Big number = on scene now (field + CCS); "in total" includes evacuated. CCS = casualty clearing station (set on the phone, or inferred from a "Casualty Clearing" sector on older phones). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
         // phones
         const devs = data.devices || [];
-        $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}"><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span></b>${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} records • last report ${age(d.lastSeen)}${d.stale ? ' • <b style="color:#DA291C">not heard from</b>' : ''}</div>`).join('') || '<p class="muted">No phones yet.</p>';
+        $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span></b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
         setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes`);
         // sectors
         const sectors = {};
-        onScene.forEach(r => { const s = r.sector || 'No sector'; sectors[s] = sectors[s] || { P1: 0, P1_HOLD: 0, P2: 0, P3: 0, NOT_BREATHING: 0, DEAD: 0, n: 0 }; sectors[s][r.category] = (sectors[s][r.category] || 0) + 1; sectors[s].n++; });
-        $('sectors').innerHTML = Object.keys(sectors).sort().map(s => `<div class="row" style="padding:4px 0;border-bottom:1px solid #e3e7ea;"><b style="flex:1">${esc(s)}</b>${order.filter(c => sectors[s][c]).map(c => `${cat(c)} ${sectors[s][c]}`).join(' ')}<span class="muted">${sectors[s].n} on scene</span></div>`).join('') || '<p class="muted">No sectors recorded yet.</p>';
+        onScene.filter(r => stage(r) === 'field').forEach(r => { const s = r.sector || 'No sector'; sectors[s] = sectors[s] || { P1: 0, P1_HOLD: 0, P2: 0, P3: 0, NOT_BREATHING: 0, DEAD: 0, n: 0 }; sectors[s][r.category] = (sectors[s][r.category] || 0) + 1; sectors[s].n++; });
+        const ccsRecs = onScene.filter(r => stage(r) === 'ccs');
+        const sectorRows = Object.keys(sectors).sort().map(s => `<div class="sector-row"><span class="sname">${esc(s)}</span>${order.filter(c => sectors[s][c]).map(c => `${cat(c)} <b>${sectors[s][c]}</b>`).join(' ')}<span class="muted">${sectors[s].n}</span></div>`).join('') || '<p class="muted">Nobody left in the field.</p>';
+        const ccsRow = ccsRecs.length ? `<div class="sector-row"><span class="sname">Casualty clearing station</span>${order.filter(c => ccsRecs.some(r => r.category === c)).map(c => `${cat(c)} <b>${ccsRecs.filter(r => r.category === c).length}</b>`).join(' ')}<span class="muted">${ccsRecs.length}</span></div>` : '<p class="muted">None at the CCS yet.</p>';
+        const hospRows = hosp.map(h => { const rs = all.filter(r => r.evacuated && (String(r.evacDest || '').trim() || 'Destination not recorded') === h); return `<div class="hosp-row"><span class="hname">${esc(h)}</span>${order.filter(c => rs.some(r => r.category === c)).map(c => `${cat(c)} <b>${rs.filter(r => r.category === c).length}</b>`).join(' ')}<span class="hn">${rs.length}</span></div>`; }).join('') || '<p class="muted">Nobody evacuated yet.</p>';
+        $('sectors').innerHTML = `<div class="where-h">In the field, by sector (${sc.field})</div>${sectorRows}<div class="where-h">At CCS (${sc.ccs})</div>${ccsRow}<div class="where-h">Evacuated, by hospital (${sc.evacuated})</div>${hospRows}`;
+        setText('where-note', `${sc.field} field • ${sc.ccs} CCS • ${sc.evacuated} evacuated`);
         // attention
         const att = [];
         onScene.forEach(r => {
@@ -353,7 +691,8 @@
             if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' });
         });
         att.sort((a, b) => a.k - b.k);
-        $('attention').innerHTML = att.map(a => `<div class="row" style="padding:5px 0;border-bottom:1px solid #e3e7ea;">${cat(a.r.category)}<b>${esc(a.r.id)}</b><span style="flex:1">${a.t}</span><span class="muted">${esc(place(a.r) || '')}</span></div>`).join('') || '<p class="muted">Nothing outstanding.</p>';
+        $('attention').innerHTML = att.length ? `<div class="att">${att.map(a => `<div class="att-row k${a.k}" onclick="openPatient('${esc(a.r.uid)}')">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))} ${toolChip(a.r)}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}</div>` : '<div class="all-clear">Nothing outstanding</div>';
+        setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • overdue first` : 'overdue reassessments, tourniquets, high risk');
         // table
         const vis = visibleRecords();
         $('rows').innerHTML = vis.map(r => {
@@ -362,17 +701,29 @@
             const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : null;
             const ints = Object.keys(r.interventions || {}).map(k => `${esc(k)} ${esc((r.interventions[k] && r.interventions[k].time) || '')}`.trim()).join(', ');
             const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? 'Due now' : `Due ${hm(rs.dueAt)}`;
-            return `<tr class="${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}"><td><b>${esc(r.id)}</b><div class="muted">${esc(r.tool || '')} ${hm(r.timestamp)}${r.highRisk ? ' • <b style="color:#DA291C">HIGH RISK</b>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
-                `<td>${cat(r.category)}</td><td>${esc(place(r) || '—')}${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
+            const fresh = !r.evacuated && (now - (r.updatedAt || r.reportedAt || 0)) < 90000;
+            return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" onclick="openPatient('${esc(r.uid)}')"><td><span class="id">${esc(r.id)}</span><div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
+                `<td>${cat(r.category)}<div style="margin-top:4px">${toolChip(r)}</div></td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
                 `<td>${ints || '<span class="muted">none</span>'}</td><td>${re}</td><td>${esc(r.triager || '')}<div class="muted">${esc(r.reportedBy || '')} • ${age(r.updatedAt || r.reportedAt)}</div></td></tr>`;
         }).join('');
-        setText('list-note', `${vis.length} shown, priority first`);
+        setText('list-note', `${vis.length} shown, priority first • tap a row for full details • highlighted = updated in the last 90 s`);
+        if (openUid) renderPatient(byUid(openUid));
+        renderLegend();
         renderMap(vis);
+    }
+    // The phone's ID is "<prefix>-<TOOL>-<number>"; on the wall the prefix is noise, so show "TST 014" style.
+    function shortId(id) { const m = /^(?:.*-)?(TST|MITT)-(\d+)$/.exec(String(id || '')); return m ? `${m[1]} ${m[2]}` : String(id || ''); }
+    let legendDone = false;
+    function renderLegend() {
+        if (legendDone) return; legendDone = true;
+        const sw = (c, extra) => `<span class="sw${extra ? ' ' + extra : ''}" style="background:${MITTLib.CATEGORY_INFO[c] ? MITTLib.CATEGORY_INFO[c].colour : '#4C6272'}"></span>`;
+        $('legend').innerHTML = ['P1', 'P2', 'P3', 'P1_HOLD', 'NOT_BREATHING', 'DEAD'].map(c => `<span class="lg">${sw(c)}${esc(MITTLib.CATEGORY_INFO[c].short)} <span class="muted">${esc(MITTLib.CATEGORY_INFO[c].label.toLowerCase())}</span></span>`).join('') +
+            `<span class="lg opt"><span class="sw dash"></span>dashed = TST sieve</span><span class="lg opt"><span class="sw sq" style="background:#aaa"></span>square = at CCS</span><span class="lg opt"><span class="sw sq" style="background:#007F3B"></span>CCS</span><span class="spacer"></span><span class="lg opt">Big number = on scene now • small = including evacuated • W wall • F full screen</span>`;
     }
     function markerIcon(r) {
         const info = MITTLib.CATEGORY_INFO[r.category] || { colour: '#005EB8', text: '#fff' };
         const tail = String(r.id || '').replace(/^.*-/, '').slice(-4) || '•';
-        return L.divIcon({ html: `<div class="mk${r.tool === 'TST' ? ' mk-tst' : ''}${r.evacuated ? ' mk-evac' : ''}" style="background:${info.colour};color:${info.text};">${esc(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
+        return L.divIcon({ html: `<div class="mk${r.tool === 'TST' ? ' mk-tst' : ''}${r.evacuated ? ' mk-evac' : ''}${stage(r) === 'ccs' ? ' mk-atccs' : ''}" style="background:${info.colour};color:${info.text};">${esc(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
     }
     function ensureMap() {
         if (map || typeof L === 'undefined') return !!map;
@@ -396,7 +747,8 @@
             const ll = [Number(l.lat), Number(l.lng)];
             const grid = MITTLib.toOsGridRef(ll[0], ll[1]);
             const m = L.marker(ll, { icon: markerIcon(r) });
-            m.bindPopup(`<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div></div>`);
+            m.bindPopup(`<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div><button type="button" class="btn small" style="margin-top:6px" onclick="openPatient('${esc(r.uid)}')">Full details</button></div>`);
+            m._uid = r.uid;
             cluster.addLayer(m);
             if (l.acc && l.acc > 15) circles.addLayer(L.circle(ll, { radius: Number(l.acc), color: MITTLib.CATEGORY_INFO[r.category] ? MITTLib.CATEGORY_INFO[r.category].colour : '#005EB8', weight: 1, opacity: 0.6, fillOpacity: 0.08 }));
         });
@@ -414,6 +766,60 @@
         if (!layers.length) return;
         const b = L.featureGroup(layers).getBounds();
         map.fitBounds(b.pad(0.2), { maxZoom: 18 });
+    }
+    // ---------- Patient details (any row, attention item or marker) ----------
+    let openUid = null;
+    function openPatient(uid) { const r = byUid(uid); if (!r) return; openUid = uid; renderPatient(r); $('pt-modal').classList.add('open'); }
+    function closePatient() { openUid = null; $('pt-modal').classList.remove('open'); }
+    function showPatientOnMap() {
+        const r = byUid(openUid); const l = r && loc(r);
+        if (!l || !l.lat || !map) return;
+        closePatient();
+        if (document.body.classList.contains('wall')) setWall(false);
+        map.setView([Number(l.lat), Number(l.lng)], Math.max(map.getZoom(), 18));
+        const m = cluster.getLayers().find(x => x._uid === r.uid);
+        if (m) setTimeout(() => cluster.zoomToShowLayer(m, () => m.openPopup()), 200);
+        $('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    function dhm(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'; }
+    function kv(rows) { return `<dl class="kv">${rows.filter(x => x[1] !== undefined && x[1] !== null && x[1] !== '').map(x => `<dt>${esc(x[0])}</dt><dd>${x[2] ? x[1] : esc(String(x[1]))}</dd>`).join('')}</dl>`; }
+    function renderPatient(r) {
+        if (!r) { closePatient(); return; }
+        const now = Date.now();
+        const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
+        const st = stage(r);
+        setText('pt-id', r.id);
+        $('pt-chips').innerHTML = `${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <span class="cat-chip" style="background:#DA291C;color:#fff">HIGH RISK</span>' : ''}${rs.state === 'overdue' ? ` <span class="cat-chip" style="background:#DA291C;color:#fff">Reassessment overdue ${Math.round(rs.overdueMs / 60000)} min</span>` : ''}`;
+        const hist = (r.triageHistory || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        const triage = `<ul class="tl">${hist.length ? hist.map(t => `<li><span class="t">${dhm(t.ts)}</span><span><b>${esc(t.tool || '')} ${esc(MITTLib.categoryShort(t.category))}</b> ${esc(t.reason || '')}${t.kind && t.kind !== 'triage' ? ` <span class="muted">(${esc(t.kind)})</span>` : ''}${t.by ? ` <span class="muted">by ${esc(t.by)}</span>` : ''}${t.action ? `<div class="muted">${esc(t.action)}</div>` : ''}</span></li>`).join('') : `<li><span class="t">${dhm(r.timestamp)}</span><span><b>${esc(r.tool || '')} ${esc(MITTLib.categoryShort(r.category))}</b> ${esc(r.reason || '')}</span></li>`}</ul>`;
+        const ints = Object.keys(r.interventions || {});
+        const intsHtml = ints.length ? `<div class="ints">${ints.map(k => `<span class="int">${esc(k)}<small>${esc((r.interventions[k] && r.interventions[k].time) || '')}</small></span>`).join('')}</div>` : '<span class="muted">None recorded</span>';
+        const inj = r.injuries || [];
+        const injHtml = inj.length ? `<div class="inj"><svg viewBox="0 0 200 400"><path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e8ecef" stroke="#555" stroke-width="2"/><path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e8ecef" stroke="#555" stroke-width="2"/>${inj.map(m => `<circle cx="${(m.x * 200).toFixed(1)}" cy="${(m.y * 400).toFixed(1)}" r="9" fill="${m.severity === 'severe' ? '#DA291C' : m.severity === 'moderate' ? '#ff9800' : '#005EB8'}" stroke="#fff" stroke-width="2"/>`).join('')}</svg><ul>${inj.map(m => `<li><b>${esc([m.side, m.region].filter(Boolean).join(' '))}</b>${m.label ? ' ' + esc(m.label) : ''}${m.severity && m.severity !== 'unspecified' ? ` <span class="muted">(${esc(m.severity)})</span>` : ''}${m.time ? ` <span class="muted">${esc(m.time)}</span>` : ''}</li>`).join('')}</ul></div>` : '<span class="muted">None marked</span>';
+        const l = loc(r);
+        const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : '';
+        const lh = (r.locationHistory || []).slice().sort((a, b) => (a.at || a.timestamp || 0) - (b.at || b.timestamp || 0));
+        const locHtml = kv([['Place', place(r) || '—'], ['Grid ref', grid ? `${grid}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}` : 'no position'], ['Confidence', r.locationConfidence || '']]) +
+            (lh.length > 1 ? `<ul class="tl" style="margin-top:6px">${lh.map(h => `<li><span class="t">${dhm(h.at || h.timestamp)}</span><span>${esc(h.reason || h.action || 'position')}${h.sector || h.landmark ? ` <span class="muted">${esc([h.sector, h.landmark, h.area].filter(Boolean).join(', '))}</span>` : ''}${h.lat ? ` <span class="muted">${esc(MITTLib.toOsGridRef(h.lat, h.lng) || '')}</span>` : ''}${h.user ? ` <span class="muted">by ${esc(h.user)}</span>` : ''}</span></li>`).join('')}</ul>` : '');
+        const chain = kv([
+            ['Stage', `${stageTag(r)} ${st === 'ccs' && r.ccsAt ? 'since ' + dhm(r.ccsAt) : ''}`, true],
+            ['Evacuated to', r.evacuated ? (r.evacDest || 'destination not recorded') : ''],
+            ['Vehicle / crew', r.evacVehicle || ''], ['Hospital ID', r.hospitalId || ''],
+            ['Care handed to', r.handoverTo ? `${r.handoverTo}${r.handoverState ? ' (' + r.handoverState + ')' : ''}${r.handoverAt ? ' at ' + dhm(r.handoverAt) : ''}` : (r.handoverState ? r.handoverState : '')],
+            ['Time of death', r.tod || ''],
+        ]);
+        const reass = kv([
+            ['Last reassessed', r.lastReassessed ? `${dhm(r.lastReassessed)}${r.reassessOutcome ? ' • ' + r.reassessOutcome : ''}` : 'not yet'],
+            ['Next due', rs.state === 'na' ? 'n/a' : rs.state === 'overdue' ? `<span class="flag">overdue by ${Math.round(rs.overdueMs / 60000)} min</span>` : rs.state === 'due-soon' ? 'now' : dhm(rs.dueAt), true],
+            ['Deteriorated', r.lastDeteriorationAt ? dhm(r.lastDeteriorationAt) : ''],
+        ]);
+        const who = kv([['Triaged by', `${r.triager || r.createdBy || '—'}${r.deviceId ? ' • phone ' + r.deviceId : ''}`], ['First triage', dhm(r.createdAt || r.timestamp)], ['Reported by', r.reportedBy ? `${r.reportedBy} • ${age(r.reportedAt || r.updatedAt)}` : ''], ['Last change', age(r.updatedAt)], ['Incident', r.incidentCode || '']]);
+        $('pt-body').innerHTML =
+            `<div class="pt-sec"><h4>Triage</h4>${triage}</div>` +
+            `<div class="pt-sec"><h4>Reassessment</h4>${reass}<h4 style="margin-top:10px">Where</h4>${locHtml}</div>` +
+            `<div class="pt-sec"><h4>Interventions</h4>${intsHtml}<h4 style="margin-top:10px">Injuries</h4>${injHtml}</div>` +
+            `<div class="pt-sec"><h4>CCS, evacuation and handover</h4>${chain}<h4 style="margin-top:10px">Recorded by</h4>${who}</div>` +
+            `<div class="pt-sec wide"><h4>Patient details and notes</h4>${kv([['Demographics', r.demos || ''], ['Allergies', r.allergies || '']])}${r.notes ? `<div class="pt-note">${esc(r.notes)}</div>` : '<span class="muted">No notes</span>'}</div>`;
     }
     function download(name, text, type) {
         const a = document.createElement('a');
@@ -437,8 +843,10 @@
         download(`MITT_commander_${data.code}_${stamp()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
     }
     document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && openUid) { closePatient(); return; }
         if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
         if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();
+        if ((e.key === 'f' || e.key === 'F') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleFullscreen();
     });
     document.addEventListener('visibilitychange', () => { if (!document.hidden && (cfg || demo)) refreshNow(); });
     window.addEventListener('hashchange', () => { if (/^#DEMO/i.test(location.hash) && !demo) startDemo(); });
