@@ -153,6 +153,12 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.12.1 build 2026-10-15-demo-flow — simpler demo and role flow
+
+- **▶ Demo** is now one orange button at the top of the start screen. It opens **Demo: pick your role**: 🎖 Incident commander (opens the commander screen demo in the same window), one of the four phones, or everything on this phone. The live commander for several devices sits under "Practising with several devices?". No "are you sure" questions on the way in.
+- **↩ Start page** replaces "Leave demo" in the orange bar, in the demo guide and on the commander screen demo. One tap goes straight back to the start screen in normal use (no question), where ▶ Demo picks another role. The commander demo's button opens `index.html#start`, which leaves the demo on that device if it was on.
+- The guide's "Be someone else" and separate commander-screen buttons are gone; the start page is the one place to change role.
+
 ### v0.12.0 build 2026-10-15-demo-roles — demo roles and transfer practice
 
 - **Try the demo incident** now asks **who you are**: everything on this device; one of the four phones (HART 1, Medic 2, MERIT doctor, Fire crew 3), which loads only that phone's casualties with its name, role, sector and ID prefix; the **commander screen** for this device only (`commander.html#DEMO`); or the **commander of a live practice**, which creates a training incident (needs internet) that other devices link to by scanning its code, so their demo casualties, handovers and new patients appear on the commander screen.
