@@ -957,8 +957,11 @@
     body:not(.gloved) #intro-screen > .btn { padding: 0.8rem 1rem !important; margin-bottom: 0.6rem; font-size: 1.1rem; }
     #intro-screen .start-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.2rem; }
     #intro-screen .demo-btn { width: auto; flex: 0 0 auto; margin: 0; background: #E87722; color: #fff; border: 0; border-radius: 999px; padding: 10px 20px; font-weight: 800; font-size: 1.05rem; min-height: 44px; cursor: pointer; white-space: nowrap; }
-    #demo-role-modal .demo-more { margin: 8px 0 6px; }
-    #demo-role-modal .demo-more summary { cursor: pointer; font-weight: 700; color: var(--nhs-dark-blue); padding: 6px 0; }
+    #exercise-modal .btn { padding: 0.5rem 0.8rem; margin-bottom: 6px; font-size: 1rem; line-height: 1.25; }
+    #exercise-modal .qr-meta { margin: 0 0 6px; font-size: 0.85rem; }
+    .exercise-guide h4 { margin: 12px 0 4px; }
+    .exercise-guide ul, .exercise-guide ol { margin: 0 0 4px; padding-left: 1.2rem; font-size: 0.92rem; line-height: 1.4; }
+    .exercise-guide li { margin-bottom: 4px; }
     #intro-screen .intro-options { margin-bottom: 0.6rem; }
     body:not(.gloved) #result-screen .triage-tag { font-size: 2.6rem; padding: 0.4rem 0.6rem; margin: 0.25rem 0; }
     body:not(.gloved) #result-screen .triage-tag.cat-bg-NOT_BREATHING #tag-text, body:not(.gloved) #result-screen .triage-tag.cat-bg-P1_HOLD #tag-text { font-size: 2rem; }
@@ -1066,12 +1069,53 @@
         <h4 style="margin:10px 0 6px;">Or a triager with one of the phones</h4>
         <div id="demo-phone-choices"></div>
         <button type="button" class="btn btn-secondary demo-choice" style="margin-top:6px;" onclick="demoChoose('all')">👀 Everything on this phone<br><span style="font-size:0.8rem; font-weight:normal;">All 24 casualties from all four phones, for showing the app on your own</span></button>
-        <details class="demo-more">
-            <summary>Practising with several devices?</summary>
-            <p class="qr-meta" style="text-align:left;">Make one device the live commander. The others pick a phone above, then scan its code from the demo guide. Needs internet.</p>
-            <button type="button" class="btn btn-primary demo-choice" style="background:var(--nhs-dark-blue);" onclick="demoChoose('cmd')">🎖 Live commander for other devices</button>
-        </details>
+        <h4 style="margin:10px 0 6px;">Live exercise with real people</h4>
+        <button type="button" class="btn btn-primary demo-choice" id="btn-exercise" style="background:#7B3F00;" onclick="openExercise()">🎯 Run a live exercise<br><span style="font-size:0.8rem; font-weight:normal;">Control room, field triagers and the CCZ on their own phones, all feeding one commander screen. Needs internet.</span></button>
         <button type="button" class="btn btn-secondary" onclick="closeDemoPicker()">Cancel</button>
+    </div>
+</div>
+<div id="exercise-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="exercise-title">
+    <div class="modal-box" style="max-width:460px; max-height:90vh; overflow-y:auto;">
+        <h3 id="exercise-title" style="margin-top:0;">Live exercise: pick your role</h3>
+        <p class="qr-meta" style="text-align:left;">Everyone is in training mode, so nothing real is touched. Every device needs internet. <strong>The control room sets up first</strong>; everyone else then picks a role and scans its code.</p>
+        <button type="button" class="btn btn-primary demo-choice" style="background:var(--nhs-dark-blue);" onclick="exerciseChoose('cmd')">🎖 Control room: set up the exercise<br><span style="font-size:0.8rem; font-weight:normal;">Do this first, on the device that runs the commander screen. It shows a code for everyone else.</span></button>
+        <h4 style="margin:10px 0 6px;">Then everyone else</h4>
+        <button type="button" class="btn btn-primary demo-choice" onclick="exerciseChoose('xf')">🩺 Field triager (clinician)<br><span style="font-size:0.8rem; font-weight:normal;">Triage the casualties you find with TST or MITT, then hand them over to the CCZ</span></button>
+        <button type="button" class="btn btn-secondary demo-choice" onclick="exerciseChoose('xn')">🚒 Field triager (non-clinical)<br><span style="font-size:0.8rem; font-weight:normal;">Police, fire, first responder: TST only</span></button>
+        <button type="button" class="btn btn-primary demo-choice" style="background:#00703C;" onclick="exerciseChoose('xc')">🏥 Casualty clearing zone (CCZ)<br><span style="font-size:0.8rem; font-weight:normal;">Receive patients by QR handover, re-triage, treat and send them to hospital</span></button>
+        <button type="button" class="btn btn-secondary" onclick="showExerciseGuide()">📖 Facilitator guide</button>
+        <button type="button" class="btn btn-secondary" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue);" onclick="closeExercise(); startDemo();">Back</button>
+    </div>
+</div>
+<div id="exercise-guide-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="exercise-guide-title">
+    <div class="modal-box exercise-guide" style="max-width:520px; max-height:90vh; overflow-y:auto; text-align:left;">
+        <h3 id="exercise-guide-title" style="margin-top:0;">Running a live exercise</h3>
+        <h4>Before you start</h4>
+        <ul>
+            <li>Every device needs internet. Install the app on each phone.</li>
+            <li>Pick a control room device and a big screen (laptop, TV or tablet) for the commander screen.</li>
+            <li>Brief your casualties (actors or cards): can they walk, are they breathing, catastrophic bleeding, breathing rate, pulse or capillary refill. The app asks the TST and MITT questions in order.</li>
+            <li>Agree how teams talk to each other, as on the day: radio, phone or runner. The app does not replace this.</li>
+        </ul>
+        <h4>Set up (about 2 minutes)</h4>
+        <ol>
+            <li><strong>Control room:</strong> ▶ Demo → 🎯 Run a live exercise → 🎖 Control room. You get a code, PIN and QR. Tap <em>Open the commander screen</em>, or on the big screen open the link and type the PIN.</li>
+            <li><strong>Everyone else:</strong> type your name on the start page, then ▶ Demo → 🎯 Run a live exercise → your role, then scan the control room's QR.</li>
+            <li>Check the commander screen lists every phone under <em>Phones</em>.</li>
+        </ol>
+        <h4>During the exercise</h4>
+        <ul>
+            <li><strong>Field triagers</strong> triage each casualty, record bleeding control and position, then hand over to the CCZ: 📤 QR Handover on the patient, the CCZ phone scans it with 📷 Receive patient.</li>
+            <li><strong>CCZ</strong> accepts each patient, re-triages with MITT, records treatment, then marks them evacuated with the ambulance and hospital.</li>
+            <li><strong>Control room</strong> runs the incident from the commander screen alone: counts, map, needs-attention list, phones and every patient (tap a row for their details). Use the wall display on a TV.</li>
+            <li>Ideas for injects: a casualty deteriorates (tell the triager to re-triage), a new casualty appears late, a phone loses signal (aeroplane mode for 2 minutes, then it catches up), a tourniquet passes 1 hour.</li>
+        </ul>
+        <h4>Finish and debrief</h4>
+        <ul>
+            <li>Control room: download the CSV from the commander screen for the debrief, then ⚙ Settings → End incident for everyone.</li>
+            <li>Everyone: tap <strong>↩ Start page</strong> in the orange bar to go back to normal use. Practice records stay separate from real ones.</li>
+        </ul>
+        <button type="button" class="btn btn-secondary" onclick="closeExerciseGuide()">Close</button>
     </div>
 </div>
 <div id="demo-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="demo-title">
@@ -2083,7 +2127,9 @@
         if (!v.ok) showBlockingError('Audit trail integrity warning', `The stored audit trail failed verification at entry ${v.brokenAt + 1} (${v.reason}). The trail may have been altered outside the app. Export an archive and report this.`);
         if (incidentLog.length) { $('btn-resume-log').style.display = 'block'; setText('resume-count', incidentLog.length); }
         let demoPending = false;
-        try { demoPending = localStorage.getItem('mit_demo_pending') || false; localStorage.removeItem('mit_demo_pending'); } catch (e) {}
+        let demoName = '';
+        try { demoPending = localStorage.getItem('mit_demo_pending') || false; demoName = localStorage.getItem('mit_demo_pending_name') || ''; localStorage.removeItem('mit_demo_pending'); localStorage.removeItem('mit_demo_pending_name'); } catch (e) {}
+        if (demoPending && TRAINING && demoName) $('intro-triager').value = demoName;
         if (demoPending && TRAINING) setTimeout(() => loadDemo(demoPending), 0);
         else if (START_REQUESTED && TRAINING && demoMode()) setTimeout(leaveDemo, 0);
         saveState();
@@ -4591,8 +4637,9 @@
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));
         const parts = alertSummary(patientAlerts(Date.now()));
         if (parts.length) box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
-        if (TRAINING && (demoMode() || incidentLog.some(r => MITTLib.isDemoRecord(r))) && demoMode() !== 'cmd') box.appendChild(el('div', { className: 'alert-card info', id: 'home-demo', style: 'border-left-color:#E87722;', onclick: showDemoGuide }, [el('strong', { text: '▶ Demo incident (made up). ' }), (demoPhone() ? `You are ${demoPhone().triager}. ` : '') + 'Tap for things to show and transfer practice.']));
-        if (typeof cmdActive === 'function' && !cmdActive() && !cmdLinkDismissed() && !(TRAINING && demoMode() && demoMode() !== 'cmd')) box.appendChild(el('div', { className: 'alert-card info', id: 'home-cmd-link', onclick: cmdOfferLink }, [el('strong', { text: '☁ Not linked to an incident commander. ' }), 'Tap to scan their code or type the code and PIN.']));
+        if (TRAINING && exerciseRole()) box.appendChild(el('div', { className: 'alert-card info', id: 'home-exercise', style: 'border-left-color:#7B3F00;', onclick: showExerciseGuide }, [el('strong', { text: '🎯 Live exercise. ' }), `You are ${exerciseRole().label}. Tap for the facilitator guide.`]));
+        else if (TRAINING && (demoMode() || incidentLog.some(r => MITTLib.isDemoRecord(r)))) box.appendChild(el('div', { className: 'alert-card info', id: 'home-demo', style: 'border-left-color:#E87722;', onclick: showDemoGuide }, [el('strong', { text: '▶ Demo incident (made up). ' }), (demoPhone() ? `You are ${demoPhone().triager}. ` : '') + 'Tap for things to show and transfer practice.']));
+        if (typeof cmdActive === 'function' && !cmdActive() && !cmdLinkDismissed() && !(TRAINING && demoMode() && demoMode() !== 'cmd' && !exerciseRole())) box.appendChild(el('div', { className: 'alert-card info', id: 'home-cmd-link', onclick: cmdOfferLink }, [el('strong', { text: '☁ Not linked to an incident commander. ' }), 'Tap to scan their code or type the code and PIN.']));
     }
     function showLog() {
         commitDirtyFields('Opening log');
@@ -5472,16 +5519,30 @@
         const on = !!demoMode();
         document.body.classList.toggle('demo', on);
         $('btn-leave-demo').style.display = on ? '' : 'none';
-        setText('training-banner-text', on ? 'DEMO — made-up patients' : 'TRAINING MODE — practice only. Nothing here is a real patient.');
+        setText('training-banner-text', !on ? 'TRAINING MODE — practice only. Nothing here is a real patient.' : exerciseRole() ? `EXERCISE — ${exerciseRole().label}` : 'DEMO — made-up patients');
     }
     function closeDemoPicker() { $('demo-role-modal').style.display = 'none'; }
+    // Live exercise: real people as casualties, every device in training mode, linked to one practice incident.
+    // 'cmd' is the control room (creates the incident); 'xf' / 'xn' field triagers; 'xc' the casualty clearing zone.
+    const EXERCISE_ROLES = {
+        cmd: { label: 'Control room', role: 'HCP', sector: '' },
+        xf: { label: 'Field triager', role: 'HCP', sector: 'Inner Cordon' },
+        xn: { label: 'Field triager (non-clinical)', role: 'NON_HCP', sector: 'Inner Cordon' },
+        xc: { label: 'CCZ', role: 'HCP', sector: 'Casualty Clearing' }
+    };
+    function exerciseRole(mode) { return EXERCISE_ROLES[mode || demoMode()] || null; }
+    function openExercise() { closeDemoPicker(); $('exercise-modal').style.display = 'flex'; }
+    function closeExercise() { $('exercise-modal').style.display = 'none'; }
+    function showExerciseGuide() { $('exercise-guide-modal').style.display = 'flex'; }
+    function closeExerciseGuide() { $('exercise-guide-modal').style.display = 'none'; }
+    function exerciseChoose(mode) { closeExercise(); demoChoose(mode); }
     async function demoChoose(mode) {
         closeDemoPicker();
         if (!TRAINING) {
             commitDirtyFields('Demo incident');
             logAudit('TRAINING_MODE_ON', '-', 'Switched to training mode to open the demo incident', Date.now());
             await saveState();
-            try { localStorage.setItem('mit_training', '1'); localStorage.setItem('mit_demo_pending', mode); } catch (e) {}
+            try { localStorage.setItem('mit_training', '1'); localStorage.setItem('mit_demo_pending', mode); localStorage.setItem('mit_demo_pending_name', $('intro-triager').value.trim()); } catch (e) {}
             location.reload();
             return;
         }
@@ -5497,12 +5558,15 @@
     function loadDemo(mode) {
         if (!TRAINING) return;
         if (!dbReady) { setTimeout(() => loadDemo(mode), 200); return; }
-        mode = mode === 'cmd' || /^p[0-3]$/.test(mode || '') ? mode : 'all';
+        mode = mode === 'cmd' || /^p[0-3]$/.test(mode || '') || EXERCISE_ROLES[mode] ? mode : 'all';
         commitDirtyFields('Demo incident');
+        // A new demo or exercise never stays linked to the practice incident of an earlier one.
+        if (EXERCISE_ROLES[mode] && cmdActive()) cmdStopLocal('Left the previous practice incident');
+        if (EXERCISE_ROLES[mode]) { loadExercise(mode); return; }
         const now = Date.now();
         const d = MITTLib.buildDemoScenario({ now });
         const phone = demoPhone(mode);
-        incidentLog = mode === 'cmd' ? [] : phone ? d.records.filter(r => r.deviceId === phone.deviceId) : d.records;
+        incidentLog = phone ? d.records.filter(r => r.deviceId === phone.deviceId) : d.records;
         const m = d.incident.methane;
         $('m-decl').value = m.m; $('m-loc').value = m.e; $('m-type').value = m.t; $('m-haz').value = m.h; $('m-acc').value = m.a; $('m-num').value = m.n; $('m-svc').value = m.e_svc;
         methaneHistory = [Object.assign({}, m, { timestamp: now - 38 * 60 * 1000, by: 'MERIT doctor', device: 'DEMODR' })];
@@ -5510,24 +5574,52 @@
         currentLogIndex = -1; pendingReTriageUid = null; pendingCorrectionUid = null; lastTriagePath = null;
         // Training keeps its own name, role, sector and ID prefix (see TRAINING_INHERIT_KEYS), so none of this reaches real use.
         if (phone) { triagerName = phone.triager; devicePrefix = phone.prefix; currentSector = phone.sector; }
-        else if (mode === 'cmd') { triagerName = 'Incident commander'; currentSector = ''; }
         else { if (!triagerName) triagerName = 'Demo user'; currentSector = 'Casualty Clearing'; }
         $('intro-triager').value = triagerName; $('intro-device-prefix').value = devicePrefix; $('intro-sector').value = currentSector;
         patientCounter = 1;
         ls('mit_demo_mode', mode);
         renderDemoBanner();
         setIncidentCode(d.incident.incidentCode, 'demo incident');
-        logAudit('DEMO_LOADED', '-', `Demo incident loaded as ${phone ? phone.triager : mode === 'cmd' ? 'incident commander (live practice)' : 'the whole incident'}: ${incidentLog.length} made-up casualties (training mode)`, now);
-        if (mode === 'cmd') {
-            saveState();
-            if (cmdActive()) { setUserRole('HCP', true); cmdShowDetails(); return; }
-            startAsCommander();
-            return;
-        }
+        logAudit('DEMO_LOADED', '-', `Demo incident loaded as ${phone ? phone.triager : 'the whole incident'}: ${incidentLog.length} made-up casualties (training mode)`, now);
         applyRole(phone ? phone.role : (userRole || 'HCP'), true);
         saveState();
         updateDashboard();
         setTimeout(showDemoGuide, 250);
+    }
+    function loadExercise(mode) {
+        const x = EXERCISE_ROLES[mode], now = Date.now();
+        incidentLog = [];
+        ['m-decl', 'm-loc', 'm-type', 'm-haz', 'm-acc', 'm-num', 'm-svc'].forEach(id => { $(id).value = ''; });
+        methaneHistory = []; cachedCcsLocation = null;
+        currentLogIndex = -1; pendingReTriageUid = null; pendingCorrectionUid = null; lastTriagePath = null;
+        const typed = $('intro-triager').value.trim();
+        triagerName = typed && !/^(Incident commander|Demo user|HART 1|Medic 2|MERIT doctor|Fire crew 3)$/.test(typed) ? typed : '';
+        devicePrefix = ''; currentSector = x.sector;
+        $('intro-triager').value = triagerName; $('intro-device-prefix').value = ''; $('intro-sector').value = currentSector;
+        patientCounter = 1;
+        ls('mit_demo_mode', mode);
+        renderDemoBanner();
+        setIncidentCode('', 'live exercise');
+        logAudit('EXERCISE_JOINED', '-', `Live exercise: this phone is ${x.label} (training mode, no casualties loaded)`, now);
+        if (mode === 'cmd') {
+            if (!triagerName) triagerName = 'Control room';
+            $('intro-triager').value = triagerName;
+            saveState();
+            startAsCommander();
+            return;
+        }
+        applyRole(x.role, true);
+        saveState();
+        updateDashboard();
+        showScreen('home-screen');
+        setTimeout(async () => {
+            if (!triagerName) {
+                const name = await inAppPrompt({ title: 'Your name or call sign', message: `You are ${x.label} in the exercise. The control room sees this name against everything you record.` });
+                if (name && name.trim()) { triagerName = name.trim().slice(0, 60); $('intro-triager').value = triagerName; saveState(); }
+                else triagerName = triagerName || x.label;
+            }
+            cmdOfferLink();
+        }, 250);
     }
     // Transfer practice on one device: a demo casualty arrives from another phone as a real patient QR, through the
     // normal review-and-accept screen.

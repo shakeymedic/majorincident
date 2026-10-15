@@ -153,6 +153,12 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.13.1 build 2026-10-15-exercise — live-action exercise mode
+
+- **🎯 Run a live exercise** in the ▶ Demo picker, for a real-people exercise with a control room, field triagers and a casualty clearing zone. Roles: 🎖 **Control room** (set up first: creates a practice incident and shows its code, PIN and QR, with *Open the commander screen*), 🩺 **Field triager (clinician)**, 🚒 **Field triager (non-clinical)** and 🏥 **CCZ** (sector Casualty Clearing, so everything it receives counts as at the CCS). Each phone starts in training mode with no casualties, asks for a name if none was typed, then offers to scan the control room's code. The orange bar shows the role ("EXERCISE — CCZ") with ↩ Start page.
+- **📖 Facilitator guide** in the app: what to prepare, a two-minute set-up, who does what during the exercise, inject ideas, and how to finish and debrief.
+- Starting a new demo or exercise unlinks the phone from the previous practice incident; the control room starts blank (no made-up METHANE or incident number).
+
 ### v0.12.2 build 2026-10-15-demo-flow — simpler demo and role flow
 
 - **▶ Demo** is now one orange button at the top of the start screen. It opens **Demo: pick your role**: 🎖 Incident commander (opens the commander screen demo in the same window), one of the four phones, or everything on this phone. The live commander for several devices sits under "Practising with several devices?". No "are you sure" questions on the way in.
