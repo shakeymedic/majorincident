@@ -76,7 +76,7 @@ Sender taps **QR Handover** → receiver taps **Receive (scan)** → preview sho
 - Every changed field, conflict and operator decision is written to the audit trail.
 
 ### Several patients (all / one sector / on-scene only)
-**Send patients to another device** → choose scope → **Show QR code(s)**. Codes are compressed and split into parts of ≤ 800 characters. The receiver's camera **stays on**; parts can be scanned in any order, repeats are ignored, progress survives an app restart, and a code from a different transfer asks before discarding progress. The sender can auto-cycle parts. After import the receiver shows a **confirmation QR** (MIT_TACK) that the sender scans. Measured sizes (realistic records, audit not included): 10 patients 5 parts, 50 patients 12 parts, 100 patients 21 parts. Compression relies on the browser's CompressionStream; where it is missing, transfers still work but need more parts.
+**Hand over** on the home screen (Send patients to another device) → choose scope → **Show QR code(s)**. Codes are compressed and split into parts of ≤ 800 characters. The receiver's camera **stays on**; parts can be scanned in any order, repeats are ignored, progress survives an app restart, and a code from a different transfer asks before discarding progress. The sender can auto-cycle parts. After import the receiver shows a **confirmation QR** (MIT_TACK) that the sender scans. Measured sizes (realistic records, audit not included): 10 patients 5 parts, 50 patients 12 parts, 100 patients 21 parts. Compression relies on the browser's CompressionStream; where it is missing, transfers still work but need more parts.
 
 Offline alternatives: **Export transfer file** / **Share file** (AirDrop / Nearby Share / USB) and **Import transfer file**. Web NFC is offered only where supported, only for tags, and only for small records; browsers do not support phone-to-phone NFC or Bluetooth transfer.
 
@@ -118,7 +118,7 @@ Use **one iPhone and one Android phone** for at least one full run, and do steps
 2. On A, triage a TST patient (tap a quick-injury emoji button, add an allergy with an accent or £), a TST "not breathing" patient, and a MITT patient.
 3. QR Handover from A to B: check B's preview, accept, scan B's ACK on A → "Handover accepted".
 4. Change A's patient to a more urgent category, hand over again, and confirm B updates. Change it to a less urgent category and confirm B asks you to choose.
-5. On A, **Send patients to another device** → All patients → Show QR codes. On B, **Receive (scan)** and hold the camera on the cycling codes; confirm progress, then accept and scan B's confirmation on A.
+5. On A, **Hand over** (Send patients to another device) → All patients → Show QR codes. On B, **Receive (scan)** and hold the camera on the cycling codes; confirm progress, then accept and scan B's confirmation on A.
 6. Repeat with **Export transfer file** on A and **Import transfer file** on B.
 7. Press the Android back button on several screens; the app should never close.
 8. Log → **Verify audit trail**, then export the Casualty Register, Audit Trail and Full Incident Archive and open them on a computer.
