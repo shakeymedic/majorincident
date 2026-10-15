@@ -17,6 +17,8 @@ jobs:
         run: node tests/lib.test.js
       - name: Run live-sharing backend tests
         run: node tests/incident-core.test.js
+      - name: Load test the backend (30 phones, 300 records)
+        run: node tests/load.test.js
       - name: Sanity-check that index.html parses as JS
         run: |
           node -e "

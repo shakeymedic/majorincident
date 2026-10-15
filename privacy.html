@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Privacy notice — Major Incident Triage</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#F0F4F5; color:#1c232b; margin:0; padding:0; line-height:1.45; }
+    main { max-width: 720px; margin: 0 auto; padding: 1.2rem 1rem 3rem; }
+    h1 { font-size: 1.5rem; margin: 0.4rem 0 0.2rem; }
+    h2 { font-size: 1.1rem; margin: 1.3rem 0 0.4rem; color:#003087; }
+    .updated { color:#5a6b78; font-size:0.9rem; }
+    .placeholder { background:#fff3a8; border-left:5px solid #c9a700; padding:8px 12px; border-radius:8px; }
+    a { color:#005EB8; }
+    ul { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+<main>
+    <p><a href="index.html">← Back to the app</a></p>
+    <h1>Privacy notice — Major Incident Triage</h1>
+    <p class="updated">Last updated: 15 October 2026. Written from how the app works at version 0.14; review it whenever the server, hosting or data handling change.</p>
+
+    <h2>Who we are</h2>
+    <p class="placeholder">Major Incident Triage is published by Dr Jake Turner (EM Evidence). For any privacy question or request, email <a href="mailto:emevidence999@gmail.com">emevidence999@gmail.com</a>. <em>[Jake: replace with the company name and address you use as data controller before the Play listing goes live.]</em></p>
+
+    <h2>What the app is</h2>
+    <p>A tool for trained responders to log major incident triage (NHS England Ten Second Triage and Major Incident Triage Tool), interventions, positions and handovers. It is designed for exercises and training; use at real incidents needs the organisation's clinical safety and information governance approval first.</p>
+
+    <h2>Information about casualties</h2>
+    <ul>
+        <li>Records are about casualties, not about you. The app never asks for a name, date of birth or NHS number, and asks you not to enter patient-identifiable details in the free-text fields.</li>
+        <li>Records stay <strong>on the device</strong>, in the browser's storage, until you close the incident. The app works with no internet connection.</li>
+        <li>A record moves to another device only when you choose to: by QR code or by a file you save and send yourself.</li>
+    </ul>
+
+    <h2>Live sharing with a commander screen (optional)</h2>
+    <ul>
+        <li>If you start or join live sharing, the device sends its records (triage category, timings, interventions, injuries, positions, the sector and place labels, free-text notes, your typed name and the device's random code) and any METHANE report over HTTPS to a small server, so an incident commander can see them on one screen protected by an incident code and PIN.</li>
+        <li>The server is run for us by <a href="https://www.netlify.com" rel="noopener">Netlify</a> (Netlify Functions and Netlify Blobs). Netlify is based in the United States, so this data may be stored outside the UK; Netlify provides safeguards for international transfers under UK data protection law. Netlify also processes standard web server data (such as IP address and browser type) to deliver the site.</li>
+        <li>Wrong-PIN attempts are counted against a hashed form of the connecting address for 15 minutes, to stop guessing; the address itself is not stored.</li>
+        <li>The server copy is deleted automatically 24 hours after the last update, or immediately when the phone that started the incident chooses <em>End incident for everyone</em>. You can stop sharing from your own device at any time.</li>
+    </ul>
+
+    <h2>Location</h2>
+    <p>With your permission the app uses the device's location to record where each casualty was found and where the casualty clearing station is. Location is used on the device and is sent to the commander screen only as part of live sharing. You can refuse or revoke the permission in the browser or phone settings; the app then records sector and place labels instead.</p>
+
+    <h2>Camera</h2>
+    <p>The camera is used only to scan QR codes shown by other devices. No images are stored or sent anywhere.</p>
+
+    <h2>What we do not do</h2>
+    <ul>
+        <li>No accounts, no sign-in, no analytics, no advertising, no crash reporting and no cookies.</li>
+        <li>Nothing is sold or shared with anyone else. The map tiles are loaded from OpenStreetMap when you open the map, which sees the standard web request for each tile.</li>
+    </ul>
+
+    <h2>Android app</h2>
+    <p>The Google Play app is the same web app opened in Chrome. The data above is held by Chrome on your phone; the app itself stores nothing and excludes everything from cloud backup.</p>
+
+    <h2>Your rights</h2>
+    <p>You can ask to see, correct or delete any information we hold by emailing us. If you are unhappy with how we have handled your information you can complain to the <a href="https://ico.org.uk/make-a-complaint/" rel="noopener">Information Commissioner's Office</a>.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="commander" android:enabled="true" android:icon="@mipmap/ic_launcher" android:shortcutShortLabel="@string/shortcut_commander" android:shortcutLongLabel="@string/shortcut_commander">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="org.emevidence.mitriage" android:targetClass="com.google.androidbrowserhelper.trusted.LauncherActivity" android:data="https://majorincident.netlify.app/commander.html" />
+    </shortcut>
+</shortcuts>

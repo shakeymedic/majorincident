@@ -1083,6 +1083,24 @@ group('v0.11.0: demo incident', () => {
         assert.ok(d.records.some(r => r.handoverState === 'pending'));
         assert.ok(d.records.some(r => r.injuries.length && r.interventions.Tourniquet && !r.evacuated));
     });
+    test('v0.14.1: the triage card number survives sanitising, cloning, the compact QR payload and a merge', () => {
+        const r = lib.sanitisePatientRecord({ id: 'A-1', uid: 'u1', category: 'P2', cardNo: ' 0427 ' });
+        assert.strictEqual(r.cardNo, '0427');
+        assert.strictEqual(lib.clonePatientRecord(r).cardNo, '0427');
+        const w = lib.buildPatientPayload(r, { ttlMs: 60000 }, { now: 1700000000000 });
+        const back = lib.validatePatientWrapper(JSON.parse(JSON.stringify(w)), { now: 1700000000000 });
+        assert.strictEqual(back.ok, true);
+        assert.strictEqual(back.data.cardNo, '0427');
+        const merged = lib.mergePatientRecords({ id: 'A-1', uid: 'u1', category: 'P2', cardNo: '' }, { id: 'A-1', uid: 'u1', category: 'P2', cardNo: '0427', fts: { cardNo: 5 } }, { recordVersion: 2, sender: 'Other' });
+        assert.strictEqual(merged.cardNo, '0427');
+    });
+    test('v0.14.0: casualties at the CCS and evacuated to listed hospitals show as such on the commander screen', () => {
+        const sc = lib.stageCounts(d.records);
+        assert.ok(sc.field >= 5 && sc.ccs >= 10 && sc.evacuated >= 3, JSON.stringify(sc));
+        d.records.filter(r => r.atCcs).forEach(r => assert.ok(r.ccsAt && r.ccsAt <= now && r.ccsAt >= r.createdAt, r.id));
+        d.records.filter(r => r.evacuated).forEach(r => { assert.ok(r.evacAt && r.evacAt <= now, r.id); assert.ok(lib.DEFAULT_HOSPITALS.indexOf(r.evacDest) > -1, r.evacDest); });
+        d.records.filter(r => r.sector === 'Inner Cordon').forEach(r => assert.ok(!r.atCcs || r.locationHistory.length > 1, r.id));
+    });
     test('the same demo is built every time (fixed uids, so a reload replaces rather than duplicates)', () => {
         const again = lib.buildDemoScenario({ now: now + 5000 });
         assert.deepStrictEqual(again.records.map(r => r.uid), d.records.map(r => r.uid));

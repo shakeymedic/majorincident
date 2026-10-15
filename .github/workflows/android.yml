@@ -1,0 +1,53 @@
+name: android
+
+# Builds the Android wrapper (Trusted Web Activity) in android/. Without the signing secrets it produces an unsigned
+# bundle, which proves the project compiles. With them it produces the signed .aab to upload to Google Play.
+# Secrets (Settings → Secrets and variables → Actions): ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD. See android/README.md.
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'android/**', '.github/workflows/android.yml' ]
+  pull_request:
+    paths: [ 'android/**', '.github/workflows/android.yml' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    env:
+      KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Restore the upload keystore (only when the secrets exist)
+        if: ${{ env.KS != '' }}
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
+      - name: Build release bundle and debug APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:bundleRelease :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: |
+            android/app/build/outputs/bundle/release/*.aab
+            android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

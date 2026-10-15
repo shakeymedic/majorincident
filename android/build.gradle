@@ -1,0 +1,6 @@
+// Android wrapper for the Major Incident Triage web app (a Trusted Web Activity: Chrome renders the site full
+// screen, the app itself is only a launcher). Build with the GitHub workflow (.github/workflows/android.yml) or
+// locally with Android Studio / `gradle :app:bundleRelease` (needs the Android SDK, API 36).
+plugins {
+    id 'com.android.application' version '8.9.1' apply false
+}
