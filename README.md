@@ -153,6 +153,12 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.13.0 build 2026-10-15-commander-wall — commander screen and wall display redesign
+
+- **commander.html** restyled: a slimmer header with the incident name, code, incident number and how long it has been running as chips, a live status pill with a pulsing dot and "updated N s ago", a centred sign-in card with wide code and PIN boxes, cleaner count tiles, a "Needs attention" list as cards (colour bar by urgency, short ID such as "TST 006", the reason, the place and when it was last updated, with a green "Nothing outstanding" when the list is empty), phone tiles with a green or red dot, and a casualty table that highlights rows updated in the last 90 seconds.
+- **Wall display** (button, the W key, or `commander.html#CODE/wall`) rebuilt for a TV in the command post: dark theme (less glare), everything sized in viewport units so a 1080p and a 4K screen both read from across the room, seven count tiles with very large numbers, a darkened map with bigger markers and no zoom buttons, the attention list and phones on the right, a category legend along the bottom, and a ⛶ **full screen** button (or the F key). The Refresh button is hidden on the wall (it refreshes itself every 30 seconds). 4:3 and tablet screens stack the map above the attention list.
+- No change to what the phones send or to the server.
+
 ### v0.12.0 build 2026-10-15-demo-roles — demo roles and transfer practice
 
 - **Try the demo incident** now asks **who you are**: everything on this device; one of the four phones (HART 1, Medic 2, MERIT doctor, Fire crew 3), which loads only that phone's casualties with its name, role, sector and ID prefix; the **commander screen** for this device only (`commander.html#DEMO`); or the **commander of a live practice**, which creates a training incident (needs internet) that other devices link to by scanning its code, so their demo casualties, handovers and new patients appear on the commander screen.
