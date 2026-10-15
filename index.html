@@ -812,6 +812,8 @@
     /* Training mode: impossible to mistake for real use */
     .training-banner { display: none; background: #E87722; color: #000; font-weight: 900; text-align: center; padding: 8px 10px; letter-spacing: 0.5px; }
     body.training .training-banner { display: block; }
+    body.demo .training-banner { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 10px; }
+    .leave-demo { background: #000; color: #fff; border: 0; border-radius: 999px; padding: 8px 14px; font-weight: 800; font-size: 0.95rem; min-height: 40px; cursor: pointer; white-space: nowrap; }
     body.training header { background-color: #B35900; }
     /* Guided two-phone handover */
     .handover-steps { list-style: none; padding: 0; margin: 0 0 10px 0; width: 100%; }
@@ -1081,6 +1083,7 @@
         <a class="btn btn-primary" id="demo-cmd-link" href="commander.html#DEMO" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🎖 Commander screen<br><span style="font-size:0.8rem; font-weight:normal;">The incident commander's view of the same incident. Updates by itself; no sign-in or internet sharing</span></a>
         </div>
         <button type="button" class="btn btn-secondary" onclick="demoGo('switch')">Be someone else / restart the demo</button>
+        <button type="button" class="btn btn-primary" style="background:#000;" onclick="leaveDemo()">✕ Leave the demo (back to the start screen)</button>
         <button type="button" class="btn btn-secondary" onclick="closeDemoGuide()">Close</button>
         <p class="qr-meta" style="text-align:left;">With two devices you can hand over for real: 📷 Receive patient on one, QR Handover on the other. Reopen this from the orange demo card on the home screen. To leave, untick Training mode in ⚙ Settings; your real records come back.</p>
     </div>
@@ -1445,7 +1448,7 @@
         </div>
     </header>
 
-    <div class="training-banner" role="status">TRAINING MODE — practice only. Nothing here is a real patient.</div>
+    <div class="training-banner" role="status"><span id="training-banner-text">TRAINING MODE — practice only. Nothing here is a real patient.</span> <button type="button" id="btn-leave-demo" class="leave-demo" style="display:none;" onclick="leaveDemo()">✕ Leave demo</button></div>
     <div id="storage-banner" class="storage-banner" role="alert"></div>
     <div id="ios-install-banner" class="ios-install-banner" role="note">
         <strong>iPhone / iPad: add Major Incident Triage to your Home Screen before an incident.</strong>
@@ -5078,6 +5081,7 @@
             : { title: 'Leave training mode?', message: 'The app restarts with your real patient records. Training data is kept until you delete it.', okLabel: 'Back to real use' });
         if (!ok) { $('mode-training').checked = TRAINING; return; }
         commitDirtyFields('Mode change');
+        if (!on) ls('mit_demo_mode', null);
         logAudit(on ? 'TRAINING_MODE_ON' : 'TRAINING_MODE_OFF', '-', on ? 'Switched to training mode (separate practice records)' : 'Left training mode', Date.now());
         await saveState();
         try {
@@ -5422,6 +5426,24 @@
         });
         $('demo-role-modal').style.display = 'flex';
     }
+    // Leave the demo: back to real use on the start screen. Practice records stay in training until deleted.
+    async function leaveDemo() {
+        const ok = await inAppConfirm({ title: 'Leave the demo?', message: 'The app goes back to normal use on the start screen, with your real records. Nothing from the demo comes with it.', okLabel: 'Leave the demo' });
+        if (!ok) return;
+        closeDemoGuide();
+        commitDirtyFields('Leaving demo');
+        logAudit('TRAINING_MODE_OFF', '-', 'Left the demo incident', Date.now());
+        ls('mit_demo_mode', null);
+        await saveState();
+        try { localStorage.removeItem('mit_training'); localStorage.setItem('mit_training_left_at', String(Date.now())); sessionStorage.setItem('mit_show_start', '1'); } catch (e) {}
+        location.reload();
+    }
+    function renderDemoBanner() {
+        const on = !!demoMode();
+        document.body.classList.toggle('demo', on);
+        $('btn-leave-demo').style.display = on ? '' : 'none';
+        setText('training-banner-text', on ? 'DEMO — made-up patients' : 'TRAINING MODE — practice only. Nothing here is a real patient.');
+    }
     function closeDemoPicker() { $('demo-role-modal').style.display = 'none'; }
     async function demoChoose(mode) {
         closeDemoPicker();
@@ -5466,6 +5488,7 @@
         $('intro-triager').value = triagerName; $('intro-device-prefix').value = devicePrefix; $('intro-sector').value = currentSector;
         patientCounter = 1;
         ls('mit_demo_mode', mode);
+        renderDemoBanner();
         setIncidentCode(d.incident.incidentCode, 'demo incident');
         logAudit('DEMO_LOADED', '-', `Demo incident loaded as ${phone ? phone.triager : mode === 'cmd' ? 'incident commander (live practice)' : 'the whole incident'}: ${incidentLog.length} made-up casualties (training mode)`, now);
         if (mode === 'cmd') {
@@ -5581,7 +5604,10 @@
         initGPS();
         requestWakeLock();
         armBackGuard();
-        if (!userRole) showScreen('intro-screen');
+        renderDemoBanner();
+        let showStart = false;
+        try { showStart = sessionStorage.getItem('mit_show_start') === '1'; sessionStorage.removeItem('mit_show_start'); } catch (e) {}
+        if (!userRole || showStart) showScreen('intro-screen');
         else { updateDashboard(); showScreen('home-screen'); }
         if (_allChunkStore.transferId && Object.keys(_allChunkStore.chunks || {}).length) showToast(`Unfinished multi-part transfer ${_allChunkStore.transferId} (${Object.keys(_allChunkStore.chunks).length}/${_allChunkStore.totalChunks}). Tap "Receive (scan)" to continue.`, { long: true });
     };

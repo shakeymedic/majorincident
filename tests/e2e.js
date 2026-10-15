@@ -1340,10 +1340,14 @@ async function test(name, fn) {
         await page_visible(E, '#ack-success-modal');
         assert.strictEqual(await E.evaluate(u => incidentLog[indexByUid(u)].handoverState, uid), 'accepted');
         assert.ok(await E.isHidden('#handover-flow-modal'));
-        // Leaving training: the real name and role come back
-        await E.evaluate(() => { document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; }); toggleTrainingMode(false); });
+        // "Leave demo" in the orange banner: back to real use on the start screen, with the real name and role
+        await E.evaluate(() => document.querySelectorAll('.modal-overlay').forEach(m => { m.style.display = 'none'; }));
+        assert.ok(await E.isVisible('#btn-leave-demo'));
+        await E.click('#btn-leave-demo');
         await answerDialog(E, true);
         await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === false && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        await E.waitForFunction(() => document.getElementById('intro-screen').classList.contains('active'), null, { timeout: 5000 });
+        assert.ok(await E.isHidden('#btn-leave-demo'));
         assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, devicePrefix]), ['Dr Real', 'HCP', '']);
         await E._ctx.close();
     });
