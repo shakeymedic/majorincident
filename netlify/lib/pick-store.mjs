@@ -1,9 +1,8 @@
 // Chooses where the incident commander data is kept. Firestore (UK, London) once its three settings are in the
 // Netlify environment; Netlify Blobs until then, so the site keeps working while the switch is set up.
+// The function files pass in firestore-store.js themselves: this file is bundled into each function, so a
+// require() here would resolve from netlify/functions/, not from this folder.
 import { getStore } from '@netlify/blobs';
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const { firestoreConfig, firestoreFromConfig } = require('./firestore-store.js');
 
 function blobStore() {
     const s = getStore({ name: 'incidents', consistency: 'strong' });
@@ -16,8 +15,8 @@ function blobStore() {
 }
 
 // Returns { store, name }. name goes in the X-Incident-Store response header so the live site shows which is in use.
-export function pickStore(env = process.env) {
-    const cfg = firestoreConfig(env);
-    if (cfg) return { store: firestoreFromConfig(cfg), name: 'firestore' };
+export function pickStore(firestore, env = process.env) {
+    const cfg = firestore.firestoreConfig(env);
+    if (cfg) return { store: firestore.firestoreFromConfig(cfg), name: 'firestore' };
     return { store: blobStore(), name: 'netlify-blobs' };
 }

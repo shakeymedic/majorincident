@@ -4,10 +4,11 @@ import { createRequire } from 'node:module';
 import { pickStore } from '../lib/pick-store.mjs';
 const require = createRequire(import.meta.url);
 const { createCore } = require('../lib/incident-core.js');
+const firestore = require('../lib/firestore-store.js');
 
 let core = null, storeName = '';
 function getCore() {
-    if (!core) { const p = pickStore(); storeName = p.name; core = createCore({ store: p.store, log: (...a) => console.log('[incident]', ...a) }); }
+    if (!core) { const p = pickStore(firestore); storeName = p.name; core = createCore({ store: p.store, log: (...a) => console.log('[incident]', ...a) }); }
     return core;
 }
 
