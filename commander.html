@@ -109,6 +109,7 @@
     <button type="button" class="btn small sec" id="btn-refresh" onclick="refreshNow()">Refresh now</button>
     <button type="button" class="btn small sec" id="btn-wall" onclick="toggleWall()" style="display:none;">Wall display</button>
     <button type="button" class="btn small sec" id="btn-signout" onclick="signOut()" style="display:none;">Sign out</button>
+    <a class="btn small" id="btn-start-page" href="index.html#start" style="display:none; background:#000; text-decoration:none;">↩ Start page</a>
 </header>
 <div class="training hidden" id="training-banner">TRAINING INCIDENT — practice data, not real patients</div>
 <main>
@@ -224,7 +225,7 @@
         cfg = null; data = null; etag = ''; knownSeq = '';
         try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
         if (timer) clearTimeout(timer);
-        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none';
+        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = 'none';
         $('training-banner').classList.add('hidden');
         setStatus('wait', 'Not connected'); setText('hdr-incident', ''); setText('hdr-updated', '');
     }
@@ -253,7 +254,7 @@
         demo = { startedAt: Date.now() };
         $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
         $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = '';
-        $('btn-signout').textContent = 'Leave demo';
+        $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
         demoTick();
     }
     function demoTick() {
@@ -271,7 +272,7 @@
         setText('hdr-updated', `Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
         $('conn-warn').classList.add('hidden');
         render();
-        setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Leave and reopen the demo to start again.');
+        setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Tap ↩ Start page to go back and pick another role.');
         timer = setTimeout(demoTick, next ? Math.min(10000, next + 200) : 30000);
     }
     async function refreshNow() {
