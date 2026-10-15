@@ -1547,6 +1547,83 @@ async function test(name, fn) {
         await G._ctx.close();
     });
 
+    console.log('\ne2e: v0.15.0 tags, printed numbers, clear and restart');
+    await test('v0.15.0: a scanned tag becomes the patient ID; scanning it again opens the patient; an unknown tag offers to start one', async () => {
+        const K = await device('K');
+        await setup(K, 'Medic K');
+        // Scan tag mode: a tag read for a new patient starts triage with that ID.
+        await K.evaluate(() => { setIdMode('SCAN'); _tagTarget = 'new'; _tagDone = false; scanMode = 'TAG'; });
+        await K.evaluate(() => onScanSuccess('wm-04471'));
+        await K.waitForFunction(() => document.getElementById('question-screen').classList.contains('active'), null, { timeout: 5000 });
+        assert.strictEqual(await K.textContent('#q-patient-id'), 'WM-04471');
+        await K.evaluate(() => { handleAnswer(false); handleAnswer(true); });
+        assert.strictEqual(await K.textContent('#r-patient-id'), 'WM-04471');
+        assert.ok(await K.evaluate(() => auditLog.some(a => a.action === 'TAG_SCANNED' && a.patientId === 'WM-04471')));
+        // The card number can be scanned into the open record.
+        await K.evaluate(() => { _tagTarget = 'card'; _tagDone = false; scanMode = 'CARD'; return onScanSuccess('0427'); });
+        assert.strictEqual(await K.inputValue('#p-card-no'), '0427');
+        assert.strictEqual(await K.evaluate(() => currentEntry().cardNo), '0427');
+        // Receive / find: a plain code the phone knows opens that patient (by ID or card number).
+        await K.evaluate(() => resetToHome());
+        await K.evaluate(() => { _scanLastTs = 0; scanMode = 'RECEIVE'; return onScanSuccess('0427'); });   // same code within 2 s is debounced
+        await K.waitForFunction(() => document.getElementById('result-screen').classList.contains('active'), null, { timeout: 5000 });
+        assert.strictEqual(await K.textContent('#r-patient-id'), 'WM-04471');
+        // An unknown tag offers to start a new patient with it.
+        await K.evaluate(() => resetToHome());
+        await K.evaluate(() => { scanMode = 'RECEIVE'; onScanSuccess('WM-04472'); });
+        await page_visible(K, '#confirm-modal');
+        assert.match(await K.textContent('#confirm-title'), /WM-04472/);
+        await K.click('#confirm-ok');
+        await K.waitForFunction(() => document.getElementById('question-screen').classList.contains('active'), null, { timeout: 5000 });
+        assert.strictEqual(await K.textContent('#q-patient-id'), 'WM-04472');
+        await K.evaluate(() => handleAnswer(true));
+        // The same tag read again for a new patient is caught as a duplicate (same patient → re-triage).
+        await K.evaluate(() => { _scanLastTs = 0; _tagTarget = 'new'; _tagDone = false; scanMode = 'TAG'; onScanSuccess('WM-04472'); });
+        await page_visible(K, '#confirm-modal');
+        assert.match(await K.textContent('#confirm-title'), /already exists/);
+        await K.click('#confirm-cancel');
+        await K.evaluate(() => closeManualId());
+        // An app QR is not a tag.
+        await K.evaluate(() => { _tagTarget = 'new'; _tagDone = false; scanMode = 'TAG'; onScanSuccess('{"t":"MIT_JOIN","code":"ABC123"}'); });
+        await page_visible(K, '#confirm-modal');
+        assert.match(await K.textContent('#confirm-title'), /app code/);
+        await K.click('#confirm-ok');
+        await K.evaluate(() => closeManualId());
+        await K._ctx.close();
+    });
+    await test('v0.15.0: the printed-number reader (OCR, on the phone) reads a printed code from a camera frame', async () => {
+        const K = await device('K2');
+        const r = await K.evaluate(async () => {
+            const c = document.createElement('canvas'); c.width = 1200; c.height = 300;
+            const ctx = c.getContext('2d'); ctx.fillStyle = '#f4f1e8'; ctx.fillRect(0, 0, c.width, c.height);
+            ctx.fillStyle = '#222'; ctx.font = 'bold 110px Arial, Helvetica, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText('WM-04471', 60, 150);
+            return ocrCanvas(c);
+        });
+        assert.ok(r.candidates.includes('WM-04471'), 'candidates: ' + JSON.stringify(r));
+        await K._ctx.close();
+    });
+    await test('v0.15.0: "Clear everything and start again" wipes the records in one step (CLEAR typed on a real-use phone) and keeps the user', async () => {
+        const K = await device('K3');
+        await setup(K, 'Medic K3');
+        await triage(K, 'TST', [false, true]);
+        assert.strictEqual(await K.evaluate(() => incidentLog.length), 1);
+        await K.evaluate(() => { clearAndRestart(); });   // reloads the page, so do not await its promise
+        await page_visible(K, '#confirm-modal');
+        assert.strictEqual(await K.evaluate(() => document.getElementById('confirm-ok').disabled), true, 'OK waits for CLEAR to be typed');
+        await Promise.all([K.waitForNavigation({ timeout: 20000 }), answerDialog(K, true, 'CLEAR')]);
+        await K.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 15000 });
+        assert.deepStrictEqual(await K.evaluate(() => [incidentLog.length, triagerName, wipeHistory.length, auditLog.filter(a => a.action === 'DATA_WIPE').length]), [0, 'Medic K3', 1, 1]);
+        // Reset the phone completely: nothing of the app remains in storage.
+        await K.evaluate(() => { factoryReset(); });
+        await Promise.all([K.waitForNavigation({ timeout: 20000 }), answerDialog(K, true, 'RESET')]);
+        await K.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 15000 });
+        assert.strictEqual(await K.evaluate(() => triagerName), '');
+        // The fresh start writes its own defaults again, so check the old state is gone rather than that storage is empty.
+        assert.deepStrictEqual(await K.evaluate(() => [incidentLog.length, auditLog.map(a => a.action), wipeHistory.length, userRole, localStorage.getItem('mit_user_role')]), [0, ['APP_START'], 0, null, null]);
+        assert.strictEqual(await K.evaluate(() => document.getElementById('intro-screen').classList.contains('active')), true);
+        await K._ctx.close();
+    });
+
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
 
     await browser.close();

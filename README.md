@@ -93,6 +93,7 @@ Scanning a colleague's **My ID** records who took over care (it no longer marks 
 - Other devices' audit rows (only if the sender chose to include them) are stored separately with their own chains and de-duplicated.
 - Exports: **Casualty Register (CSV)** — every record, uid, full triage history, ISO times; **Audit Trail (CSV)** — own + imported rows with hashes; **METHANE history (CSV)**; **Full Incident Archive (JSON)** — everything, with chain verification and the file's SHA-256 logged. CSVs are UTF-8 with a BOM and neutralise spreadsheet formulas.
 - **Close / Reset Incident** requires saving an archive first, keeps a permanent wipe record (counts, audit head hash, archive SHA-256), and starts the new audit chain with a `DATA_WIPE` entry citing the old head hash.
+- **Clear everything and start again** (v0.15.0) wipes without an archive: on a real-use phone with records the user types `CLEAR`; the same wipe record and `DATA_WIPE` entry are kept, with "no archive saved" noted.
 
 ## Storage safety
 
@@ -152,6 +153,14 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.15.0 build 2026-10-15-tags-and-calmer-screens — tag and wristband scanning, clear and restart, calmer screens
+
+- **Triage tag / wristband codes**: the app now links its record to the paper tag. Start screen → Options → Patient ID mode has a third choice, **Scan tag**: Start triage opens the camera, and the barcode or QR on the tag becomes the patient ID (a tag the phone already has offers a re-triage of that patient instead of a duplicate). The manual-ID box has a **📷 Scan** button, the patient screen's ID has a 📷 to rescan, and the **Triage card / tag number** field has its own 📷. **📷 Receive patient** (the home tile) now also accepts any plain code: a tag the phone knows opens that patient; an unknown one offers to start triage with it. Every read is audited (`TAG_SCANNED`). Codes are uppercased and limited to letters, digits, space, `. _ / -`.
+- **Printed numbers** with no barcode: in the scanner, **🔤 No barcode? Read the printed number** photographs the central band and reads it with Tesseract.js **on the phone** (`vendor/tesseract/`, about 6 MB, fetched on first use and then cached; ⚙ Settings → About has *Store the printed-number reader* to fetch it in advance). It offers the numbers it found for the user to confirm against the wristband. Reads clean printed codes reliably in testing (see `tests/e2e.js`); handwriting is not supported. CSP gained `'wasm-unsafe-eval'` for the WebAssembly engine.
+- **Clear everything and start again** (home → More, and ⚙ Settings → Incident & training): one step, no archive demanded. A real-use phone with records asks for `CLEAR` to be typed and reminds about the archive; training phones just confirm. Live sharing from that phone stops; name, role and settings stay; the wipe is still recorded (`DATA_WIPE`, `wipeHistory`). **Reset this phone completely** (⚙ Settings → About) deletes both databases, every setting, the cached app files and the service worker. *Close / Reset Incident* (archive first) is unchanged.
+- **Calmer patient screen**: the category counts strip is hidden while a patient is open; one big **Next Patient**, then Handover / Re-triage / Reassess; *MITT this patient now* and the high-risk toggle share a row (clinicians, TST only); "tapped the wrong button" is a small link under the action line; ATMIST lives in the Handover section; *Change category* and *More* are one **Other** section. **Patient log**: the five large count cards are replaced by the normal strip showing on scene / total plus the Field / CCS / Evacuated line. The footer shows only the version and the save time (the build is in ⚙ Settings → About).
+- The scanner's Paste button reads **Type it** in tag modes.
 
 ### v0.14.0 build 2026-10-15-commander-reliability — commander reliability, alerts, timeline, METHANE, hospital board, Google Play
 

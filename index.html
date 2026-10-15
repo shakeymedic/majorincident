@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#005EB8">
 <meta name="description" content="Major Incident Triage: TST and NHS MITT triage, handover and casualty register">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org; connect-src 'self' https://*.tile.openstreetmap.org; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org; connect-src 'self' https://*.tile.openstreetmap.org; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -456,9 +456,16 @@
     .rs-head { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:1.15rem; margin:0.2rem 0 0.4rem; flex-wrap:wrap; }
     .rs-action { font-weight:bold; text-align:center; font-size:1rem; color:var(--text-color); margin:0 0 0.6rem; }
     .rs-row { display:flex; gap:8px; margin-bottom:8px; }
+    .btn-next { background:var(--nhs-green); font-size:1.25rem; padding:1rem; margin-bottom:8px; }
+    .rs-link { display:block; width:100%; background:none; border:0; color:var(--nhs-blue); text-decoration:underline; font-size:0.9rem; padding:4px 0 8px; cursor:pointer; text-align:center; }
+    body.night-mode .rs-link { color:var(--nhs-yellow); }
+    .rs-hcp-row { align-items:stretch; }
+    .rs-hcp-row > * { flex:1; margin:0; }
+    .rs-hcp-row .risk-toggle { margin:0; height:100%; box-sizing:border-box; }
+    body[data-screen="result-screen"] #global-dashboard { display:none; }
     .rs-row .btn { flex:1; margin-bottom:0; padding:1rem 0.5rem; font-size:1.05rem; }
     .rs-row3 .btn, .btn.rs-small { padding:0.75rem 0.4rem; font-size:0.95rem; }
-    .risk-toggle { display:flex; align-items:center; gap:12px; font-weight:bold; color:var(--nhs-red); padding:12px 14px; border:3px solid var(--nhs-red); border-radius:10px; background:rgba(218,41,28,0.06); margin-bottom:0.6rem; cursor:pointer; }
+    .risk-toggle { display:flex; align-items:center; gap:10px; font-weight:bold; font-size:0.95rem; line-height:1.15; color:var(--nhs-red); padding:8px 10px; border:2px solid var(--nhs-red); border-radius:10px; background:rgba(218,41,28,0.06); margin-bottom:0.6rem; cursor:pointer; }
     .risk-toggle input { width:30px; height:30px; flex:0 0 auto; }
     .risk-toggle.on { background:var(--nhs-red); color:#fff; }
     details.rs-sec { border:2px solid rgba(0,94,184,0.35); border-radius:10px; margin-bottom:8px; background:var(--card-bg); }
@@ -551,6 +558,8 @@
     #toast.show { visibility: visible; opacity: 1; top: calc(50px + env(safe-area-inset-top, 0px)); }
 
     .editable-id { border-bottom: 2px dashed var(--nhs-blue); cursor: text; padding-bottom: 2px; }
+    .mini-btn { border:1px solid rgba(0,94,184,0.5); background:var(--card-bg); color:var(--nhs-blue); border-radius:8px; min-width:40px; min-height:36px; padding:2px 8px; font-size:1rem; cursor:pointer; vertical-align:middle; }
+    #ocr-modal { z-index: 2600; }
     .editable-id::after { content: " ✎"; font-size: 0.8em; opacity: 0.5; }
 
     #time-offset-container {
@@ -879,7 +888,11 @@
     /* Counters: on-scene number, with a one-line legend */
     .dash-legend { width:100%; text-align:center; font-size:0.72rem; color:var(--nhs-grey); padding:1px 0 2px; }
     .dashboard.expanded .dash-legend { display:none; }
-    .dashboard:not(.expanded) .dash-tot { display:none; }
+    .dashboard:not(.expanded):not(.log) .dash-tot { display:none; }
+    .dashboard.log .dash-tot { font-weight:500; font-size:0.8rem; opacity:0.9; }
+    .dashboard.log .dash-legend { display:block !important; }
+    .dashboard.log .dash-evac { flex:0 0 100%; width:100%; text-align:center; font-size:0.85rem; padding:4px; border-radius:0; display:block; border-right:0; }
+    #details-container > details.rs-sec:last-child:nth-child(odd) { grid-column: 1 / -1; }
     /* Settings: night mode / blackout (moved out of the header) */
     .settings-quick { display:flex; gap:10px; margin-bottom:0.8rem; }
     .settings-quick .btn { flex:1; margin:0; padding:0.8rem 0.5rem; font-size:1rem; }
@@ -970,7 +983,6 @@
     body:not(.gloved) .rs-row .btn { padding: 0.8rem 0.4rem; }
     body:not(.gloved) .rs-row { margin-bottom: 6px; }
     body:not(.gloved) .rs-row3 .btn, body:not(.gloved) .btn.rs-small { padding: 0.6rem 0.4rem; margin-bottom: 6px; }
-    body:not(.gloved) #btn-change-answer { padding: 0.4rem; font-size: 0.85rem; min-height: 40px; }
     body:not(.gloved) #result-screen .triage-tag { font-size: 2.3rem; }
     body:not(.gloved) .risk-toggle { padding: 6px 12px; margin-bottom: 6px; font-size: 0.95rem; }
     body:not(.gloved) .risk-toggle input { width: 26px; height: 26px; }
@@ -1264,6 +1276,7 @@
                 <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><br><small>Same on every phone at this incident.</small></label><input type="text" id="set-incident-code" style="width:9em; padding:8px; font-size:16px; min-height:44px;" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
                 <div class="setting-row" style="display:block;"><label for="set-hospitals"><strong>Receiving hospitals</strong><br><small>One per line. Offered when a casualty is marked evacuated; the commander screen counts casualties by hospital.</small></label><textarea id="set-hospitals" rows="5" style="width:100%; padding:8px; font-size:16px; margin-top:6px; font-family:inherit;" onchange="saveHospitals(this.value)"></textarea></div>
                 <label class="setting-row"><span><strong>Training mode</strong><br><small>Practice with pretend patients. Kept completely separate from real records.</small></span><input type="checkbox" id="mode-training" style="width:24px; height:24px;" onchange="toggleTrainingMode(this.checked)"></label>
+                <button class="btn btn-danger" style="margin-top:8px;" onclick="closeModesMenu(); clearAndRestart();">🧹 Clear everything and start again<br><span style="font-size:0.8rem; font-weight:normal;">Removes every patient on this phone; name, role and settings stay</span></button>
                 <button class="btn btn-secondary" id="btn-clear-training" style="display:none; margin-top:8px;" onclick="clearTrainingData()">Delete all training data</button>
                 <button class="btn btn-secondary" style="margin-top:8px;" onclick="closeModesMenu(); startDemo();">▶ Load the demo incident<br><span style="font-size:0.8rem; font-weight:normal;">Made-up casualties for showing the app (training mode)</span></button>
                 <div class="setting-row" style="display:block; border-bottom:none;">
@@ -1297,6 +1310,8 @@
                 <a class="btn btn-secondary" href="quick-reference.html" target="_blank" rel="noopener" style="margin-top:8px;">📄 Quick reference card (print for the kit bag)</a>
                 <a class="btn btn-secondary" href="privacy.html" target="_blank" rel="noopener">🔒 Privacy notice</a>
                 <button class="btn btn-secondary" onclick="closeModesMenu(); openLocationHelp();">📍 Location status &amp; help</button>
+                <button class="btn btn-secondary" onclick="downloadTextReader()">⬇ Store the printed-number reader on this phone<br><span style="font-size:0.8rem; font-weight:normal;">About 6 MB, once; then it works without signal</span></button>
+                <button class="btn btn-danger" style="margin-top:8px;" onclick="closeModesMenu(); factoryReset();">Reset this phone completely<br><span style="font-size:0.8rem; font-weight:normal;">Everything goes: patients, training data, name, role, settings and stored files</span></button>
                 <p class="qr-meta" id="device-info" style="text-align:left;"></p>
             </div>
         </details>
@@ -1369,12 +1384,22 @@
 <div id="manual-id-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="manual-id-title">
     <div class="modal-box">
         <h3 id="manual-id-title">Enter Patient ID</h3>
-        <p>Type the ID from the tag or wristband:</p>
-        <div class="input-group"><input type="text" id="manual-id-input" placeholder="e.g. T1234" autocomplete="off"></div>
+        <p>Scan the barcode or QR on the triage tag or wristband, or type the number printed on it.</p>
+        <button type="button" class="btn btn-primary" id="btn-scan-tag" onclick="scanTagForNewPatient()">📷 Scan the tag / wristband</button>
+        <div class="input-group"><label for="manual-id-input">Or type it</label><input type="text" id="manual-id-input" placeholder="e.g. T1234" autocomplete="off" autocapitalize="characters"></div>
         <div class="modal-actions">
             <button class="btn btn-primary" onclick="submitManualId()">Start Triage</button>
             <button class="btn btn-secondary" onclick="closeManualId()">Cancel</button>
         </div>
+    </div>
+</div>
+
+<div id="ocr-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="ocr-title">
+    <div class="modal-box">
+        <h3 id="ocr-title" style="margin-top:0;">Which is the number?</h3>
+        <p class="qr-meta" style="text-align:left;">Check it against the wristband before you tap. Printed text can be misread (0 and O, 1 and I, 5 and S).</p>
+        <div id="ocr-choices" style="display:flex; flex-direction:column; gap:6px;"></div>
+        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeOcrChoices()">None of these, try again</button></div>
     </div>
 </div>
 
@@ -1419,8 +1444,10 @@
         </div>
         <div class="modal-actions" style="width:100%; margin-top:10px;">
             <button class="btn btn-secondary" style="margin-bottom:0;" onclick="toggleScannerCamera()" id="btn-cam-toggle">⇆ Camera</button>
-            <button class="btn btn-secondary" style="margin-bottom:0;" onclick="openPasteCode()">⌨ Paste</button>
+            <button class="btn btn-secondary" style="margin-bottom:0;" onclick="openPasteCode()" id="btn-scan-paste">⌨ Paste</button>
         </div>
+        <button class="btn btn-primary" style="width:100%; margin:10px 0 0; display:none;" id="btn-ocr" onclick="ocrFromScanner()">🔤 No barcode? Read the printed number</button>
+        <p class="qr-meta" id="ocr-status" style="display:none; margin:6px 0 0;" aria-live="polite"></p>
         <button class="btn btn-secondary" style="width: 100%; margin-top:10px;" onclick="stopScanner()" id="btn-cancel-scan" type="button">Close scanner</button>
     </div>
 </div>
@@ -1547,7 +1574,7 @@
         <div class="dash-card dash-dead"><span class="dash-label">DEAD</span><span class="dash-num" id="count-dead">0 / 0</span><span class="dash-sub">(On scene / total)</span></div>
         <div class="dash-card cat-bg-P1_HOLD" id="dash-hold" style="display:none;"><span class="dash-label">P1 Hold</span><span class="dash-num" id="count-hold">0 / 0</span><span class="dash-sub">(On scene / total)</span></div>
         <div class="dash-card dash-evac" style="display:none; font-size:0.9rem;" id="evac-summary">Evacuated: 0 | On Scene: 0</div>
-        <div class="dash-legend">Patients still on scene (totals in the Patient log)</div>
+        <div class="dash-legend" id="dash-legend">Patients still on scene (totals in the Patient log)</div>
     </div>
 
     <main>
@@ -1601,8 +1628,10 @@
                         <label>Patient ID Mode</label>
                         <div style="display:flex; gap:10px;">
                             <button class="btn btn-secondary id-mode-btn active" id="mode-auto" style="flex:1;" onclick="setIdMode('AUTO')">Auto-Generate</button>
-                            <button class="btn btn-secondary id-mode-btn" id="mode-manual" style="flex:1;" onclick="setIdMode('MANUAL')">Manual Entry</button>
+                            <button class="btn btn-secondary id-mode-btn" id="mode-manual" style="flex:1;" onclick="setIdMode('MANUAL')">Type it</button>
+                            <button class="btn btn-secondary id-mode-btn" id="mode-scan" style="flex:1;" onclick="setIdMode('SCAN')">Scan tag</button>
                         </div>
+                        <p class="qr-meta" style="text-align:left;" id="id-mode-help">Auto: this phone numbers each patient. Type it / Scan tag: use the number on the paper triage tag or wristband (barcode, QR or printed).</p>
                         <div id="prefix-container" style="margin-top:15px;">
                             <label for="intro-device-prefix" style="font-size:0.9rem;">ID prefix (optional)</label>
                             <input type="text" id="intro-device-prefix" placeholder="Default: this device's code" autocomplete="off">
@@ -1628,7 +1657,7 @@
             </button>
             <div class="home-row">
                 <button class="btn btn-secondary home-receive" onclick="scanPatientQR()">
-                    📷 Receive patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan another phone's QR</span>
+                    📷 Receive patient<br><span style="font-size:0.8rem; font-weight:normal;">Scan a phone's QR or a tag</span>
                 </button>
                 <button class="btn btn-secondary" onclick="showLog()">
                     📋 Patient log<br><span style="font-size:0.8rem; font-weight:normal;">Records &amp; alerts</span>
@@ -1654,6 +1683,7 @@
                     </button>
                     <button class="btn btn-secondary" onclick="showMethane()">METHANE Report<br><span style="font-size:0.9rem; font-weight:normal;">Major Incident Declaration</span></button>
                     <button class="btn btn-secondary" style="background-color: #333;" onclick="resetApp()">Change User / Role</button>
+                    <button class="btn btn-danger" id="btn-home-clear" onclick="clearAndRestart()">🧹 Clear everything and start again</button>
                 </div>
             </details>
         </div>
@@ -1683,7 +1713,7 @@
 
         <div id="result-screen" class="screen">
             <div class="rs-head">
-                <span>ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong></span>
+                <span>ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong> <button type="button" class="mini-btn" onclick="scanTagForCurrent()" aria-label="Scan the tag to set this ID" title="Scan the tag">📷</button></span>
                 <span id="reassess-head"></span>
             </div>
             <div id="result-alerts"></div>
@@ -1693,22 +1723,21 @@
                 <div id="hr-badge" class="hr-badge" style="display:none;">HIGH RISK</div>
             </div>
             <div id="action-box" class="rs-action"></div>
-            <div class="rs-row">
-                <button class="btn btn-primary" style="background:var(--nhs-green);" onclick="nextPatient()">Next Patient →</button>
-                <button class="btn btn-primary" onclick="generatePatientQR()">📱 QR Handover</button>
-            </div>
-            <button id="btn-mitt-now" class="btn btn-primary rs-small" style="display:none; background:#B35900;" onclick="mittThisPatient()">MITT this patient now</button>
-            <div id="risk-container" style="display:none;">
-                <label class="risk-toggle">
-                    <input type="checkbox" id="risk-check" onchange="onHighRiskChange()">
-                    <span>HIGH RISK OF DETERIORATION</span>
-                </label>
-            </div>
-            <button id="btn-change-answer" class="btn btn-secondary rs-small" style="display:none; background:#666;" onclick="changeLastAnswer()">↩ Change last answer (tapped wrong button)</button>
+            <button id="btn-change-answer" class="rs-link" style="display:none;" onclick="changeLastAnswer()">↩ Tapped the wrong button? Change the last answer</button>
+            <button class="btn btn-primary btn-next" onclick="nextPatient()">Next Patient →</button>
             <div class="rs-row rs-row3">
+                <button class="btn btn-primary rs-small" onclick="generatePatientQR()">📱 Handover</button>
+                <button id="btn-retriage" class="btn btn-secondary rs-small" onclick="reTriage()">↻ Re-triage</button>
                 <button id="btn-reassess" class="btn btn-secondary rs-small hcp-only" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
-                <button id="btn-retriage" class="btn btn-secondary rs-small" onclick="reTriage()">↻ Re-Triage</button>
-                <button id="btn-atmist" class="btn btn-secondary rs-small hcp-only" onclick="generateAtmist()">📢 ATMIST</button>
+            </div>
+            <div class="rs-row rs-hcp-row" id="rs-hcp-row">
+                <button id="btn-mitt-now" class="btn rs-small" style="display:none; background:#B35900; color:#fff;" onclick="mittThisPatient()">MITT this patient now</button>
+                <div id="risk-container" style="display:none;">
+                    <label class="risk-toggle">
+                        <input type="checkbox" id="risk-check" onchange="onHighRiskChange()">
+                        <span>High risk of deterioration</span>
+                    </label>
+                </div>
             </div>
 
             <details id="clinical-prompts" class="clinical-prompt rs-prompts"></details>
@@ -1759,7 +1788,9 @@
                         </div>
                         <input type="text" id="p-demos" class="rec-field" placeholder="Age / Gender (e.g. 35M)">
                     </div>
-                    <div class="input-group"><label for="p-card-no">Triage card / tag number</label><input type="text" id="p-card-no" class="rec-field" placeholder="Number printed on the card on the casualty" autocomplete="off"></div>
+                    <div class="input-group"><label for="p-card-no">Triage card / tag number</label>
+                        <div style="display:flex; gap:5px;"><input type="text" id="p-card-no" class="rec-field" placeholder="Number printed on the card" autocomplete="off" autocapitalize="characters" style="flex:1; min-width:0;"><button type="button" class="btn btn-secondary" style="width:auto; min-width:52px; flex:0 0 auto; padding:0 12px; margin:0;" onclick="scanCardNumber()" aria-label="Scan the card number">📷</button></div>
+                    </div>
                     <div class="input-group"><label for="p-allergies">Allergies</label><input type="text" id="p-allergies" class="rec-field" placeholder="e.g. Penicillin"></div>
                     <div class="input-group">
                         <label for="p-notes">Notes</label>
@@ -1844,12 +1875,13 @@
                     <div class="input-group"><label for="p-evac-vehicle">Vehicle / crew</label><input type="text" id="p-evac-vehicle" class="rec-field" placeholder="e.g. AMB-404, HART Team 1"></div>
                     <div class="input-group"><label for="p-hospital-id">Hospital / receiving ID number</label><input type="text" id="p-hospital-id" class="rec-field" placeholder="Pre-assigned hospital number, if known"></div>
                     <button class="btn btn-secondary btn-handover" style="margin-bottom:10px; background-color:#555;" onclick="scanHandover()">Hand over care to a colleague (scan their ID)</button>
+                    <button id="btn-atmist" class="btn btn-secondary hcp-only" style="margin-bottom:10px;" onclick="generateAtmist()">📢 ATMIST handover</button>
                     <button id="btn-evac" class="btn btn-evac" onclick="toggleEvac()">Mark as EVACUATED</button>
                 </div>
             </details>
 
             <details class="rs-sec" id="sec-category">
-                <summary>Change category <span class="rs-sum" id="sum-category"></span></summary>
+                <summary>Other <span class="rs-sum" id="sum-category"></span></summary>
                 <div class="rs-body">
                     <div class="input-group">
                         <label for="p-cat-override">Category (change / override)</label>
@@ -1862,15 +1894,11 @@
                             <option value="P1_HOLD">P1 Hold (senior clinical decision)</option>
                         </select>
                     </div>
-                </div>
-            </details>
-
-            <details class="rs-sec" id="sec-more">
-                <summary>More <span class="rs-sum">timeline, label, NFC</span></summary>
-                <div class="rs-body rs-row rs-row3" style="margin:0;">
-                    <button class="btn btn-secondary rs-small" onclick="openTimelineForCurrent()">🕒 Timeline</button>
-                    <button class="btn btn-secondary rs-small" onclick="printPatientLabel()">🖨 Print Label</button>
-                    <button class="btn btn-nfc nfc-only rs-small" style="display:none;" onclick="triggerNfcSend()">📡 NFC tag</button>
+                    <div class="rs-row rs-row3" id="sec-more" style="margin:0;">
+                        <button class="btn btn-secondary rs-small" onclick="openTimelineForCurrent()">🕒 Timeline</button>
+                        <button class="btn btn-secondary rs-small" onclick="printPatientLabel()">🖨 Print label</button>
+                        <button class="btn btn-nfc nfc-only rs-small" style="display:none;" onclick="triggerNfcSend()">📡 NFC tag</button>
+                    </div>
                 </div>
             </details>
             </div>
@@ -1984,8 +2012,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.14.0';
-    const APP_BUILD = '2026-10-15-commander-reliability';
+    const APP_VERSION = '0.15.0';
+    const APP_BUILD = '2026-10-15-tags-and-calmer-screens';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2167,7 +2195,9 @@
         try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(granted => { if (!granted) console.info('Persistent storage not granted'); }); } catch (e) {}
     }
     let _lastSaveError = null;
+    let _wiped = false;   // set by the full reset: nothing may be written back while the app reloads
     function saveState() {
+        if (_wiped) return Promise.resolve(false);
         cmdScanChanges();
         ls('mit_patient_counter', patientCounter);
         ls('mit_triager', triagerName);
@@ -2225,7 +2255,7 @@
     }
     function markSaved() {
         if (_lastSaveError) { _lastSaveError = null; if (storageMode === 'indexeddb') setStorageBanner(null); }
-        setText('save-status', `Saved ${new Date().toLocaleTimeString('en-GB')} (${storageMode === 'indexeddb' ? 'device database' : 'backup storage'})`);
+        setText('save-status', `Saved ${fmtTime(Date.now())}${storageMode === 'indexeddb' ? '' : ' (backup storage)'}`);
     }
     function saveFailed(msg) {
         _lastSaveError = msg;
@@ -2333,6 +2363,7 @@
             case 'confirm-modal': resolveConfirm(false); break;
             case 'paste-modal': closePasteCode(); break;
             case 'manual-id-modal': closeManualId(); break;
+            case 'ocr-modal': closeOcrChoices(); break;
             case 'tod-modal': closeTodModal(); break;
             case 'atmist-modal': closeAtmist(); break;
             case 'body-map-modal': closeBodyMap(); break;
@@ -2889,9 +2920,9 @@
         }
     }
     function setIdMode(mode) {
-        idMode = mode === 'MANUAL' ? 'MANUAL' : 'AUTO';
+        idMode = mode === 'MANUAL' ? 'MANUAL' : mode === 'SCAN' ? 'SCAN' : 'AUTO';
         document.querySelectorAll('.id-mode-btn').forEach(btn => btn.classList.remove('active'));
-        $(idMode === 'AUTO' ? 'mode-auto' : 'mode-manual').classList.add('active');
+        $(idMode === 'AUTO' ? 'mode-auto' : idMode === 'SCAN' ? 'mode-scan' : 'mode-manual').classList.add('active');
         $('prefix-container').style.display = idMode === 'AUTO' ? 'block' : 'none';
         ls('mit_id_mode', idMode);
     }
@@ -2906,9 +2937,12 @@
         // this only changes the ID the NEW patient will receive (the old bug renamed the previous patient).
         const onResult = !!inResult && !!currentEntry();
         if (!onResult && (pendingReTriageUid || pendingCorrectionUid)) { showToast('This updates an existing patient — change the ID on the patient screen afterwards.', { long: true }); return; }
-        const newIdRaw = await inAppPrompt({ title: 'Edit Patient ID', message: 'Type the ID from the physical tag:', defaultValue: currentPatientId });
+        const newIdRaw = await inAppPrompt({ title: 'Edit Patient ID', message: 'Type the ID from the physical tag (or close this and tap 📷 to scan it):', defaultValue: currentPatientId });
         if (newIdRaw === null) return;
-        const newId = newIdRaw.trim();
+        await applyPatientIdChange(newIdRaw, onResult);
+    }
+    async function applyPatientIdChange(newIdRaw, onResult) {
+        const newId = String(newIdRaw || '').trim();
         if (!newId || newId === currentPatientId) return;
         if (newId.length > MITTLib.FIELD_INPUT_LIMITS.id) { showBlockingError('ID too long', `Patient IDs can be up to ${MITTLib.FIELD_INPUT_LIMITS.id} characters.`); return; }
         const clash = incidentLog.find(e => e.id === newId && (!onResult || e.uid !== currentEntry().uid));
@@ -2994,8 +3028,9 @@
         document.querySelector('main').scrollTop = 0;
         const dash = $('global-dashboard');
         const isLog = id === 'log-screen';
-        dash.classList.toggle('expanded', isLog);
+        dash.classList.toggle('log', isLog);   // the log shows on scene / total in the same compact strip
         $('evac-summary').style.display = isLog ? 'block' : 'none';
+        setText('dash-legend', isLog ? 'On scene / total' : 'Patients still on scene (totals in the Patient log)');
         $('oh-primary').textContent = id === 'result-screen' ? 'Next Patient' : 'Triage';
         // A pending re-triage / correction never lingers: leaving the relevant screens cancels it.
         if (pendingReTriageUid && id !== 'home-screen' && id !== 'question-screen') pendingReTriageUid = null;
@@ -3021,10 +3056,11 @@
             if (idx > -1) { currentPatientId = incidentLog[idx].id; startFlow(); return; }
             pendingReTriageUid = null;
         }
-        if (idMode === 'MANUAL') {
-            $('manual-id-input').value = '';
-            $('manual-id-modal').style.display = 'flex';
-            setTimeout(() => $('manual-id-input').focus(), 50);
+        if (_presetTagId) { currentPatientId = _presetTagId; _presetTagId = null; startFlow(); return; }
+        if (idMode === 'SCAN') {
+            scanTagForNewPatient();
+        } else if (idMode === 'MANUAL') {
+            openManualId();
         } else {
             currentPatientId = MITTLib.nextAutoId(idPrefix(), tool, patientCounter, incidentLog.map(e => e.id)).id;
             startFlow();
@@ -3396,7 +3432,7 @@
         if (entry.cardNo) t.unshift('card ' + entry.cardNo);
         if (entry.hospitalId) t.push('hosp ' + entry.hospitalId);
         setText('sum-transport', t.join(' • ') || 'on scene');
-        setText('sum-category', `currently ${catShort(entry.category)}`);
+        setText('sum-category', `category ${catShort(entry.category)}, timeline, label`);
     }
 
     // ---------- Field saving: only fields the user actually edited are written ----------
@@ -3945,7 +3981,13 @@
             ACK: ["Scan receiver's acknowledgement", "Scan the ACK QR on the receiver's phone."],
             TACK: ["Scan receiver's confirmation", "Scan the confirmation QR on the receiver's phone."],
             JOIN: ["Link to the incident commander", "Scan the join code on the commander's phone or screen."],
+            TAG: ['Scan the triage tag / wristband', 'Point at the barcode or QR on the tag. No barcode? Fill the box with the printed number and tap the button below.'],
+            CARD: ['Scan the card number', 'Point at the barcode or QR on the card. No barcode? Fill the box with the printed number and tap the button below.'],
         };
+        const tagMode = scanMode === 'TAG' || scanMode === 'CARD';
+        $('btn-ocr').style.display = tagMode ? 'block' : 'none';
+        $('btn-scan-paste').textContent = tagMode ? '⌨ Type it' : '⌨ Paste';
+        ocrStatus('');
         const t = titles[scanMode] || ['Receive (scan)', 'Any Major Incident Triage QR. For multi-part transfers keep scanning — the camera stays on and parts can be in any order.'];
         setText('scan-title', t[0]); setText('scan-instruction', t[1]);
         renderScanProgress();
@@ -3958,7 +4000,7 @@
         html5QrcodeScanner.start({ facingMode: _facingMode }, { fps: 12, qrbox: box, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, onScanSuccess, () => {})
             .catch(err => {
                 const msg = (err && err.toString) ? err.toString() : 'Camera error';
-                $('scanner-modal').style.display = 'none';
+                stopScanner();
                 if (/NotAllowedError|Permission/i.test(msg)) showBlockingError('Camera blocked', 'Allow camera permission for this site, then try again. Or use Paste / transfer file.');
                 else if (/NotFoundError|NoCamera/i.test(msg)) showBlockingError('No camera found', 'Use Paste or a transfer file.');
                 else showBlockingError('Camera error', msg);
@@ -3977,7 +4019,12 @@
             } catch (e) { done(); }
         });
     }
-    function stopScanner() { $('scanner-modal').style.display = 'none'; _safeCleanupScanner(); }
+    function stopScanner() {
+        $('scanner-modal').style.display = 'none'; _safeCleanupScanner(); ocrStatus('');
+        // Scanning a tag for a new patient and closing the scanner falls back to typing the number.
+        if (scanMode === 'TAG' && _tagTarget === 'new' && !_tagDone) { scanMode = null; openManualId(); return; }
+        if (scanMode === 'TAG' || scanMode === 'CARD') scanMode = null;
+    }
     function toggleScannerCamera() { _facingMode = _facingMode === 'environment' ? 'user' : 'environment'; _safeCleanupScanner().then(() => initScannerInstance()); }
     function openPasteCode() { _safeCleanupScanner(); $('paste-input').value = ''; $('paste-modal').style.display = 'flex'; setTimeout(() => $('paste-input').focus(), 50); }
     function closePasteCode() { $('paste-modal').style.display = 'none'; if ($('scanner-modal').style.display === 'flex') initScannerInstance(); }
@@ -4000,6 +4047,11 @@
         let txt = String(decodedText || '').replace(/^﻿/, '').trim();
         if (_shouldDebounceScan(txt)) return;
         playBeep(); triggerHaptic('success');
+        if (scanMode === 'TAG' || scanMode === 'CARD') {
+            if (looksLikeAppCode(txt)) { stopScanner(); showBlockingError('That is an app code', 'This QR was made by Major Incident Triage (a handover or join code), not a tag number. For handovers use Receive patient.'); return; }
+            handleTagScan(txt, 'scanned');
+            return;
+        }
         if (MITTLib.isCompressedTransport(txt)) {
             try { txt = await MITTLib.decodeTransportText(txt); }
             catch (e) { stopScanner(); showBlockingError('Could not read transfer', e.message); return; }
@@ -4020,8 +4072,142 @@
         stopScanner();
         if (txt.startsWith('MIT_USER|')) { handleIdentityScan(txt); return; }
         if (txt.startsWith('MIT_PT|')) { handleLegacyPatientScan(txt); return; }
+        const plain = cleanTagCode(txt);
+        if (scanMode === 'RECEIVE' && plain && !/[{}|]/.test(txt) && txt.length <= 60) { offerTagLookup(plain); return; }
         logAudit('QR_REJECTED', '-', `Unknown format. First chars: ${txt.slice(0, 24)}`, Date.now());
         showBlockingError('Not a patient code', 'This QR is not a Major Incident Triage code, or it was damaged. Try again, or use a transfer file.');
+    }
+
+    // ---------- Triage tag / wristband codes (barcode, QR or printed number) ----------
+    // In TAG / CARD mode any plain code is accepted as the tag number: the app links its record to the paper tag
+    // or wristband rather than insisting on codes it made itself.
+    let _tagTarget = null;      // 'new' (starting a patient), 'current' (rename the open record) or 'card' (card number field)
+    let _tagDone = false;
+    let _presetTagId = null;    // a tag number chosen before Start triage (from Receive patient)
+    function cleanTagCode(txt) {
+        return String(txt || '').replace(/[^A-Za-z0-9 ._\/-]/g, '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, MITTLib.FIELD_INPUT_LIMITS.id);
+    }
+    function looksLikeAppCode(txt) { return /^\s*[{\[]/.test(txt) || /^MIT_/.test(txt) || MITTLib.isCompressedTransport(txt); }
+    function openManualId() { $('manual-id-input').value = ''; $('manual-id-modal').style.display = 'flex'; setTimeout(() => $('manual-id-input').focus(), 50); }
+    function scanTagForNewPatient() { $('manual-id-modal').style.display = 'none'; _tagTarget = 'new'; _tagDone = false; scanMode = 'TAG'; startScanner(); }
+    function scanTagForCurrent() { if (!currentEntry()) return; commitDirtyFields('Scan tag'); _tagTarget = 'current'; _tagDone = false; scanMode = 'TAG'; startScanner(); }
+    function scanCardNumber() { if (!currentEntry()) return; commitDirtyFields('Scan card'); _tagTarget = 'card'; _tagDone = false; scanMode = 'CARD'; startScanner(); }
+    function findByTag(code) { return incidentLog.find(e => e.id === code || (e.cardNo && e.cardNo.toUpperCase() === code)) || null; }
+    async function handleTagScan(raw, how) {
+        const code = cleanTagCode(raw);
+        if (!code) { showToast('Nothing readable in that code'); return; }
+        _tagDone = true;
+        const target = _tagTarget;
+        stopScanner();
+        logAudit('TAG_SCANNED', code, `${how || 'scanned'} for ${target === 'card' ? 'card number' : target === 'current' ? 'patient ID' : 'new patient'}`, Date.now());
+        if (target === 'card') {
+            const f = $('p-card-no'); f.value = code; markDirty('p-card-no'); commitDirtyFields('Card number scanned');
+            const e = currentEntry(); if (e) updateSectionSummaries(e);
+            showToast(`Card number ${code} saved`);
+        } else if (target === 'current') {
+            await applyPatientIdChange(code, true);
+        } else {
+            openManualId();
+            $('manual-id-input').value = code;
+            await submitManualId();
+        }
+    }
+    // Receive patient read a plain code (a tag, not an app QR): open that patient if the phone has it, else start one.
+    async function offerTagLookup(code) {
+        const hit = findByTag(code);
+        if (hit) { showToast(`Opening ${hit.id}`); editEntryByUid(hit.uid); return; }
+        const ok = await inAppConfirm({ title: 'Tag ' + code, message: 'No patient on this phone has this tag number. Start triage for a new patient with this number as the ID?', okLabel: 'Start triage with ' + code, cancelLabel: 'Not now' });
+        if (!ok) return;
+        _presetTagId = code;
+        initiateTriage(lastTriageTool || 'TST');
+    }
+
+    // ---------- Reading a printed number with the camera (OCR; Tesseract.js runs on the phone, nothing is uploaded) ----------
+    let _ocrWorker = null, _ocrLoading = null;
+    const OCR_FILES = ['vendor/tesseract/tesseract.min.js', 'vendor/tesseract/worker.min.js', 'vendor/tesseract/tesseract-core-simd-lstm.wasm.js', 'vendor/tesseract/tesseract-core-lstm.wasm.js', 'vendor/tesseract/eng.traineddata.gz'];
+    function wasmSimdSupported() { try { return WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11])); } catch (e) { return false; } }
+    function loadScriptOnce(src) {
+        return new Promise((resolve, reject) => {
+            if (document.querySelector(`script[src="${src}"]`) && window.Tesseract) { resolve(); return; }
+            const sc = document.createElement('script'); sc.src = src; sc.onload = resolve; sc.onerror = () => reject(new Error('Could not load ' + src)); document.head.appendChild(sc);
+        });
+    }
+    function ocrStatus(msg) { const e = $('ocr-status'); if (!e) return; e.style.display = msg ? 'block' : 'none'; e.textContent = msg || ''; }
+    async function getOcrWorker(onProgress) {
+        if (_ocrWorker) return _ocrWorker;
+        if (!_ocrLoading) _ocrLoading = (async () => {
+            if (typeof WebAssembly === 'undefined') throw new Error('This browser cannot run the text reader.');
+            await loadScriptOnce('vendor/tesseract/tesseract.min.js');
+            const base = new URL('vendor/tesseract/', location.href).href;
+            const w = await Tesseract.createWorker('eng', 1, {
+                workerPath: base + 'worker.min.js',
+                corePath: base + (wasmSimdSupported() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js'),
+                langPath: base.replace(/\/$/, ''),
+                workerBlobURL: false,
+                logger: m => { if (onProgress && m && m.status) onProgress(m); },
+            });
+            await w.setParameters({ tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-/', tessedit_pageseg_mode: '7' });
+            _ocrWorker = w;
+            return w;
+        })().catch(e => { _ocrLoading = null; throw e; });
+        return _ocrLoading;
+    }
+    function ocrGrabFrame() {
+        const video = document.querySelector('#scanner-reader video');
+        if (!video || !video.videoWidth) throw new Error('The camera is not running.');
+        const vw = video.videoWidth, vh = video.videoHeight;
+        const cw = Math.round(vw * 0.8), ch = Math.round(vh * 0.3), cx = Math.round((vw - cw) / 2), cy = Math.round((vh - ch) / 2);
+        const scale = Math.max(1, Math.min(3, 1400 / cw));
+        const c = document.createElement('canvas'); c.width = Math.round(cw * scale); c.height = Math.round(ch * scale);
+        c.getContext('2d').drawImage(video, cx, cy, cw, ch, 0, 0, c.width, c.height);
+        return c;
+    }
+    function ocrPrepare(canvas) {   // greyscale with the contrast stretched: printed codes on a pale band read better
+        const ctx = canvas.getContext('2d'); const img = ctx.getImageData(0, 0, canvas.width, canvas.height); const d = img.data;
+        let min = 255, max = 0; const g = new Float32Array(d.length / 4);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) { const v = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; g[j] = v; if (v < min) min = v; if (v > max) max = v; }
+        const range = Math.max(1, max - min);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) { const v = ((g[j] - min) / range) * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+        ctx.putImageData(img, 0, 0); return canvas;
+    }
+    function ocrCandidates(text) {
+        const out = []; const seen = new Set();
+        String(text || '').toUpperCase().replace(/[^A-Z0-9\-\/ \n]/g, ' ').split(/\s+/).forEach(tok => {
+            const t = tok.replace(/^[-\/]+|[-\/]+$/g, '');
+            if (t.length < 3 || (!/[0-9]/.test(t) && t.length < 5)) return;   // codes carry digits; short plain words are noise
+            if (!seen.has(t)) { seen.add(t); out.push(t); }
+        });
+        return out;
+    }
+    async function ocrCanvas(canvas) {
+        const w = await getOcrWorker(m => { if (/loading|initializ/i.test(m.status)) ocrStatus('Loading the text reader (first time only, about 6 MB)…'); });
+        const r = await w.recognize(ocrPrepare(canvas));
+        return { text: r.data.text || '', candidates: ocrCandidates(r.data.text), confidence: r.data.confidence };
+    }
+    async function ocrFromScanner() {
+        const btn = $('btn-ocr'); btn.disabled = true; _scanPaused = true;
+        try {
+            const frame = ocrGrabFrame();
+            ocrStatus('Reading… hold still.');
+            const r = await ocrCanvas(frame);
+            ocrStatus('');
+            if (!r.candidates.length) { showToast('No number found. Fill the box with the number, in good light, and try again.', { long: true }); return; }
+            showOcrChoices(r.candidates);
+        } catch (e) { ocrStatus(''); showToast('Text reader failed: ' + (e && e.message ? e.message : e), { long: true }); }
+        finally { btn.disabled = false; _scanPaused = false; }
+    }
+    function showOcrChoices(cands) {
+        const box = $('ocr-choices'); clearChildren(box);
+        cands.slice(0, 6).forEach(c => box.appendChild(el('button', { type: 'button', className: 'btn btn-primary', text: c, onclick: () => { $('ocr-modal').style.display = 'none'; handleTagScan(c, 'read from print'); } })));
+        $('ocr-modal').style.display = 'flex';
+    }
+    function closeOcrChoices() { $('ocr-modal').style.display = 'none'; }
+    async function downloadTextReader() {
+        showToast('Storing the text reader on this phone…');
+        try {
+            for (const f of OCR_FILES) { const r = await fetch(f); if (!r.ok) throw new Error(f); await r.blob(); }
+            showToast('Text reader stored. It now works without signal.', { long: true });
+        } catch (e) { showToast('Could not download it all. Try again on Wi-Fi.', { long: true }); }
     }
 
     // ---------- Colleague identity (hand over care on scene) ----------
@@ -4911,19 +5097,53 @@
         if (!saved) { showToast('Reset cancelled. Data kept.'); return; }
         const ok2 = await inAppConfirm({ title: 'Final check', message: 'Type DELETE to remove all patients from this device.', okLabel: 'Remove all patients', danger: true, requireText: 'DELETE' });
         if (!ok2) { showToast('Reset cancelled. Data kept.'); return; }
+        await wipeIncidentData('Incident closed', digest);
+    }
+    // Everything about the incident goes; the wipe itself stays on record (wipeHistory + the first entry of the new audit chain).
+    async function wipeIncidentData(why, digest) {
         const v = MITTLib.verifyAuditChain(auditLog);
-        const summary = { at: Date.now(), atISO: MITTLib.isoWithOffset(Date.now()), by: triagerName, device: deviceId, records: incidentLog.length, auditEntries: auditLog.length, auditHeadHash: v.headHash, auditIntact: v.ok, archiveSha256: digest };
-        // The wipe itself is evidenced: a small permanent record, and the new audit chain starts by citing the old head hash.
+        const summary = { at: Date.now(), atISO: MITTLib.isoWithOffset(Date.now()), by: triagerName, device: deviceId, records: incidentLog.length, auditEntries: auditLog.length, auditHeadHash: v.headHash, auditIntact: v.ok, archiveSha256: digest || '' };
         wipeHistory = wipeHistory.concat([summary]);
+        if (cmdActive()) cmdStopLocal('Stopped: this phone was cleared');
         incidentLog = []; auditLog = []; importedAudit = []; methaneHistory = [];
-        appendAudit({ deviceId, sysTime: Date.now(), sysTimeISO: MITTLib.isoWithOffset(Date.now()), user: triagerName, role: userRole || '', action: 'DATA_WIPE', patientId: '-', details: `Incident closed. Previous: ${summary.records} records, ${summary.auditEntries} audit entries, audit head ${summary.auditHeadHash} (${v.ok ? 'intact' : 'BROKEN'}), archive SHA-256 ${digest}`, app: APP_VERSION });
-        ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers'].forEach(k => ls(k, null));
+        appendAudit({ deviceId, sysTime: Date.now(), sysTimeISO: MITTLib.isoWithOffset(Date.now()), user: triagerName, role: userRole || '', action: 'DATA_WIPE', patientId: '-', details: `${why}. Previous: ${summary.records} records, ${summary.auditEntries} audit entries, audit head ${summary.auditHeadHash} (${v.ok ? 'intact' : 'BROKEN'})${digest ? ', archive SHA-256 ' + digest : ', no archive saved'}`, app: APP_VERSION });
+        ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_demo_mode'].forEach(k => ls(k, null));
         // A copy left in backup browser storage (from any earlier fallback) would keep patient data on the phone.
         if (storageMode === 'indexeddb') ls(FALLBACK_KEY, null);
         patientCounter = 1; currentLogIndex = -1; cachedCcsLocation = null;
         const ok = await saveState();
         if (!ok) { showBlockingError('Reset not saved', 'The device could not save the reset. Close and reopen the app.'); return; }
+        try { sessionStorage.removeItem('mit_cmd_link_dismissed'); } catch (e) {}
         location.reload();
+    }
+    // "Clear everything and start again": one step, no archive demanded. Real-use phones with records type CLEAR first.
+    async function clearAndRestart() {
+        try { commitDirtyFields('Clear'); } catch (e) {}
+        const n = incidentLog.length;
+        const real = !TRAINING && n > 0;
+        const ok = await inAppConfirm(real
+            ? { title: 'Clear everything and start again?', message: `Removes all ${n} patient record(s), the audit trail and METHANE reports from this phone, and stops live sharing. Your name, role and settings stay.\n\nIf this was a real incident, save the archive first (Patient log → Records & exports). Type CLEAR to go ahead.`, okLabel: 'Clear everything', danger: true, requireText: 'CLEAR' }
+            : { title: 'Clear everything and start again?', message: n ? `Removes all ${n} ${TRAINING ? 'practice ' : ''}patient record(s) from this phone and starts fresh. Your name, role and settings stay.` : 'Starts fresh on this phone. Your name, role and settings stay.', okLabel: 'Clear and restart', danger: true });
+        if (!ok) return;
+        await wipeIncidentData('Cleared to start again');
+    }
+    // Reset the phone completely: both databases, every setting, the stored files and the service worker.
+    async function factoryReset() {
+        try { commitDirtyFields('Reset'); } catch (e) {}
+        const ok = await inAppConfirm({ title: 'Reset this phone completely?', message: 'Deletes every patient record (real and training), the audit trails, your name, role, settings and the app files stored for offline use. The app then reloads as if newly installed (it needs signal once to download itself again).\n\nType RESET to go ahead.', okLabel: 'Reset everything', danger: true, requireText: 'RESET' });
+        if (!ok) return;
+        _wiped = true;
+        if (cmdActive()) cmdStopLocal('Stopped: phone reset');
+        try { if (db) db.close(); } catch (e) {}
+        db = null; dbReady = false;
+        try { Object.keys(localStorage).forEach(k => { if (/^(mit_|trn_)/.test(k)) localStorage.removeItem(k); }); } catch (e) {}
+        try { sessionStorage.clear(); } catch (e) {}
+        const jobs = [];
+        ['MITT_DB', 'MITT_TRAINING_DB'].forEach(name => jobs.push(new Promise(res => { try { const r = indexedDB.deleteDatabase(name); r.onsuccess = r.onerror = r.onblocked = () => res(); setTimeout(res, 3000); } catch (e) { res(); } })));
+        if (window.caches) jobs.push(caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).catch(() => {}));
+        if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r => r.unregister()))).catch(() => {}));
+        await Promise.all(jobs);
+        location.replace(location.pathname);
     }
 
     // ================= METHANE =================
@@ -5864,7 +6084,7 @@
     openDatabase();
     watchForOtherCopies();
     setupIosInstallBanner();
-    document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `Major Incident Triage v${APP_VERSION} (${APP_BUILD})`); });
+    document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `Major Incident Triage v${APP_VERSION}`); });
     window.onload = function () {
         applyInputLimits();
         wireFieldHandlers();
