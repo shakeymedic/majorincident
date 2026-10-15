@@ -5,7 +5,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # Only the runtime dependency (@netlify/blobs) is needed on Netlify; the test tooling stays local.
+  # Only the runtime dependencies (@netlify/blobs, @google-cloud/firestore) are needed on Netlify; the test tooling stays local.
   NPM_FLAGS = "--omit=dev --no-audit --no-fund"
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
 
@@ -13,3 +13,5 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
   included_files = ["lib.js", "netlify/lib/**"]
+  # Loaded only when the Firestore (UK) settings are present; shipped as a normal package rather than bundled.
+  external_node_modules = ["@google-cloud/firestore"]

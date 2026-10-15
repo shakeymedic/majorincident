@@ -126,7 +126,16 @@ Use **one iPhone and one Android phone** for at least one full run, and do steps
 
 ## Live sharing with an incident commander (optional, needs signal)
 
-Off by default. When a phone starts or joins sharing, its triage records go over HTTPS to `/api/incident/<code>/records` on this site, protected by the incident code and PIN. The server keeps only the minimised record (the same fields as a QR handover: no names, no NHS numbers) for 24 hours after the last update, then deletes it. The phones remain the record of truth and keep the audit trail. The commander page is an aid for a live incident, not a clinical record system. Netlify Functions and Blobs run on AWS; the region is not selectable, so check with your information governance lead before using it with real patients.
+Off by default. When a phone starts or joins sharing, its triage records go over HTTPS to `/api/incident/<code>/records` on this site, protected by the incident code and PIN. The server keeps only the minimised record (the same fields as a QR handover: no names, no NHS numbers) for 24 hours after the last update, then deletes it. The phones remain the record of truth and keep the audit trail. The commander page is an aid for a live incident, not a clinical record system. The server functions run in Netlify's London region. The records are kept in Google Cloud Firestore in London (europe-west2) once the three `FIRESTORE_*` settings below are in place; until then they stay in Netlify Blobs, whose region cannot be chosen. Each API response carries an `X-Incident-Store` header (`firestore` or `netlify-blobs`) saying which is in use. The app is for training and exercise use only.
+
+### UK hosting (Firestore, London)
+
+1. In Google Cloud (or Firebase), create a Firestore database in **Native mode** with location **europe-west2 (London)**. The location cannot be changed later.
+2. Create a service account with the **Cloud Datastore User** role and make a JSON key for it.
+3. In Netlify › majorincident › Site configuration › Environment variables, add (scope: Functions): `FIRESTORE_PROJECT_ID` (`project_id` from the key), `FIRESTORE_CLIENT_EMAIL` (`client_email`) and `FIRESTORE_PRIVATE_KEY` (`private_key`, pasted as it is, `\n` escapes are fine). Optional: `FIRESTORE_DATABASE` if the database is not `(default)`, `FIRESTORE_COLLECTION` (default `mi_kv`).
+4. Redeploy. Check `curl -sI https://majorincident.netlify.app/api/incident/ABCDEF` shows `X-Incident-Store: firestore`.
+
+Switching store does not copy anything across, so any incident being shared at that moment is lost from the commander screen (the phones keep their own records). Switch when nothing is live. Code: `netlify/lib/firestore-store.js`, chosen in `netlify/lib/pick-store.mjs`; tests: `tests/firestore-store.test.js` (runs the whole backend suite through the Firestore store, against a stand-in or, with `FIRESTORE_EMULATOR_HOST`, the Firestore emulator).
 
 ## Privacy posture
 
@@ -154,6 +163,16 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.17.2 build 2026-10-15-uk-hosting — live sharing can be kept in the UK
+- The two server functions run in Netlify's London region (`region: 'lhr'`).
+- New Firestore store (`netlify/lib/firestore-store.js`), used when the `FIRESTORE_*` settings are present, so the shared records can sit in Google Cloud europe-west2 (London). Netlify Blobs stays as the fallback. `X-Incident-Store` response header says which is in use. Triage rules unchanged.
+
+### v0.17.1 build 2026-10-15-intended-purpose — one intended-purpose statement
+- "Training and exercise use only. Not for use with real patients." on the start screen, footer, Settings › Help, commander page, quick reference, privacy notice, manifest and Play listing text.
+
+### v0.17.0 build 2026-10-15-back-to-basics — back to basics phone layout
+- Hand over and Receive on the home screen and Hand over on the result screen; patient details in a More panel; setup items moved into a grouped Settings screen; YES above NO with a double-tap guard. Triage rules unchanged.
 
 ### v0.16.0 build 2026-10-15-shared-picture — ideas from Pulsara, Peak Response and Chronosoft
 
@@ -227,7 +246,7 @@ Changes taken from a review of comparable products (Pulsara, Peak Response, KatA
 - **Start screen roles**: a third button, **"I'm the incident commander"**, creates the incident on the spot (needs signal once), shows the code, PIN and join QR, and offers **Open the commander screen**, which signs in by itself on that phone. Everyone else is asked, right after picking their role, **"Is there an incident commander?"** with *Scan the commander's code*, *Type the code and PIN* or *No commander / not now*; an unlinked phone also shows a tappable reminder on the home screen until it links or the question is dismissed for the session. Once linked, everything the phone records is sent in the background.
 - **Share with commander** (⚙ Settings → Incident & training): one phone starts sharing and gets a 6-character incident code and a 6-digit PIN; other phones join by typing them or by scanning the join QR with 📷 Receive patient. From then on each phone sends its triage records in the background whenever it has signal (3 seconds after a change, plus a heartbeat every minute); nothing in the triage flow waits for the network, and a phone with no signal queues changes and sends them later. The blue bar shows a ☁ pill with the code and ✓ / … / ✗.
 - **commander.html**: any browser, tablet or laptop. Code + PIN sign-in, counts by category (on scene and total), a map with clustered markers, accuracy circles and the CCS, a "needs attention" list (overdue reassessments, tourniquets with their time, high risk, breathing not detected), the casualty table priority-first with place, OS grid reference, interventions, reassessment due time and which phone reported it, a by-sector breakdown, phones reporting with "not heard from" after 5 minutes, and GPX / KML / GeoJSON / CSV downloads. Refreshes every 30 seconds (cheap when nothing changed). **Wall display** (button, the W key, or `commander.html#CODE/wall`) fits the counts, map, needs-attention list and phones on one screen with large type for a screen in the command post.
-- **Backend**: a Netlify Function (`netlify/functions/incident.mjs`, logic in `netlify/lib/incident-core.js`) with Netlify Blobs. What leaves the phone is the same minimised record as the QR transfer (no names or NHS numbers; field caps enforced again server-side). Code and PIN are both needed for every request (PIN hashed with a salt, constant-time compare, 25 wrong PINs lock a client out for 15 minutes), an older copy of a record never overwrites a newer one, the server copy is deleted 24 hours after the last update (on access and by an hourly sweep), and the phone that started can "End incident for everyone" to delete it at once. Every start / join / push / failure / stop is in the phone's audit chain; the function logs create / read / close events.
+- **Backend**: a Netlify Function (`netlify/functions/incident.mjs`, logic in `netlify/lib/incident-core.js`) with Netlify Blobs (Firestore London from v0.17.2, see UK hosting above). What leaves the phone is the same minimised record as the QR transfer (no names or NHS numbers; field caps enforced again server-side). Code and PIN are both needed for every request (PIN hashed with a salt, constant-time compare, 25 wrong PINs lock a client out for 15 minutes), an older copy of a record never overwrites a newer one, the server copy is deleted 24 hours after the last update (on access and by an hourly sweep), and the phone that started can "End incident for everyone" to delete it at once. Every start / join / push / failure / stop is in the phone's audit chain; the function logs create / read / close events.
 - **Training mode** incidents are marked as such on the commander screen, and a training phone cannot join a real incident (or the reverse).
 - 15 backend unit tests (`node tests/incident-core.test.js`) and 13 new end-to-end tests that run the real function code in-process behind the test web server.
 
