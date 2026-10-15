@@ -180,7 +180,9 @@ function createCore(opts) {
         if (a.status) return a;
         const meta = a.meta;
         const etag = `"${meta.seq || 0}"`;
-        if (ifNoneMatch && ifNoneMatch === etag) return { status: 304, body: null, headers: { ETag: etag, 'Cache-Control': 'no-store' } };
+        // Netlify's edge appends a suffix when it compresses the body ("2" becomes "2-df"), so compare the sequence number only.
+        const givenSeq = String(ifNoneMatch || '').replace(/^W\//, '').replace(/"/g, '').split('-')[0];
+        if (givenSeq && givenSeq === String(meta.seq || 0)) return { status: 304, body: null, headers: { ETag: etag, 'Cache-Control': 'no-store' } };
         const t = now();
         const recKeys = await store.list(`i/${code}/r/`);
         const records = [];

@@ -72,6 +72,10 @@ function rec(uid, id, category, extra) {
     await test('an unchanged incident answers 304 to If-None-Match; a push changes the ETag', async () => {
         const r = await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': etag }), '', '2.2.2.2');
         assert.strictEqual(r.status, 304);
+        // Netlify's CDN rewrites the ETag it serves when it compresses the body ("2" -> "2-df"); that must still match.
+        assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': etag.replace(/"$/, '-df"') }), '', '2.2.2.2')).status, 304);
+        assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': 'W/' + etag }), '', '2.2.2.2')).status, 304);
+        assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': '"999"' }), '', '2.2.2.2')).status, 200);
         clock += 1000;
         await core.handle('PUT', `/api/incident/${code}/records`, H(pin), JSON.stringify({ deviceId: 'DEVB', records: [rec('u9', 'DEVB-TST-001', 'P2')] }), '3.3.3.3');
         const r2 = await core.handle('GET', `/api/incident/${code}`, Object.assign(H(pin), { 'if-none-match': etag }), '', '2.2.2.2');
