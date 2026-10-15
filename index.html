@@ -1003,10 +1003,20 @@
     </div>
 </div>
 
+<div id="cmd-link-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-link-title">
+    <div class="modal-box" style="max-width:420px;">
+        <h3 id="cmd-link-title" style="margin-top:0;">Is there an incident commander?</h3>
+        <p class="qr-meta" style="text-align:left;">If someone has started the incident on the commander screen, link this phone now. Everything you do is then sent to them in the background whenever there is signal (no names or NHS numbers). You can also do this later from ⚙ Settings.</p>
+        <button type="button" class="btn btn-primary" onclick="cmdScanJoin()">📷 Scan the commander's code</button>
+        <button type="button" class="btn btn-secondary" onclick="closeCmdLink(); cmdOpenJoin();">Type the code and PIN</button>
+        <button type="button" class="btn btn-secondary" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue);" onclick="cmdDismissLink()">No commander / not now</button>
+    </div>
+</div>
 <div id="cmd-join-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-join-title">
     <div class="modal-box" style="max-width:420px;">
         <h3 id="cmd-join-title" style="margin-top:0;">Join an incident</h3>
-        <p class="qr-meta" style="text-align:left;">Type the code and PIN from the phone that started sharing, or scan its join QR with 📷 Receive patient.</p>
+        <p class="qr-meta" style="text-align:left;">Scan the join code on the commander's screen, or type the code and PIN they give you.</p>
+        <button type="button" class="btn btn-primary" onclick="cmdScanJoin()">📷 Scan the commander's code</button>
         <div class="input-group"><label for="cmd-join-code">Incident code</label><input type="text" id="cmd-join-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="6 letters / digits"></div>
         <div class="input-group"><label for="cmd-join-pin">PIN</label><input type="text" id="cmd-join-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 digits"></div>
         <div class="modal-actions">
@@ -1026,11 +1036,12 @@
         </div>
         <p class="qr-meta" style="text-align:left;" id="cmd-detail-status"></p>
         <div id="cmd-qr" style="display:flex; justify-content:center; margin:0.5rem 0;"></div>
-        <p class="qr-meta">Other triagers: 📷 Receive patient → scan this code to join. Commander: open the link below on any computer or tablet and enter the PIN.</p>
-        <p style="word-break:break-all; font-size:0.95rem;"><a id="cmd-link" href="commander.html" target="_blank" rel="noopener"></a></p>
+        <p class="qr-meta" id="cmd-detail-hint">Triagers: tap "Link to commander" on their start screen and scan this code. The commander screen opens below on this phone; on a laptop or big screen, open the link and enter the PIN.</p>
+        <a id="cmd-open-btn" class="btn btn-primary" href="commander.html" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none;">🖥 Open the commander screen</a>
+        <p style="word-break:break-all; font-size:0.85rem;"><a id="cmd-link" href="commander.html" target="_blank" rel="noopener"></a></p>
         <div class="modal-actions">
             <button type="button" class="btn btn-secondary" onclick="cmdCopyLink()">Copy link and PIN</button>
-            <button type="button" class="btn btn-secondary" id="cmd-end-btn" style="display:none;" onclick="cmdEndIncident()">End incident for everyone (delete server copy)</button>
+            <button type="button" class="btn btn-secondary" id="cmd-end-btn" style="display:none; flex:1 1 100%;" onclick="cmdEndIncident()">End incident for everyone (deletes the server copy)</button>
             <button type="button" class="btn btn-primary" onclick="closeCmdDetails()">Close</button>
         </div>
     </div>
@@ -1401,6 +1412,10 @@
             <button class="btn btn-secondary" style="padding: 1.3rem;" onclick="setUserRole('NON_HCP')">
                 I'm non-clinical / first aid<br><span style="font-size:0.9rem; font-weight:normal;">Police, fire, first responder (TST only)</span>
             </button>
+            <button class="btn btn-primary" id="btn-role-commander" style="padding: 1.3rem; background:var(--nhs-dark-blue);" onclick="startAsCommander()">
+                🎖 I'm the incident commander<br><span style="font-size:0.9rem; font-weight:normal;">Creates the incident. Triagers link their phones to it and everything they do appears on the commander screen.</span>
+            </button>
+            <p class="qr-meta" id="intro-cmd-status" style="text-align:left; margin:-4px 0 12px;"></p>
             <details class="rs-sec intro-options" id="intro-options">
                 <summary>Options <span class="rs-sum">incident code, sector, patient IDs — all optional</span></summary>
                 <div class="rs-body">
@@ -2153,6 +2168,7 @@
             case 'loc-modal': closeLocationHelp(); break;
             case 'maps-modal': closeMapsChooser(); break;
             case 'cmd-join-modal': closeCmdJoin(); break;
+            case 'cmd-link-modal': closeCmdLink(); break;
             case 'cmd-modal': closeCmdDetails(); break;
             default: m.style.display = 'none';
         }
@@ -2609,7 +2625,7 @@
         showScreen('home-screen');
         if (isNewSession) renderHomeAlerts();
     }
-    function setUserRole(role) {
+    function setUserRole(role, asCommander) {
         const name = $('intro-triager').value.trim();
         if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
         const prevUser = triagerName, prevRole = userRole;
@@ -2621,11 +2637,27 @@
         const inputCode = MITTLib.normaliseIncidentCode($('intro-incident-code').value);
         if (inputCode !== incidentCode) setIncidentCode(inputCode, 'start screen');
         if (prevUser !== triagerName || prevRole !== role) {
-            logAudit(prevUser && prevUser !== triagerName ? 'USER_CHANGED' : 'USER_SESSION_START', '-', `${triagerName} (${role === 'HCP' ? 'clinician' : 'non-clinical'}) on device ${deviceId}${prevUser && prevUser !== triagerName ? `; previous user ${prevUser}` : ''}; sector ${currentSector || '-'}; ID prefix ${idPrefix()}`, Date.now());
+            logAudit(prevUser && prevUser !== triagerName ? 'USER_CHANGED' : 'USER_SESSION_START', '-', `${triagerName} (${asCommander ? 'incident commander' : role === 'HCP' ? 'clinician' : 'non-clinical'}) on device ${deviceId}${prevUser && prevUser !== triagerName ? `; previous user ${prevUser}` : ''}; sector ${currentSector || '-'}; ID prefix ${idPrefix()}`, Date.now());
         }
         saveState();
         applyRole(role, true);
+        // Triagers link to the commander at the start, so everything they do reaches the commander screen.
+        if (!asCommander && !cmdActive() && !cmdLinkDismissed()) setTimeout(cmdOfferLink, 150);
     }
+    // The incident commander picks that role on the first screen: it creates the incident and opens the screen.
+    async function startAsCommander() {
+        const name = $('intro-triager').value.trim();
+        if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
+        if (cmdActive()) { setUserRole('HCP', true); cmdShowDetails(); return; }
+        if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showBlockingError('No connection', 'Creating the incident needs a signal once. Try again when you have Wi-Fi or mobile data.'); return; }
+        setUserRole('HCP', true);
+        await cmdStart({ quiet: true, commander: true });
+    }
+    function cmdLinkDismissed() { try { return sessionStorage.getItem('mit_cmd_link_dismissed') === '1'; } catch (e) { return false; } }
+    function cmdOfferLink() { if (cmdActive()) return; $('cmd-link-modal').style.display = 'flex'; }
+    function closeCmdLink() { $('cmd-link-modal').style.display = 'none'; }
+    function cmdDismissLink() { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); } catch (e) {} closeCmdLink(); renderHomeAlerts(); }
+    function cmdScanJoin() { closeCmdLink(); closeCmdJoin(); closeModesMenu(); scanMode = 'JOIN'; startScanner(); }
     function updateIncidentHeader() { setText('header-incident', incidentCode ? `Incident ${incidentCode}` : ''); }
     function setIncidentCode(value, where) {
         const code = MITTLib.normaliseIncidentCode(value);
@@ -3626,6 +3658,7 @@
             HANDOVER: ['Scan colleague identity', "Scan the colleague's “My ID” QR."],
             ACK: ["Scan receiver's acknowledgement", "Scan the ACK QR on the receiver's phone."],
             TACK: ["Scan receiver's confirmation", "Scan the confirmation QR on the receiver's phone."],
+            JOIN: ["Link to the incident commander", "Scan the join code on the commander's phone or screen."],
         };
         const t = titles[scanMode] || ['Receive (scan)', 'Any Major Incident Triage QR. For multi-part transfers keep scanning — the camera stays on and parts can be in any order.'];
         setText('scan-title', t[0]); setText('scan-instruction', t[1]);
@@ -4425,8 +4458,8 @@
         const rt = pendingReTriageUid ? indexByUid(pendingReTriageUid) : -1;
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));
         const parts = alertSummary(patientAlerts(Date.now()));
-        if (!parts.length) return;
-        box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
+        if (parts.length) box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
+        if (typeof cmdActive === 'function' && !cmdActive() && !cmdLinkDismissed()) box.appendChild(el('div', { className: 'alert-card info', id: 'home-cmd-link', onclick: cmdOfferLink }, [el('strong', { text: '☁ Not linked to an incident commander. ' }), 'Tap to scan their code or type the code and PIN.']));
     }
     function showLog() {
         commitDirtyFields('Opening log');
@@ -5141,6 +5174,8 @@
     function cmdRenderStatus() {
         const pill = $('cmd-pill');
         const active = cmdActive();
+        const intro = $('intro-cmd-status');
+        if (intro) intro.textContent = active ? `This phone is ${CMD.cfg.commander ? 'the commander of' : 'linked to'} incident ${CMD.cfg.code}.` : '';
         if (pill) {
             pill.style.display = active ? '' : 'none';
             if (active) {
@@ -5158,25 +5193,29 @@
         setText('cmd-status', txt);
         setText('cmd-detail-status', txt);
     }
-    async function cmdStart() {
+    async function cmdStart(opts) {
+        opts = opts || {};
         if (cmdActive()) { cmdShowDetails(); return; }
-        const ok = await inAppConfirm({ title: 'Start live sharing?', message: `This phone's triage records (category, timings, interventions, location, notes; no names or NHS numbers) will be sent over the internet to a commander screen protected by a code and PIN.${TRAINING ? '\n\nTRAINING mode: the commander screen will be marked as training.' : ''}\n\nThe server copy is deleted 24 hours after the last update. You can stop at any time.`, okLabel: 'Start sharing' });
-        if (!ok) return;
+        if (!opts.quiet) {
+            const ok = await inAppConfirm({ title: 'Start live sharing?', message: `This phone's triage records (category, timings, interventions, location, notes; no names or NHS numbers) will be sent over the internet to a commander screen protected by a code and PIN.${TRAINING ? '\n\nTRAINING mode: the commander screen will be marked as training.' : ''}\n\nThe server copy is deleted 24 hours after the last update. You can stop at any time.`, okLabel: 'Start sharing' });
+            if (!ok) return;
+        }
         if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showBlockingError('No connection', 'Starting needs a signal once, to create the incident. Try again when you have Wi-Fi or mobile data; after that, records are queued and sent whenever signal returns.'); return; }
         try {
             const r = await cmdFetch('/api/incident', { method: 'POST', body: { deviceId, triager: triagerName, name: '', incidentCode, training: TRAINING, app: APP_VERSION } });
             if (r.status !== 201 || !r.body.code) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
-            CMD.cfg = { code: r.body.code, pin: r.body.pin, role: 'creator', startedAt: Date.now() };
+            CMD.cfg = { code: r.body.code, pin: r.body.pin, role: 'creator', commander: !!opts.commander, startedAt: Date.now() };
             cmdSaveCfg();
-            logAudit('COMMANDER_SHARE_START', '-', `Started live sharing: incident ${CMD.cfg.code} created by this phone`, Date.now());
+            logAudit('COMMANDER_SHARE_START', '-', `Started live sharing: incident ${CMD.cfg.code} created by this phone${opts.commander ? ' (incident commander)' : ''}`, Date.now());
             cmdQueueAll();
             cmdStartHeartbeat();
             cmdSchedule(300);
             cmdRenderStatus();
+            renderHomeAlerts();
             closeModesMenu();
             cmdShowDetails();
         } catch (e) {
-            showBlockingError('Could not start sharing', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Triage carries on as normal; try again later.`);
+            showBlockingError(opts.commander ? 'Could not create the incident' : 'Could not start sharing', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Triage carries on as normal; try again later.`);
         }
     }
     function cmdOpenJoin() { $('cmd-join-code').value = ''; $('cmd-join-pin').value = ''; $('cmd-join-modal').style.display = 'flex'; setTimeout(() => $('cmd-join-code').focus(), 50); }
@@ -5197,8 +5236,9 @@
             cmdStartHeartbeat();
             cmdSchedule(300);
             cmdRenderStatus();
-            closeCmdJoin(); closeModesMenu();
-            showToast(`Joined incident ${code}. Records will be sent in the background.`);
+            closeCmdJoin(); closeCmdLink(); closeModesMenu();
+            renderHomeAlerts();
+            showToast(`Linked to incident ${code}. Everything you record is sent to the commander in the background.`);
             return true;
         } catch (e) {
             showBlockingError('Could not join', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Check the signal and try again.`);
@@ -5219,6 +5259,11 @@
         setText('cmd-pin', CMD.cfg.pin);
         const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}commander.html#${CMD.cfg.code}`;
         const a = $('cmd-link'); a.href = link; a.textContent = link;
+        $('cmd-open-btn').href = link;
+        setText('cmd-title', CMD.cfg.commander ? 'Incident commander' : 'Live sharing');
+        setText('cmd-detail-hint', CMD.cfg.role === 'creator'
+            ? 'Triagers: on their start screen, pick a role, then "Scan the commander\'s code" and point the camera at this QR. The commander screen opens below on this phone with no sign-in; on a laptop or big screen, open the link and enter the PIN.'
+            : 'Show this QR to another triager so they can link too. The commander screen opens below on this phone with no sign-in.');
         $('cmd-end-btn').style.display = CMD.cfg.role === 'creator' ? '' : 'none';
         try { _renderQR($('cmd-qr'), JSON.stringify({ t: 'MIT_JOIN', c: CMD.cfg.code, p: CMD.cfg.pin }), Math.min(220, qrSize())); } catch (e) { clearChildren($('cmd-qr')); }
         cmdRenderStatus();
@@ -5234,6 +5279,7 @@
         if (CMD.heartbeat) { clearInterval(CMD.heartbeat); CMD.heartbeat = null; }
         logAudit('COMMANDER_STOPPED', '-', `${reason || 'Stopped live sharing'} (incident ${code})`, Date.now());
         cmdRenderStatus();
+        renderHomeAlerts();
     }
     async function cmdStop() {
         if (!cmdActive()) return;

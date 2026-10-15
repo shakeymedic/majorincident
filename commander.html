@@ -41,6 +41,9 @@
     .count .l { font-size:0.8rem; font-weight:bold; margin-top:4px; }
     .count .s { font-size:0.75rem; opacity:0.9; }
     .grid2 { display:grid; grid-template-columns:1fr; gap:0.8rem; }
+    .grid2 > * , .card { min-width:0; }
+    #table-card { overflow-x:auto; }
+    @media (max-width:600px) { .card h2 small { display:block; width:100%; } header h1 { flex:1 1 100%; } }
     @media (min-width:1000px) { .grid2 { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1fr); } }
     #map { height:60vh; min-height:360px; border-radius:8px; border:2px solid #ccc; background:#e8ecef; z-index:1; }
     table { width:100%; border-collapse:collapse; font-size:0.9rem; }
@@ -111,7 +114,7 @@
 <main>
     <div class="card" id="signin">
         <h2>Open an incident</h2>
-        <p class="muted">Enter the code and PIN shown on the phone that started sharing (Settings → Incident &amp; training → Share with commander). This page refreshes itself every 30 seconds while it stays open. Data is held for 24 hours after the last update, then deleted.</p>
+        <p class="muted">Enter the code and PIN shown on the commander's phone (start screen → "I'm the incident commander", or ⚙ Settings → Incident &amp; training). On that phone this page signs in by itself. It refreshes every 30 seconds while open. Data is held for 24 hours after the last update, then deleted.</p>
         <label for="in-code">Incident code</label>
         <input type="text" id="in-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="e.g. K7M2QX">
         <label for="in-pin">PIN</label>
@@ -188,6 +191,16 @@
         const raw = (location.hash || '').replace('#', '').toUpperCase();
         const h = raw.split('/')[0].replace(/[^A-Z0-9]/g, '');
         if (h && h.length === 6) $('in-code').value = h;
+        // Opened on the phone that is sharing (same site, same browser): sign in with that phone's own code and PIN.
+        if (!cfg) {
+            try {
+                ['mit_commander', 'trn_mit_commander'].forEach(k => {
+                    if (cfg) return;
+                    const app = JSON.parse(localStorage.getItem(k) || 'null');
+                    if (app && app.code && app.pin && (!h || h === app.code)) cfg = { code: app.code, pin: app.pin, fromPhone: true };
+                });
+            } catch (e) {}
+        }
         let wall = /\/WALL/.test(raw);
         try { if (sessionStorage.getItem('mit_commander_wall') === '1') wall = true; } catch (e) {}
         if (wall) setWall(true);

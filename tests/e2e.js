@@ -61,6 +61,8 @@ async function test(name, fn) {
     }
     async function setup(page, name, role) {
         await page.fill('#intro-triager', name);
+        // Most tests are not about the commander link, so answer the start-screen link question with "not now".
+        await page.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); } catch (e) {} });
         await page.evaluate(r => setUserRole(r), role || 'HCP');
     }
     // Resolve the next in-app dialog with OK (true) or Cancel (false), optionally typing text.
@@ -1175,6 +1177,49 @@ async function test(name, fn) {
         await CC.evaluate(() => refreshNow());
         await CC.waitForFunction(() => document.querySelectorAll('.phone').length === 3, null, { timeout: 8000 });
         await CD._ctx.close();
+    });
+    await test('a new phone is asked at the start whether there is a commander; "type the code" links it and the home alert goes', async () => {
+        const CG = await device('Cmd G');
+        await CG.fill('#intro-triager', 'Medic Golf');
+        await CG.evaluate(() => setUserRole('HCP'));
+        await page_visible(CG, '#cmd-link-modal');
+        await CG.evaluate(() => { closeCmdLink(); cmdOpenJoin(); });
+        await page_visible(CG, '#cmd-join-modal');
+        assert.ok(await CG.evaluate(() => document.getElementById('home-cmd-link') !== null), 'home alert while not linked');
+        await CG.fill('#cmd-join-code', share.code); await CG.fill('#cmd-join-pin', share.pin);
+        await CG.evaluate(() => cmdJoin());
+        await CG.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-join-modal')).display), 'none');
+        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link')), null, 'home alert gone once linked');
+        await CG._ctx.close();
+    });
+    await test('"No commander / not now" closes the question and keeps the home alert as a reminder', async () => {
+        const CH = await device('Cmd H');
+        await CH.fill('#intro-triager', 'Medic Hotel');
+        await CH.evaluate(() => setUserRole('NON_HCP'));
+        await page_visible(CH, '#cmd-link-modal');
+        await CH.evaluate(() => cmdDismissLink());
+        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
+        assert.strictEqual(await CH.evaluate(() => document.getElementById('home-cmd-link')), null, 'dismissed for this session');
+        await CH._ctx.close();
+    });
+    await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
+        const CI = await device('Cmd I');
+        await CI.fill('#intro-triager', 'Cdr India');
+        await CI.evaluate(() => startAsCommander());
+        await CI.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        await page_visible(CI, '#cmd-modal');
+        const d = await CI.evaluate(() => ({ title: document.getElementById('cmd-title').textContent, open: document.getElementById('cmd-open-btn').href, commander: CMD.cfg.commander, role: userRole, link: getComputedStyle(document.getElementById('cmd-link-modal')).display }));
+        assert.strictEqual(d.title, 'Incident commander');
+        assert.ok(d.commander && d.role === 'HCP');
+        assert.strictEqual(d.link, 'none', 'the commander is not asked to link');
+        assert.ok(d.open.endsWith('/commander.html#' + (await CI.evaluate(() => CMD.cfg.code))), d.open);
+        assert.ok(await CI.evaluate(() => auditLog.some(a => a.action === 'USER_SESSION_START' && /incident commander/.test(a.detail || a.details || JSON.stringify(a)))));
+        const CJ = await CI._ctx.newPage();
+        await CJ.goto(d.open);
+        await CJ.waitForFunction(() => !document.getElementById('dash').classList.contains('hidden'), null, { timeout: 8000 });
+        assert.strictEqual(await CJ.evaluate(() => document.getElementById('hdr-incident').textContent.trim().length > 0), true);
+        await CI._ctx.close();
     });
     await test('commander exports a GPX with a waypoint per located casualty', async () => {
         const [dl] = await Promise.all([CC.waitForEvent('download'), CC.evaluate(() => exportFile('gpx'))]);
