@@ -1846,11 +1846,10 @@
         var steps;
         if (platform === 'android' && browser === 'firefox') {
             steps = installed ? [
-                'Open the Firefox browser itself (not this app) and go to ' + site + '. Tap the padlock / shield icon next to the address → Permissions → Location → Allow. If Firefox asks, choose Allow.',
-                'Still in Firefox: ⋮ → Settings → Site permissions → Location → "Ask to allow", and remove ' + site + ' from any Blocked list.',
-                'Phone Settings → Apps → Firefox → Permissions → Location → "Allow only while using the app". The installed app uses Firefox\'s permission.',
-                phoneToggle,
-                'Open this app again and tap "Try again" here.'
+                'Open the Firefox browser itself (not this app) and go to ' + site + '. Tap the padlock / shield icon next to the address → Permissions → Location → Allow. If Firefox asks, choose Allow. This alone is usually enough: the installed app uses Firefox\'s permission.',
+                'Open this app again and tap "Try again" here.',
+                'If it still says off: in Firefox, ⋮ → Settings → Site permissions → Location → "Ask to allow", and remove ' + site + ' from any Blocked list.',
+                'Still off: phone Settings → Apps → Firefox → Permissions → Location → "Allow only while using the app". ' + phoneToggle
             ] : [
                 'Tap the padlock / shield icon next to the web address → Permissions → Location → Allow.',
                 '⋮ → Settings → Site permissions → Location → "Ask to allow", and remove ' + site + ' from any Blocked list.',

@@ -153,7 +153,7 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
-### v0.12.1 build 2026-10-15-demo-flow — simpler demo and role flow
+### v0.12.2 build 2026-10-15-demo-flow — simpler demo and role flow
 
 - **▶ Demo** is now one orange button at the top of the start screen. It opens **Demo: pick your role**: 🎖 Incident commander (opens the commander screen demo in the same window), one of the four phones, or everything on this phone. The live commander for several devices sits under "Practising with several devices?". No "are you sure" questions on the way in.
 - **↩ Start page** replaces "Leave demo" in the orange bar, in the demo guide and on the commander screen demo. One tap goes straight back to the start screen in normal use (no question), where ▶ Demo picks another role. The commander demo's button opens `index.html#start`, which leaves the demo on that device if it was on.
@@ -169,7 +169,7 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ### v0.11.1 build 2026-10-15-location-help — "Location off" in the installed app
 
-- An installed web app has no address bar, so the old "tap the padlock" instruction could not be followed, and an app installed from Firefox or Samsung Internet keeps *that* browser's permissions, not Chrome's. The location pill now shows **Location off** as soon as the permission is found to be off (not only after a failed fix), and tapping it gives numbered steps for the exact case: installed or in the browser, Chrome / Firefox / Samsung Internet on Android, Safari or Home Screen app on iPhone, including the phone's own app permission and the phone-wide location toggle. "Try again" re-checks the permission and says plainly if it is still off instead of pretending to search.
+- An installed web app has no address bar, so the old "tap the padlock" instruction could not be followed, and an app installed from Firefox or Samsung Internet keeps *that* browser's permissions, not Chrome's. The location pill now shows **Location off** as soon as the permission is found to be off (not only after a failed fix), and tapping it gives numbered steps for the exact case: installed or in the browser, Chrome / Firefox / Samsung Internet on Android, Safari or Home Screen app on iPhone, including the phone's own app permission and the phone-wide location toggle. "Try again" re-checks the permission and says plainly if it is still off instead of pretending to search. Confirmed on a Firefox install on Android (15 Oct 2026): allowing location for the site in the Firefox browser itself is what fixes the installed app, so that step comes first.
 
 ### v0.11.0 build 2026-10-15-demo — demo incident for showing the app
 
