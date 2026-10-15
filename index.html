@@ -943,6 +943,56 @@
         body.printing-label * { visibility: hidden !important; }
         body.printing-label #print-area, body.printing-label #print-area * { visibility: visible !important; }
     }
+
+    /* One screen without scrolling (v0.12.0): on a normal-size phone the start screen, home, questions and the patient
+       screen fit without scrolling. Gloved mode keeps its bigger targets and may scroll. */
+    .dashboard:not(.expanded) .dash-legend { display:none; }
+    body[data-screen="intro-screen"] #global-dashboard { display:none; }
+    body:not(.gloved) #intro-screen { padding: 0.8rem 1rem !important; }
+    #intro-screen h2 { font-size: 1.35rem; margin: 0 0 0.2rem 0 !important; }
+    #intro-screen .intro-hint { font-size: 0.95rem; margin: 0 0 0.6rem 0; }
+    #intro-screen .input-group { margin-bottom: 0.7rem; }
+    body:not(.gloved) #intro-screen > .btn { padding: 0.8rem 1rem !important; margin-bottom: 0.6rem; font-size: 1.1rem; }
+    body:not(.gloved) #intro-screen > #btn-demo { padding: 0.6rem 1rem !important; font-size: 1rem; }
+    #intro-screen .intro-options { margin-bottom: 0.6rem; }
+    body:not(.gloved) #result-screen .triage-tag { font-size: 2.6rem; padding: 0.4rem 0.6rem; margin: 0.25rem 0; }
+    body:not(.gloved) #result-screen .triage-tag.cat-bg-NOT_BREATHING #tag-text, body:not(.gloved) #result-screen .triage-tag.cat-bg-P1_HOLD #tag-text { font-size: 2rem; }
+    .rs-head { margin: 0 0 0.2rem; }
+    .rs-action { margin: 0 0 0.45rem; font-size: 0.95rem; }
+    body:not(.gloved) .rs-row .btn { padding: 0.8rem 0.4rem; }
+    body:not(.gloved) .rs-row { margin-bottom: 6px; }
+    body:not(.gloved) .rs-row3 .btn, body:not(.gloved) .btn.rs-small { padding: 0.6rem 0.4rem; margin-bottom: 6px; }
+    body:not(.gloved) #btn-change-answer { padding: 0.4rem; font-size: 0.85rem; min-height: 40px; }
+    body:not(.gloved) #result-screen .triage-tag { font-size: 2.3rem; }
+    body:not(.gloved) .risk-toggle { padding: 6px 12px; margin-bottom: 6px; font-size: 0.95rem; }
+    body:not(.gloved) .risk-toggle input { width: 26px; height: 26px; }
+    body:not(.gloved) details.rs-prompts { padding: 0.2rem 0.9rem; margin-bottom: 6px; }
+    body:not(.gloved) details.rs-prompts > summary { min-height: 40px; padding: 6px 0; font-size: 0.95rem; }
+    body:not(.gloved) details.rs-sec > summary { padding: 9px 12px; min-height: 44px; font-size: 1rem; }
+    body[data-screen="methane-screen"] #global-dashboard { display:none; }
+    #demo-modal .modal-box, #demo-role-modal .modal-box { max-height: 94vh; overflow-y: auto; padding-top: 14px; padding-bottom: 10px; }
+    #demo-modal .btn, #demo-role-modal .btn { padding: 0.5rem 0.8rem; margin-bottom: 6px; font-size: 1rem; line-height: 1.25; }
+    #demo-modal .qr-meta, #demo-role-modal .qr-meta { margin: 0 0 6px; font-size: 0.85rem; }
+    #demo-modal .demo-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 6px; }
+    #demo-modal .demo-grid .btn { margin: 0; min-height: 54px; display: flex; align-items: center; justify-content: center; }
+    #demo-modal .demo-grid .btn span, #demo-modal .demo-grid .btn br { display: none; }
+    #demo-phone-choices { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+    #demo-phone-choices .btn { margin: 0; font-size: 0.95rem; }
+    #demo-phone-choices .btn span { font-size: 0.75rem !important; }
+    #demo-modal h3, #demo-role-modal h3 { margin-bottom: 4px; font-size: 1.2rem; }
+    body:not(.gloved) #methane-screen h2 { font-size: 1.3rem; margin: 0 0 0.4rem; }
+    body:not(.gloved) #methane-screen .input-group { margin-bottom: 0.45rem; }
+    body:not(.gloved) #methane-screen label { font-size: 0.9rem; margin-bottom: 2px; }
+    body:not(.gloved) #methane-screen input, body:not(.gloved) #methane-screen select { padding: 0.45rem 0.7rem; min-height: 44px; }
+    body:not(.gloved) #methane-screen .btn { padding: 0.65rem; margin-bottom: 0.45rem; }
+    @media (min-width: 360px) {
+        body:not(.gloved) #details-container { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 6px; }
+        body:not(.gloved) #details-container > details.rs-sec { margin-bottom: 0; min-width: 0; }
+        body:not(.gloved) #details-container > details.rs-sec[open] { grid-column: 1 / -1; }
+        body:not(.gloved) #details-container > details.rs-sec:not([open]) > summary { display: block; padding: 8px 10px; min-height: 0; }
+        body:not(.gloved) #details-container > details.rs-sec:not([open]) > summary .rs-sum { display: -webkit-box; margin-top: 2px; }
+        body:not(.gloved) #details-container > details.rs-sec > summary .rs-sum { font-size: 0.8rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    }
 </style>
 </head>
 <body>
@@ -1020,15 +1070,16 @@
     <div class="modal-box" style="max-width:460px;">
         <h3 id="demo-title" style="margin-top:0;">Demo incident</h3>
         <p class="qr-meta" style="text-align:left;" id="demo-summary"></p>
-        <p class="qr-meta" style="text-align:left; margin-top:0;">Everything here is made up and stays in training mode. Try these:</p>
+        <div class="demo-grid">
         <button type="button" class="btn btn-primary" onclick="demoGo('log')">📋 Casualty log<br><span style="font-size:0.8rem; font-weight:normal;">Every patient by priority, with overdue reassessments flagged</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('map')">🗺 Map<br><span style="font-size:0.8rem; font-weight:normal;">Where each casualty is, the casualty clearing station, Open in Google Maps</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('patient')">🩸 A P1 patient<br><span style="font-size:0.8rem; font-weight:normal;">Tourniquet time, injuries on the body map, ATMIST handover</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoGo('triage')">▶ Triage a new casualty<br><span style="font-size:0.8rem; font-weight:normal;">Walk through TST or MITT; the patient joins the demo</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoReceive()">📥 Practise receiving a patient<br><span style="font-size:0.8rem; font-weight:normal;">A casualty arrives from another phone: check the details, accept, show your confirmation code</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoHandover()">📤 Practise handing a patient over<br><span style="font-size:0.8rem; font-weight:normal;">Show the handover QR, then "the receiver scanned it" to see the confirmation come back</span></button>
-        <button type="button" class="btn btn-primary" id="demo-link-btn" style="background:var(--nhs-dark-blue);" onclick="demoGo('link')">☁ Link to a live commander<br><span style="font-size:0.8rem; font-weight:normal;">If another device is the commander of a live practice, scan their code</span></button>
-        <a class="btn btn-primary" id="demo-cmd-link" href="commander.html#DEMO" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🎖 Commander screen (demo)<br><span style="font-size:0.8rem; font-weight:normal;">The incident commander's view of the same incident. Updates by itself; no sign-in or internet sharing</span></a>
+        <button type="button" class="btn btn-primary" onclick="demoGo('triage')">▶ Triage someone new<br><span style="font-size:0.8rem; font-weight:normal;">Walk through TST or MITT; the patient joins the demo</span></button>
+        <button type="button" class="btn btn-primary" onclick="demoReceive()">📥 Practise receiving<br><span style="font-size:0.8rem; font-weight:normal;">A casualty arrives from another phone: check the details, accept, show your confirmation code</span></button>
+        <button type="button" class="btn btn-primary" onclick="demoHandover()">📤 Practise handing over<br><span style="font-size:0.8rem; font-weight:normal;">Show the handover QR, then "the receiver scanned it" to see the confirmation come back</span></button>
+        <button type="button" class="btn btn-primary" id="demo-link-btn" style="background:var(--nhs-dark-blue);" onclick="demoGo('link')">☁ Link to a commander<br><span style="font-size:0.8rem; font-weight:normal;">If another device is the commander of a live practice, scan their code</span></button>
+        <a class="btn btn-primary" id="demo-cmd-link" href="commander.html#DEMO" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🎖 Commander screen<br><span style="font-size:0.8rem; font-weight:normal;">The incident commander's view of the same incident. Updates by itself; no sign-in or internet sharing</span></a>
+        </div>
         <button type="button" class="btn btn-secondary" onclick="demoGo('switch')">Be someone else / restart the demo</button>
         <button type="button" class="btn btn-secondary" onclick="closeDemoGuide()">Close</button>
         <p class="qr-meta" style="text-align:left;">With two devices you can hand over for real: 📷 Receive patient on one, QR Handover on the other. Reopen this from the orange demo card on the home screen. To leave, untick Training mode in ⚙ Settings; your real records come back.</p>
@@ -1446,7 +1497,7 @@
                 I'm non-clinical / first aid<br><span style="font-size:0.9rem; font-weight:normal;">Police, fire, first responder (TST only)</span>
             </button>
             <button class="btn btn-primary" id="btn-role-commander" style="padding: 1.3rem; background:var(--nhs-dark-blue);" onclick="startAsCommander()">
-                🎖 I'm the incident commander<br><span style="font-size:0.9rem; font-weight:normal;">Creates the incident. Triagers link their phones to it and everything they do appears on the commander screen.</span>
+                🎖 I'm the incident commander<br><span style="font-size:0.9rem; font-weight:normal;">Creates the incident; triagers' phones link to your screen</span>
             </button>
             <p class="qr-meta" id="intro-cmd-status" style="text-align:left; margin:-4px 0 12px;"></p>
             <details class="rs-sec intro-options" id="intro-options">
@@ -1487,7 +1538,7 @@
                 </div>
             </details>
             <button class="btn btn-secondary" id="btn-demo" style="margin-top:1rem; padding:1rem; background:#fff; color:#B35900; border:2px solid #E87722;" onclick="startDemo()">
-                ▶ Try the demo incident<br><span style="font-size:0.85rem; font-weight:normal;">Made-up casualties to show what the app can do. Opens in training mode; real records are not touched.</span>
+                ▶ Try the demo incident <span style="font-size:0.85rem; font-weight:normal;">(made-up, training mode)</span>
             </button>
         </div>
 
@@ -1625,7 +1676,7 @@
             </details>
 
             <details class="rs-sec" id="sec-notes">
-                <summary>Injuries, allergies &amp; notes <span class="rs-sum" id="sum-notes"></span></summary>
+                <summary>Injuries &amp; notes <span class="rs-sum" id="sum-notes"></span></summary>
                 <div class="rs-body">
                 <div class="input-group">
                         <label for="p-demos">Demographics</label>
@@ -1708,7 +1759,7 @@
             </details>
 
             <details class="rs-sec" id="sec-transport">
-                <summary>Transport &amp; handover <span class="rs-sum" id="sum-transport"></span></summary>
+                <summary>Handover <span class="rs-sum" id="sum-transport"></span></summary>
                 <div class="rs-body">
                     <div class="input-group"><label for="p-evac-dest">Destination</label><input type="text" id="p-evac-dest" class="rec-field" placeholder="e.g. Royal Infirmary, CCS"></div>
                     <div class="input-group"><label for="p-evac-vehicle">Vehicle / crew</label><input type="text" id="p-evac-vehicle" class="rec-field" placeholder="e.g. AMB-404, HART Team 1"></div>
@@ -1789,10 +1840,12 @@
                     <button class="btn btn-secondary" style="width:auto; padding:0 10px; margin:0;" onclick="autoFillCasualties()">Auto-Fill</button>
                 </div>
             </div>
-            <div class="input-group"><label for="m-svc">E - Emergency Services Required</label><textarea id="m-svc" rows="3"></textarea></div>
+            <div class="input-group"><label for="m-svc">E - Emergency Services Required</label><textarea id="m-svc" rows="2"></textarea></div>
             <button class="btn btn-primary" onclick="saveMethane()">Save Report (new version)</button>
-            <button class="btn btn-secondary" style="margin-top:5px; background:#666;" onclick="showMethaneHistory()">View History</button>
-            <button class="btn btn-secondary" onclick="resetToHome()">Cancel</button>
+            <div class="rs-row">
+                <button class="btn btn-secondary" style="background:#666;" onclick="showMethaneHistory()">View History</button>
+                <button class="btn btn-secondary" onclick="resetToHome()">Cancel</button>
+            </div>
         </div>
 
         <div id="methane-history-screen" class="screen">
@@ -3115,8 +3168,8 @@
         clearChildren(promptBox);
         if (prompts) {
             promptBox.style.display = 'block';
-            promptBox.open = entry.category === 'P1' || entry.category === 'NOT_BREATHING';
-            promptBox.appendChild(el('summary', { text: 'Care prompts' }));
+            promptBox.open = false; // the action line above says what to do now; the full prompts are one tap away
+            promptBox.appendChild(el('summary', { text: `Care prompts: ${prompts[0]}${prompts.length > 1 ? ` (+${prompts.length - 1})` : ''}` }));
             promptBox.appendChild(el('ul', { style: 'margin-top:6px;' }, prompts.map(p => el('li', { text: p }))));
             promptBox.appendChild(el('small', { text: 'NARU CCP interventions. Prompts only — not a substitute for clinical judgement.' }));
         } else promptBox.style.display = 'none';
@@ -5467,7 +5520,7 @@
     function showDemoGuide() {
         const c = categoryCounts(incidentLog);
         const phone = demoPhone();
-        const counts = `${incidentLog.length} casualties: P1 ${c.P1.total}, P1 Hold ${c.P1_HOLD.total}, P2 ${c.P2.total}, P3 ${c.P3.total}, Not Breathing ${c.NOT_BREATHING.total}, Dead ${c.DEAD.total}; ${incidentLog.filter(r => r.evacuated).length} evacuated.`;
+        const counts = `${incidentLog.length} casualties (${[['P1', 'P1'], ['P1_HOLD', 'P1 Hold'], ['P2', 'P2'], ['P3', 'P3'], ['NOT_BREATHING', 'Not Breathing'], ['DEAD', 'Dead']].filter(x => c[x[0]].total).map(x => `${x[1]} ${c[x[0]].total}`).join(', ')}; ${incidentLog.filter(r => r.evacuated).length} evacuated).`;
         setText('demo-title', phone ? `Demo: you are ${phone.triager}` : 'Demo incident');
         setText('demo-summary', phone
             ? `${MITTLib.DEMO_INCIDENT.name}. ${phone.desc}. This phone has ${counts} The other three phones have the rest; the commander screen shows everyone.`
