@@ -4,7 +4,7 @@ The app was previously called "MITT". It was renamed so it is not confused with 
 
 A mobile-first, offline-first **progressive web app** for documenting major-incident triage and handover. Built as a single-page vanilla JavaScript app — no build step.
 
-> ⚠️ **Clinical safety caveat.** MITT is a *workflow aid*, not a medical device. It does not make clinical decisions. Triage outcomes, interventions and any data exchanged via this app must always be verified against the patient at the point of care. Use only in environments where local clinical-governance approval is in place.
+> ⚠️ **Intended purpose: training and exercise use only. Not for use with real patients.** The app is not a medical device and has not been approved for clinical use (no UKCA marking, no DCB0129 clinical safety case yet). Use the same wording in the app, the website, the privacy notice and the Google Play listing. Any change of intended purpose comes only after the clinical safety, regulatory and information governance work in the project plan.
 
 ## Purpose
 

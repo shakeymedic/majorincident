@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#005EB8">
-<meta name="description" content="Major Incident Triage: TST and NHS MITT triage, handover and casualty register">
+<meta name="description" content="Major Incident Triage: TST and NHS MITT triage, handover and casualty register for training and exercises. Not for use with real patients.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org; connect-src 'self' https://*.tile.openstreetmap.org; media-src 'self' blob:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -1108,6 +1108,7 @@
     #result-screen .mini-btn { min-width: 48px; min-height: 48px; }
     .rs-link { min-height: 44px; }
     #sec-more .btn { min-height: 48px; }
+    #intro-screen .intro-purpose { margin: 0 0 0.5rem; padding: 8px 10px; border-left: 4px solid #E87722; background: rgba(232,119,34,0.10); font-size: 0.95rem; line-height: 1.3; }
     /* The "More" panel for one patient. */
     .pm-overlay { display: none; position: fixed; inset: 0; z-index: 1800; background: rgba(0,0,0,0.45); }
     .pm-overlay.open { display: flex; align-items: flex-end; justify-content: center; }
@@ -1423,6 +1424,7 @@
                 <button class="menu-item" onclick="closeModesMenu(); openLocationHelp();"><b>📍 Location help</b><span>If the position is missing or rough</span></button>
                 <button class="menu-item" onclick="downloadTextReader()"><b>⬇ Store the printed-number reader</b><span>About 6 MB, once; then it works without signal</span></button>
                 <a class="menu-item" href="privacy.html" target="_blank" rel="noopener"><b>🔒 Privacy notice</b><span>What the app stores and sends</span></a>
+                <p class="qr-meta" style="text-align:left;"><strong>Intended purpose:</strong> training and exercise use only. Not for use with real patients. It is not a medical device and has not been approved for clinical use.</p>
                 <p class="qr-meta" id="device-info" style="text-align:left;"></p>
             </div>
         </details>
@@ -1705,6 +1707,7 @@
                 <h2 style="margin:0;">Start</h2>
                 <button type="button" class="demo-btn" id="btn-demo" onclick="startDemo()">▶ Demo</button>
             </div>
+            <p class="intro-purpose" role="note"><strong>Training and exercise use only.</strong> Not for use with real patients.</p>
             <p class="intro-hint">Type your name, then tap your role. Or tap <strong>▶ Demo</strong> to try the app with made-up patients.</p>
             <div class="input-group">
                 <label for="intro-triager">Your name / call sign</label>
@@ -2131,7 +2134,7 @@
         </div>
     </main>
     <footer style="text-align:center; padding:6px 8px; padding-bottom:calc(6px + env(safe-area-inset-bottom, 0px)); font-size:0.75rem; color:var(--nhs-grey); flex-shrink:0;">
-        <span id="app-version-label">Major Incident Triage</span> • <span id="save-status">Not yet saved</span>
+        <span class="purpose-note">Training &amp; exercise use only</span> • <span id="app-version-label">Major Incident Triage</span> • <span id="save-status">Not yet saved</span>
     </footer>
     <nav class="one-hand-bar" id="one-hand-bar" aria-label="One-handed quick actions">
         <button class="btn btn-primary" onclick="oneHandPrimary()" id="oh-primary">Triage</button>
@@ -2141,8 +2144,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.17.0';
-    const APP_BUILD = '2026-10-15-back-to-basics';
+    const APP_VERSION = '0.17.1';
+    const APP_BUILD = '2026-10-15-intended-purpose';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -6332,7 +6335,7 @@
     openDatabase();
     watchForOtherCopies();
     setupIosInstallBanner();
-    document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `Major Incident Triage v${APP_VERSION}`); });
+    document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `v${APP_VERSION}`); });
     window.onload = function () {
         applyInputLimits();
         wireFieldHandlers();
