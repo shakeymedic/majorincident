@@ -25,6 +25,38 @@
     function categoryShort(c) { return (CATEGORY_INFO[c] && CATEGORY_INFO[c].short) || String(c || ''); }
     function categoryLabel(c) { return (CATEGORY_INFO[c] && CATEGORY_INFO[c].label) || String(c || ''); }
 
+    // Where a casualty is in the chain: still in the field, handed over to the Casualty Clearing Station (CCS,
+    // also called the casualty clearing zone), or evacuated from scene. atCcs is set explicitly on the phone; for
+    // records from older phones the sector/area label is used as a fallback.
+    const STAGE_INFO = {
+        field:     { short: 'Field', label: 'In the field', colour: '#005EB8' },
+        ccs:       { short: 'CCS', label: 'At the casualty clearing station', colour: '#007F3B' },
+        evacuated: { short: 'Evacuated', label: 'Evacuated from scene', colour: '#4C6272' },
+    };
+    const CCS_LABEL_RE = /\bCCS\b|\bCCP\b|casualty clearing|clearing station|clearing zone/i;
+    function isCcsLabel(text) { return CCS_LABEL_RE.test(String(text || '')); }
+    function patientStage(r) {
+        if (!r) return 'field';
+        if (r.evacuated) return 'evacuated';
+        if (r.atCcs) return 'ccs';
+        if (r.atCcs === false) return 'field';
+        return isCcsLabel(r.sector) || isCcsLabel(r.area) ? 'ccs' : 'field';
+    }
+    function stageCounts(records) {
+        const c = { field: 0, ccs: 0, evacuated: 0, hospitals: {} };
+        (records || []).forEach(r => {
+            const st = patientStage(r); c[st]++;
+            if (st === 'evacuated') { const h = String(r.evacDest || '').trim() || 'Destination not recorded'; c.hospitals[h] = (c.hospitals[h] || 0) + 1; }
+        });
+        return c;
+    }
+    // Receiving hospitals offered when a casualty is evacuated (editable on the phone; any text is allowed).
+    const DEFAULT_HOSPITALS = [
+        'Queen Elizabeth Hospital Birmingham (MTC)', 'Birmingham Children\'s Hospital (MTC)', 'Heartlands Hospital', 'Good Hope Hospital',
+        'Midland Metropolitan University Hospital', 'Russells Hall Hospital', 'New Cross Hospital', 'Walsall Manor Hospital',
+        'University Hospital Coventry (MTC)', 'Royal Stoke University Hospital (MTC)', 'Worcestershire Royal Hospital', 'Alexandra Hospital, Redditch',
+    ];
+
     // ---------- ASCII-safe JSON ----------
     // QR payloads are always pure ASCII: every non-ASCII character is written as a \uXXXX
     // escape. JSON.parse restores the identical string, so hashes still match, and no QR
@@ -131,6 +163,8 @@
             highRisk: !!rec.highRisk,
             interventions: sanitiseInterventions(rec.interventions),
             evacuated: !!rec.evacuated,
+            atCcs: rec.atCcs === undefined || rec.atCcs === null ? undefined : !!rec.atCcs,
+            ccsAt: _num(rec.ccsAt),
             evacDest: _str(rec.evacDest, L.evacDest),
             evacVehicle: _str(rec.evacVehicle, L.evacVehicle),
             hospitalId: _str(rec.hospitalId, L.hospitalId),
@@ -233,6 +267,8 @@
         if (entry.highRisk) short.hr = 1;
         if (entry.interventions && Object.keys(entry.interventions).length > 0) short.in = entry.interventions;
         if (entry.evacuated) short.ev = 1;
+        if (entry.atCcs) short.cc = 1;
+        if (entry.ccsAt) short.ca = entry.ccsAt;
         if (entry.evacDest) short.ed = entry.evacDest;
         if (entry.evacVehicle) short.evv = entry.evacVehicle;
         if (Array.isArray(entry.injuries) && entry.injuries.length) short.inj = entry.injuries;
@@ -295,6 +331,8 @@
             highRisk: !!short.hr,
             interventions: short.in || {},
             evacuated: !!short.ev,
+            atCcs: !!short.cc,
+            ccsAt: short.ca || null,
             evacDest: short.ed || '',
             evacVehicle: short.evv || '',
             injuries: Array.isArray(short.inj) ? short.inj : [],
@@ -696,7 +734,7 @@
         'id','time','timestamp','tool','category','action','reason','triager','location','initialLocation','currentLocation','locationHistory','locationConfidence','sector','landmark','floor','area',
         'demos','allergies','notes','highRisk','interventions','evacuated','evacDest','evacVehicle',
         'injuries','lastReassessed','reassessOutcome','lastDeteriorationAt','handoverState','handoverAt','handoverTo','_rev',
-        'uid','createdAt','createdBy','deviceId','updatedAt','fts','triageHistory','hospitalId','tod','importConflicts','incidentCode'
+        'uid','createdAt','createdBy','deviceId','updatedAt','fts','triageHistory','hospitalId','tod','importConflicts','incidentCode','atCcs','ccsAt'
     ];
 
     function jsonClone(value) {
@@ -2111,6 +2149,7 @@
         CATEGORIES, CATEGORY_INFO, PATIENT_QR_MAX_CHARS, PATIENT_QR_LOCATION_HISTORY_MAX, AUDIT_GENESIS,
         isValidCategory, categoryShort, categoryLabel, toAsciiJSON, makeUid, makeDeviceCode, nextAutoId,
         sanitisePatientRecord, sanitiseInterventions, mergePatientRecordsDetailed, matchIncomingRecord, collisionSafeId,
+        STAGE_INFO, patientStage, stageCounts, isCcsLabel, DEFAULT_HOSPITALS,
         resolveCategoryMerge, mergeNotesText, buildTransferAckPayload, verifyAckIntegrity,
         reassembleChunkBody, reassembleAllPatientChunksAsync, buildAllPatientsTransferAsync,
         encodeTransportText, decodeTransportText, isCompressedTransport, compressionSupported, bytesToBase64, base64ToBytes,

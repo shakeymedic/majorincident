@@ -1166,6 +1166,47 @@ async function test(name, fn) {
         assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('.phone').length), 2);
         assert.strictEqual(await CC.evaluate(() => cluster.getLayers().length), 2);
     });
+    await test('phone marks a casualty at the CCS and evacuates another to a hospital; the commander splits field / CCS / evacuated', async () => {
+        // CB's MITT patient: handed to the CCS from the patient screen
+        await CB.evaluate(() => { toggleCcs(); });
+        const b = await CB.evaluate(() => ({ atCcs: currentEntry().atCcs, sector: currentEntry().sector, btn: document.getElementById('btn-ccs').textContent, sum: document.getElementById('sum-transport').textContent }));
+        assert.strictEqual(b.atCcs, true); assert.strictEqual(b.sector, 'Casualty Clearing');
+        assert.match(b.btn, /At CCS/); assert.match(b.sum, /AT CCS/);
+        // CA's TST patient: evacuated; the hospital chooser opens because no destination was recorded
+        await CA.evaluate(() => { currentLogIndex = 0; toggleEvac(); });
+        await CA.waitForSelector('#hospital-modal', { state: 'visible', timeout: 5000 });
+        assert.ok(await CA.evaluate(() => document.querySelectorAll('#hospital-btns button').length > 5), 'default hospital list offered');
+        await CA.evaluate(() => pickHospital('Heartlands Hospital'));
+        const a = await CA.evaluate(() => ({ ev: incidentLog[0].evacuated, dest: incidentLog[0].evacDest, field: document.getElementById('p-evac-dest').value, hidden: getComputedStyle(document.getElementById('hospital-modal')).display }));
+        assert.deepStrictEqual(a, { ev: true, dest: 'Heartlands Hospital', field: 'Heartlands Hospital', hidden: 'none' });
+        assert.match(await CA.evaluate(() => document.getElementById('evac-summary').textContent), /Field: 0 \| CCS: 0 \| Evacuated: 1/);
+        await CA.waitForFunction(() => CMD.dirty.size === 0, null, { timeout: 10000 });
+        await CB.waitForFunction(() => CMD.dirty.size === 0, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => /Heartlands Hospital/.test(document.getElementById('stages').textContent), null, { timeout: 8000 });
+        const st = await CC.evaluate(() => ({ stages: document.getElementById('stages').textContent, counts: document.getElementById('counts').textContent, where: document.getElementById('sectors').textContent, rows: document.querySelectorAll('#rows tr').length }));
+        assert.match(st.stages, /0\s*In the field/i); assert.match(st.stages, /1\s*At CCS/i); assert.match(st.stages, /1\s*Evacuated/i);
+        assert.match(st.counts, /0 field • 1 CCS/);
+        assert.match(st.where, /Heartlands Hospital/);
+        assert.strictEqual(st.rows, 1, 'on scene by default');
+        await CC.evaluate(() => setStageFilter('evacuated'));
+        assert.match(await CC.evaluate(() => document.getElementById('rows').textContent), /Heartlands Hospital/);
+        await CC.evaluate(() => setStageFilter('scene'));
+        // a phone whose sector is the CCS marks what it receives as at the CCS
+        const CS = await device('Cmd S');
+        await CS.evaluate(() => { document.getElementById('intro-sector').value = 'Casualty Clearing'; });
+        await setup(CS, 'CCS nurse');
+        assert.strictEqual(await CS.evaluate(() => currentSector), 'Casualty Clearing');
+        await triage(CS, 'TST', [true]);
+        assert.strictEqual(await CS.evaluate(() => currentEntry().atCcs), true, 'a CCS phone creates patients at the CCS');
+        await CS._ctx.close();
+        // put CA's patient back on scene so the later tests see two on-scene casualties
+        await CA.evaluate(() => { currentLogIndex = 0; toggleEvac(); });
+        assert.strictEqual(await CA.evaluate(() => incidentLog[0].evacuated), false);
+        await CA.waitForFunction(() => CMD.dirty.size === 0, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.querySelectorAll('#rows tr').length === 2, null, { timeout: 8000 });
+    });
     await test('a wrong training state cannot join, and a join QR scanned on a third phone joins after confirmation', async () => {
         const CD = await device('Cmd D');
         await setup(CD, 'Medic Delta');
@@ -1384,6 +1425,7 @@ async function test(name, fn) {
         assert.strictEqual(await C.evaluate(s => cmdJoin(s.code, s.pin), share), true);
         await triage(C, 'MITT', [true]);
         await C.waitForFunction(() => incidentLog.length === 1 && CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        assert.ok(await C.evaluate(() => incidentLog[0].atCcs), 'a CCZ phone records its patients as at the CCS');
         const P = await K._ctx.newPage();
         P.on('pageerror', e => errors.push(`DemoCmdPage: ${e.message}`));
         await P.goto(url.replace('index.html', 'commander.html#' + share.code));
@@ -1410,6 +1452,22 @@ async function test(name, fn) {
         assert.strictEqual(await P.$$eval('#phones .phone', r => r.length), 4);
         await P.evaluate(() => { __skip(5 * 60 * 1000); refreshNow(); });
         await P.waitForFunction(() => /26 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 5000 });
+        // any row opens the patient's full details; TST-only patients are marked and can be filtered
+        assert.ok(await P.evaluate(() => document.querySelectorAll('#rows .tool-chip.tst').length > 0 && document.querySelectorAll('#rows .tool-chip.mitt').length > 0), 'both TST-only and MITT chips shown');
+        await P.click('#rows tr:first-child');
+        await P.waitForSelector('#pt-modal.open', { timeout: 3000 });
+        const pt = await P.evaluate(() => ({ id: document.getElementById('pt-id').textContent, body: document.getElementById('pt-body').textContent, chips: document.getElementById('pt-chips').textContent }));
+        assert.match(pt.id, /^DEMO-/);
+        assert.match(pt.body, /Triage/); assert.match(pt.body, /Interventions/); assert.match(pt.body, /Grid ref/); assert.match(pt.body, /Triaged by/);
+        assert.match(pt.chips, /P1|P2|P3/);
+        await P.keyboard.press('Escape');
+        assert.ok(!(await P.evaluate(() => document.getElementById('pt-modal').classList.contains('open'))));
+        await P.evaluate(() => setStageFilter('tst'));
+        const tstRows = await P.$$eval('#rows tr', r => r.length);
+        assert.ok(tstRows > 0 && tstRows < 21, 'TST-only filter narrows the list: ' + tstRows);
+        assert.strictEqual(await P.evaluate(() => document.querySelectorAll('#rows .tool-chip.mitt').length), 0);
+        assert.match(await P.textContent('#stages'), new RegExp(tstRows + '\\s*TST only'));
+        await P.evaluate(() => setStageFilter('scene'));
         await P.evaluate(() => toggleWall());
         assert.ok(await P.evaluate(() => document.body.classList.contains('wall')));
         await P.evaluate(() => { toggleWall(); signOut(); });
