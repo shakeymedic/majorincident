@@ -21,7 +21,7 @@
 <main>
     <p><a href="index.html">← Back to the app</a></p>
     <h1>Privacy notice — Major Incident Triage</h1>
-    <p class="updated">Last updated: 15 October 2026. Written from how the app works at version 0.14; review it whenever the server, hosting or data handling change.</p>
+    <p class="updated">Last updated: 15 October 2026. Written from how the app works at version 0.17.2; review it whenever the server, hosting or data handling change.</p>
 
     <h2>Who we are</h2>
     <p class="placeholder">Major Incident Triage is published by Dr Jake Turner (EM Evidence). For any privacy question or request, email <a href="mailto:emevidence999@gmail.com">emevidence999@gmail.com</a>. <em>[Jake: replace with the company name and address you use as data controller before the Play listing goes live.]</em></p>
@@ -39,7 +39,8 @@
     <h2>Live sharing with a commander screen (optional)</h2>
     <ul>
         <li>If you start or join live sharing, the device sends its records (triage category, timings, interventions, injuries, positions, the sector and place labels, free-text notes, your typed name and the device's random code) and any METHANE report over HTTPS to a small server, so an incident commander can see them on one screen protected by an incident code and PIN.</li>
-        <li>The server is run for us by <a href="https://www.netlify.com" rel="noopener">Netlify</a> (Netlify Functions and Netlify Blobs). Netlify is based in the United States, so this data may be stored outside the UK; Netlify provides safeguards for international transfers under UK data protection law. Netlify also processes standard web server data (such as IP address and browser type) to deliver the site.</li>
+        <li>The server is run for us by <a href="https://www.netlify.com" rel="noopener">Netlify</a> (Netlify Functions), set to run in Netlify's London (UK) region. Netlify also processes standard web server data (such as IP address and browser type) to deliver the site.</li>
+        <li>We are moving where the shared records are kept to <a href="https://cloud.google.com/firestore" rel="noopener">Google Cloud Firestore</a> in London (europe-west2). Until that move is complete they are kept in Netlify Blobs, whose location we cannot choose and which may be outside the UK. Netlify and Google are both based in the United States and provide safeguards for international transfers under UK data protection law.</li>
         <li>Wrong-PIN attempts are counted against a hashed form of the connecting address for 15 minutes, to stop guessing; the address itself is not stored.</li>
         <li>The server copy is deleted automatically 24 hours after the last update, or immediately when the phone that started the incident chooses <em>End incident for everyone</em>. You can stop sharing from your own device at any time.</li>
     </ul>

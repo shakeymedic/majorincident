@@ -17,6 +17,10 @@ jobs:
         run: node tests/lib.test.js
       - name: Run live-sharing backend tests
         run: node tests/incident-core.test.js
+      - name: Install packages (the Firestore client for the next step)
+        run: npm ci --no-audit --no-fund
+      - name: Run the backend tests through the Firestore (UK hosting) store
+        run: node tests/firestore-store.test.js
       - name: Load test the backend (30 phones, 300 records)
         run: node tests/load.test.js
       - name: Sanity-check that index.html parses as JS

@@ -1,23 +1,13 @@
 // HTTP entry point for the incident commander backend: /api/incident and /api/incident/*
 // All logic lives in netlify/lib/incident-core.js so it can be tested without Netlify.
-import { getStore } from '@netlify/blobs';
 import { createRequire } from 'node:module';
+import { pickStore } from '../lib/pick-store.mjs';
 const require = createRequire(import.meta.url);
 const { createCore } = require('../lib/incident-core.js');
 
-function blobStore() {
-    const s = getStore({ name: 'incidents', consistency: 'strong' });
-    return {
-        async get(key) { try { return await s.get(key, { type: 'json' }); } catch (e) { return null; } },
-        async set(key, value) { await s.setJSON(key, value); },
-        async delete(key) { await s.delete(key); },
-        async list(prefix) { const r = await s.list({ prefix }); return (r.blobs || []).map(b => ({ key: b.key, etag: b.etag || '' })).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0); },
-    };
-}
-
-let core = null;
+let core = null, storeName = '';
 function getCore() {
-    if (!core) core = createCore({ store: blobStore(), log: (...a) => console.log('[incident]', ...a) });
+    if (!core) { const p = pickStore(); storeName = p.name; core = createCore({ store: p.store, log: (...a) => console.log('[incident]', ...a) }); }
     return core;
 }
 
@@ -29,8 +19,9 @@ export default async (req, context) => {
     if (req.method === 'POST' || req.method === 'PUT') { try { bodyText = await req.text(); } catch (e) { bodyText = ''; } }
     const client = (context && context.ip) || headers['x-nf-client-connection-ip'] || 'unknown';
     const r = await getCore().handle(req.method, url.pathname, headers, bodyText, client);
-    const h = Object.assign({ 'X-Content-Type-Options': 'nosniff' }, r.headers || {});
+    const h = Object.assign({ 'X-Content-Type-Options': 'nosniff', 'X-Incident-Store': storeName }, r.headers || {});
     return new Response(r.body === null || r.body === undefined ? null : JSON.stringify(r.body), { status: r.status, headers: h });
 };
 
-export const config = { path: ['/api/incident', '/api/incident/*'] };
+// region: London, so requests are handled in the UK (Netlify Pro). The data itself is wherever pickStore() says.
+export const config = { path: ['/api/incident', '/api/incident/*'], region: 'lhr' };

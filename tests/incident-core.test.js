@@ -1,7 +1,11 @@
 // Tests for the incident commander backend (netlify/lib/incident-core.js) with an in-memory store.
 // Usage: node tests/incident-core.test.js
+// tests/firestore-store.test.js runs this same suite through the Firestore store by setting global.__makeIncidentStore.
 const assert = require('assert');
 const { createCore, memoryStore, TTL_MS, STALE_DEVICE_MS } = require('../netlify/lib/incident-core.js');
+
+// Each call must give an empty store. memoryStore's options (delay, jitter) only apply to the in-memory store.
+const makeStore = (opts) => (global.__makeIncidentStore ? global.__makeIncidentStore(opts) : memoryStore(opts));
 
 let passed = 0, failed = 0;
 async function test(name, fn) {
@@ -15,7 +19,7 @@ function rec(uid, id, category, extra) {
 (async () => {
     console.log('\nincident-core: lifecycle');
     let clock = 1760000000000;
-    const store = memoryStore();
+    const store = makeStore();
     const core = createCore({ store, now: () => clock });
     const H = (pin) => ({ 'x-incident-pin': pin });
     let code = '', pin = '';
@@ -201,7 +205,7 @@ function rec(uid, id, category, extra) {
     });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
         // A store where every operation takes a little time, so the two pushes interleave as they would on Netlify.
-        const slow = memoryStore({ jitter: 3 });
+        const slow = makeStore({ jitter: 3 });
         const core2 = createCore({ store: slow, now: () => clock });
         const c = (await core2.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         let known = '', seen = [];
@@ -235,7 +239,7 @@ function rec(uid, id, category, extra) {
         assert.strictEqual((await fresh.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '8.8.8.8')).status, 200);
     });
     await test('a store that only returns plain keys (no etags) still works and still notices changes', async () => {
-        const plain = memoryStore();
+        const plain = makeStore();
         const inner = plain.list.bind(plain);
         plain.list = async (p) => (await inner(p)).map(e => e.key);
         const core3 = createCore({ store: plain, now: () => clock });
@@ -249,7 +253,7 @@ function rec(uid, id, category, extra) {
     });
     console.log('\nincident-core: v0.16.0 map markings and tag lookup');
     await test('the commander sets map markings; phones get them back on every push; the read carries them and its ETag changes', async () => {
-        const core4 = createCore({ store: memoryStore(), now: () => clock });
+        const core4 = createCore({ store: makeStore(), now: () => clock });
         const c = (await core4.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         const g1 = await core4.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
         assert.deepStrictEqual(g1.body.marks, []);
@@ -266,13 +270,13 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(g2.body.marks[1].label, 'Main gate');
     });
     await test('the view-only PIN cannot change map markings or look up a tag', async () => {
-        const core5 = createCore({ store: memoryStore(), now: () => clock });
+        const core5 = createCore({ store: makeStore(), now: () => clock });
         const c = (await core5.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         assert.strictEqual((await core5.handle('POST', `/api/incident/${c.code}/marks`, H(c.viewPin), JSON.stringify({ marks: [] }), '2.2.2.2')).status, 403);
         assert.strictEqual((await core5.handle('POST', `/api/incident/${c.code}/lookup`, H(c.viewPin), JSON.stringify({ tag: 'X' }), '2.2.2.2')).status, 403);
     });
     await test('a tag lookup finds a record by exact patient ID or card number, not by partial match', async () => {
-        const core6 = createCore({ store: memoryStore(), now: () => clock });
+        const core6 = createCore({ store: makeStore(), now: () => clock });
         const c = (await core6.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         await core6.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('t1', 'A1B2-TST-001', 'P1', { cardNo: 'WM 004512' }), rec('t2', 'TAG-778', 'P2')] }), '1.1.1.1');
         const byCard = await core6.handle('POST', `/api/incident/${c.code}/lookup`, H(c.pin), JSON.stringify({ tag: 'wm 004512' }), '1.1.1.1');
