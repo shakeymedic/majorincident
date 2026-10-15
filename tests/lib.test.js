@@ -1011,6 +1011,61 @@ group('review v0.9.0: reading a device fix', () => {
     });
 });
 
+group('v0.11.0: demo incident', () => {
+    const now = Date.UTC(2026, 9, 15, 12, 0, 0);
+    const d = lib.buildDemoScenario({ now });
+    test('24 casualties covering every category, from four phones', () => {
+        assert.strictEqual(d.records.length, 24);
+        lib.CATEGORIES.forEach(c => assert.ok(d.records.some(r => r.category === c), 'missing ' + c));
+        assert.strictEqual(new Set(d.records.map(r => r.deviceId)).size, 4);
+        assert.strictEqual(d.devices.length, 4);
+        assert.ok(d.incident.training && d.incident.demo);
+    });
+    test('IDs and uids are unique and every record is recognised as demo', () => {
+        assert.strictEqual(new Set(d.records.map(r => r.id)).size, d.records.length);
+        assert.strictEqual(new Set(d.records.map(r => r.uid)).size, d.records.length);
+        d.records.forEach(r => { assert.ok(lib.isDemoRecord(r)); assert.ok(lib.isDemoRecord(lib.sanitisePatientRecord(r)), 'uid survives sanitising'); });
+        assert.ok(!lib.isDemoRecord({ uid: 'abc', id: 'X-TST-001' }));
+    });
+    test('records survive sanitising (QR / commander server) with category, location and interventions intact', () => {
+        d.records.forEach(r => {
+            const s = lib.sanitisePatientRecord(r);
+            assert.strictEqual(s.category, r.category);
+            assert.strictEqual(s.id, r.id);
+            assert.deepStrictEqual(Object.keys(s.interventions).sort(), Object.keys(r.interventions).sort());
+        });
+        assert.ok(d.records.filter(r => r.currentLocation && r.currentLocation.lat).length >= 23);
+        assert.ok(d.records.some(r => !(r.currentLocation && r.currentLocation.lat)), 'one casualty without a position');
+    });
+    test('nothing happens in the future and timers look real', () => {
+        d.records.forEach(r => {
+            assert.ok(r.timestamp <= now && r.createdAt <= now && r.updatedAt <= now, r.id);
+            Object.keys(r.interventions).forEach(k => assert.ok(r.interventions[k].ts <= now));
+        });
+        const st = d.records.filter(r => !r.evacuated).map(r => lib.reassessmentStatus(r, now).state);
+        assert.ok(st.includes('overdue') && st.includes('ok'));
+        assert.ok(d.records.some(r => r.evacuated && r.evacDest));
+        assert.ok(d.records.some(r => r.lastDeteriorationAt), 'a deterioration');
+        assert.ok(d.records.some(r => r.handoverState === 'pending'));
+        assert.ok(d.records.some(r => r.injuries.length && r.interventions.Tourniquet && !r.evacuated));
+    });
+    test('the same demo is built every time (fixed uids, so a reload replaces rather than duplicates)', () => {
+        const again = lib.buildDemoScenario({ now: now + 5000 });
+        assert.deepStrictEqual(again.records.map(r => r.uid), d.records.map(r => r.uid));
+    });
+    test('scripted events play out as time passes', () => {
+        const later = lib.buildDemoScenario({ now: now + 300000, elapsedMs: 300000 });
+        assert.strictEqual(later.records.length, 26);
+        assert.ok(later.records.filter(r => r.evacuated).length > d.records.filter(r => r.evacuated).length);
+        assert.ok(!later.records.some(r => r.category === 'NOT_BREATHING'), 'the not-breathing casualty is reassessed');
+        assert.strictEqual(later.incident.nextEventInMs, null);
+        later.records.forEach(r => assert.ok(r.updatedAt <= now + 300000));
+        const early = lib.buildDemoScenario({ now: now + 10000, elapsedMs: 10000 });
+        assert.strictEqual(early.records.length, 24);
+        assert.strictEqual(early.incident.nextEventInMs, 20000);
+    });
+});
+
 (async () => {
     console.log('\nreview: compressed multi-part transfer (async)');
     async function atest(name, fn) {

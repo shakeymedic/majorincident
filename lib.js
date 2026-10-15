@@ -1848,6 +1848,196 @@
         return { kind: 'unsupported', title: 'Location not supported', help: 'This browser cannot report a position. Record the sector, floor and room, or pin the position on the map.', retry: false };
     }
 
+    // ---------- Demo incident (training only) ----------
+    // A made-up incident for showing the app: four phones, 24 casualties across every category, positions,
+    // interventions, injuries, re-triage, evacuations and handovers. Every time is relative to "now", so the
+    // reassessment timers look real. elapsedMs > 0 plays the scripted events that happen after the demo starts
+    // (used by the commander screen's demo, which updates by itself).
+    const DEMO_INCIDENT = {
+        code: 'DEMO01',
+        name: 'DEMO: stand collapse at a music festival (fictional)',
+        incidentCode: 'DEMO-KESTREL',
+        site: { lat: 52.45365, lng: -1.90023 },
+        ccs: { lat: 52.45240, lng: -1.89990 },
+        loading: { lat: 52.45170, lng: -1.89900 },
+        methane: {
+            m: 'DECLARED',
+            e: 'DEMO (fictional): Cannon Hill Park, Birmingham. Main stage on the lawn east of the boating lake, north grandstand. RVP Edgbaston Road gate.',
+            t: 'Temporary grandstand collapse during a concert; crowd surge; metal debris',
+            h: 'Unstable structure (inner cordon, no entry without Fire), crowd still dispersing, generators',
+            a: 'Edgbaston Road gate only. Loading point by the MAC car park',
+            n: 'About 25 casualties; several P1; 2 dead (estimate)',
+            e_svc: 'Ambulance (HART, MERIT), Fire and Rescue (USAR requested), Police; event medical team on scene',
+        },
+        phones: [
+            { deviceId: 'DEMOHT', triager: 'HART 1', role: 'HCP', prefix: 'DEMO-HT' },
+            { deviceId: 'DEMOMD', triager: 'Medic 2', role: 'HCP', prefix: 'DEMO-MD' },
+            { deviceId: 'DEMODR', triager: 'MERIT doctor', role: 'HCP', prefix: 'DEMO-DR' },
+            { deviceId: 'DEMOFR', triager: 'Fire crew 3', role: 'NON_HCP', prefix: 'DEMO-FR' },
+        ],
+    };
+    const DEMO_ACTIONS = {
+        'TST|Walking': 'P3 — walking. Direct to the casualty collection point as instructed.',
+        'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing.',
+        'TST|Penetrating Injury': 'P1 — immediate priority.',
+        'TST|Talking, No Penetrating Injury': 'P2 — urgent priority.',
+        'TST|Not Breathing': 'NOT BREATHING — CPR if resources allow. Must be reassessed by a healthcare responder as soon as possible.',
+        'MITT|Catastrophic Bleeding': 'P1 — control bleeding: pressure dressing, tourniquet, haemostatic packing.',
+        'MITT|Walking': 'P3 — walking. Walking patients may be compensating for hidden injuries: reassess early.',
+        'MITT|Not Breathing': 'DEAD.',
+        'MITT|Does Not Respond to Voice': 'P1 — place in the recovery position.',
+        'MITT|Aged 2 or Under': 'P1 — immediate priority.',
+        'MITT|Breathing Rate Outside 12-23': 'P1 — immediate priority.',
+        'MITT|Heart Rate 100 or More': 'P1 — immediate priority.',
+        'MITT|Heart Rate Under 100': 'P2 — urgent priority.',
+        'MITT|P1 Hold': 'P1 HOLD — senior clinical decision. Comfort care; review if resources allow.',
+    };
+    // t = minutes before "now" (negative t = seconds after the demo starts, see DEMO_EVENTS); at = [metres east, metres north] of a base point.
+    // p = phone index; tri = [tool, category, reason, minutes ago, phone] for later triage steps.
+    const DEMO_CASUALTIES = [
+        { n: 1, p: 3, tool: 'TST', cat: 'P3', why: 'Walking', t: 42, base: 'site', at: [-20, 35], sector: 'Inner Cordon', landmark: 'North grandstand, east steps', demos: 'Adult F, about 20', notes: 'Lacerations left forearm. Walked to CCS.', moved: { to: 'ccs', at: [10, -6], t: 36, sector: 'Casualty Clearing' }, tri: [['MITT', 'P3', 'Walking', 30, 2]], ints: { 'Pressure Dressing': 30 }, inj: [[38, 170, 'Laceration', 'minor', 30]] },
+        { n: 2, p: 3, tool: 'TST', cat: 'P1', why: 'Severe Bleeding', t: 41, base: 'site', at: [5, 20], sector: 'Inner Cordon', landmark: 'Under the collapsed stand, north end', demos: 'Adult M, about 30', notes: 'Trapped right leg, freed by Fire 38 min ago.', moved: { to: 'loading', at: [0, 0], t: 15, sector: 'Loading Point' }, tri: [['MITT', 'P1', 'Catastrophic Bleeding', 25, 2]], ints: { 'Tourniquet': 40, 'TXA': 24, 'IO Access': 24 }, inj: [[120, 290, 'Crush / open fracture', 'severe', 39]], evac: { dest: 'QEHB (major trauma centre)', vehicle: 'Ambulance 1', t: 12 }, ho: { state: 'accepted', to: 'Ambulance 1 crew', t: 13 } },
+        { n: 3, p: 3, tool: 'TST', cat: 'NOT_BREATHING', why: 'Not Breathing', t: 40, base: 'site', at: [-10, 15], sector: 'Inner Cordon', landmark: 'Under the collapsed stand, centre', demos: 'Adult M', tri: [['MITT', 'DEAD', 'Not Breathing', 20, 2]], tod: 20 },
+        { n: 4, p: 3, tool: 'TST', cat: 'NOT_BREATHING', why: 'Not Breathing', t: 6, base: 'site', at: [-30, 5], sector: 'Inner Cordon', landmark: 'West end of the stand', demos: 'Adult F', notes: 'Found under debris after the stand was made safe. Needs a clinician.' },
+        { n: 5, p: 3, tool: 'TST', cat: 'P2', why: 'Talking, No Penetrating Injury', t: 38, base: 'site', at: [25, 30], sector: 'Inner Cordon', landmark: 'Front of the stage barrier', demos: 'Child M, about 10', notes: 'Parent with him. Deformed left wrist.', moved: { to: 'ccs', at: [-8, 4], t: 33, sector: 'Casualty Clearing' }, ints: { 'Splintage': 31 }, inj: [[40, 190, 'Fracture', 'moderate', 31]] },
+        { n: 6, p: 3, tool: 'TST', cat: 'P1', why: 'Penetrating Injury', t: 35, base: 'site', at: [15, 10], sector: 'Inner Cordon', landmark: 'Stand framework, south side', demos: 'Adult M, about 50', notes: 'Metal rail wound to right flank. Not removed.', highRisk: true, moved: { to: 'ccs', at: [6, 10], t: 30, sector: 'Casualty Clearing' }, tri: [['MITT', 'P1', 'Heart Rate 100 or More', 28, 2]], ints: { 'Chest Seal': 33, 'Oxygen': 28, 'IO Access': 27 }, inj: [[130, 150, 'Penetrating', 'severe', 33]], re: { t: 18, outcome: 'unchanged' } },
+        { n: 7, p: 0, tool: 'MITT', cat: 'P1', why: 'Catastrophic Bleeding', t: 37, base: 'site', at: [-5, 40], sector: 'Inner Cordon', landmark: 'North grandstand, centre steps', demos: 'Adult F, about 40', allergies: 'Penicillin', moved: { to: 'ccs', at: [-4, -10], t: 32, sector: 'Casualty Clearing' }, ints: { 'Tourniquet': 37, 'Wound Packing': 36, 'TXA': 30 }, inj: [[20, 140, 'Amputation, left forearm', 'severe', 37]], re: { t: 6, outcome: 'unchanged' } },
+        { n: 8, p: 0, tool: 'MITT', cat: 'P1', why: 'Does Not Respond to Voice', t: 33, base: 'site', at: [0, 25], sector: 'Inner Cordon', landmark: 'Collapsed stand, north end', demos: 'Adult M, about 60', notes: 'Head injury, GCS about 8. Vomited once.', moved: { to: 'loading', at: [4, 3], t: 9, sector: 'Loading Point' }, ints: { 'Airway Open': 33, 'Recovery Pos': 33, 'Oxygen': 30 }, inj: [[100, 30, 'Scalp wound, boggy', 'severe', 33]], evac: { dest: 'QEHB (major trauma centre)', vehicle: 'Ambulance 3', t: 5 }, ho: { state: 'accepted', to: 'Ambulance 3 crew', t: 6 } },
+        { n: 9, p: 0, tool: 'MITT', cat: 'P1', why: 'Breathing Rate Outside 12-23', t: 30, base: 'ccs', at: [12, 2], sector: 'Casualty Clearing', landmark: 'P1 area, bay 1', demos: 'Adult M, about 35', notes: 'RR 32. Paradoxical movement right chest.', ints: { 'Oxygen': 30, 'Needle Decomp': 22 }, inj: [[140, 120, 'Flail segment', 'severe', 30]], re: { t: 4, outcome: 'unchanged' } },
+        { n: 10, p: 0, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 29, base: 'ccs', at: [-14, -2], sector: 'Casualty Clearing', landmark: 'P2 area', demos: 'Adult F, about 25', notes: 'Open tib/fib fracture, right.', ints: { 'Splintage': 27, 'Pressure Dressing': 27 }, inj: [[115, 330, 'Open fracture', 'moderate', 28]] },
+        { n: 11, p: 2, tool: 'MITT', cat: 'P1_HOLD', why: 'P1 Hold', t: 27, base: 'ccs', at: [18, 8], sector: 'Casualty Clearing', landmark: 'P1 area, screened bay', demos: 'Adult M, about 80', notes: 'Senior clinical decision (MERIT doctor). Severe crush to chest and abdomen. Comfort care, review when resources allow.', ints: { 'Oxygen': 26 }, inj: [[100, 140, 'Crush', 'severe', 27]] },
+        { n: 12, p: 0, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 26, base: 'ccs', at: [-10, 6], sector: 'Casualty Clearing', landmark: 'P2 area', demos: 'Adult M, about 45', notes: 'Pelvic pain, fell about 3 m from the stand.', highRisk: true, ints: { 'Pelvic Binder': 25 }, inj: [[100, 200, 'Pelvis', 'severe', 25]], re: { t: 1, outcome: 'unchanged' } },
+        { n: 13, p: 0, tool: 'MITT', cat: 'P3', why: 'Walking', t: 25, base: 'ccs', at: [-20, -12], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult F, about 30' },
+        { n: 14, p: 0, tool: 'MITT', cat: 'P3', why: 'Walking', t: 24, base: 'ccs', at: [-24, -10], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult M, about 20', notes: 'Twisted ankle.' },
+        { n: 15, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 22, base: 'ccs', at: [-12, 0], sector: 'Casualty Clearing', landmark: 'P2 area', demos: 'Adult F, about 55', notes: 'Fractured neck of femur, left.', moved: { to: 'loading', at: [-3, 2], t: 10, sector: 'Loading Point' }, ints: { 'Splintage': 20 }, evac: { dest: 'Heartlands Hospital', vehicle: 'Ambulance 2', t: 8 }, ho: { state: 'handed-over', to: 'Ambulance 2 crew', t: 9 } },
+        { n: 16, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 21, base: 'ccs', at: [-22, -15], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult M, about 30', notes: 'Small scalp laceration, no loss of consciousness.' },
+        { n: 17, p: 1, tool: 'MITT', cat: 'P1', why: 'Aged 2 or Under', t: 20, base: 'loading', at: [6, -4], sector: 'Loading Point', landmark: 'Waiting for a paediatric-capable crew', demos: 'Child F, about 18 months', notes: 'With her mother (DEMO-MD-MITT-004). Bruising to the forehead, alert.', ints: { 'Oxygen': 19 }, inj: [[95, 25, 'Bruise', 'minor', 19]], ho: { state: 'pending', to: '', t: 3 } },
+        { n: 18, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 20, base: 'loading', at: [8, -2], sector: 'Loading Point', landmark: 'With her child (DEMO-MD-MITT-003)', demos: 'Adult F, about 30' },
+        { n: 19, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 15, base: 'ccs', at: [-6, 12], sector: 'Casualty Clearing', landmark: 'P2 area, moved to P1 area', demos: 'Adult M, about 70', notes: 'Chest wall pain. Became pale and clammy.', tri: [['MITT', 'P1', 'Heart Rate 100 or More', 8, 1]], ints: { 'Oxygen': 8, 'IO Access': 7 }, inj: [[70, 120, 'Chest wall bruising', 'moderate', 15]] },
+        { n: 20, p: 3, tool: 'TST', cat: 'P2', why: 'Talking, No Penetrating Injury', t: 12, base: 'site', at: [30, 18], sector: 'Inner Cordon', landmark: 'Beside the sound desk', demos: 'Adult M, about 40', notes: 'Back pain, cannot walk. Waiting for a clinician.' },
+        { n: 21, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 10, base: 'ccs', at: [-26, -8], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult F, about 65', notes: 'Wrist pain. Lives alone, needs a welfare check.' },
+        { n: 22, p: 2, tool: 'MITT', cat: 'DEAD', why: 'Not Breathing', t: 34, base: 'site', at: [-15, 22], sector: 'Inner Cordon', landmark: 'Under the collapsed stand, centre', demos: 'Adult M', tod: 34, notes: 'Left in place for the police.' },
+        { n: 23, p: 3, tool: 'TST', cat: 'P3', why: 'Walking', t: 4, base: 'site', at: [40, 40], sector: 'Inner Cordon', landmark: 'Stage left', demos: 'Adult F, about 20' },
+        { n: 24, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 2, base: null, sector: 'Casualty Clearing', landmark: 'Came in by herself; no position yet', demos: 'Adult F, about 35', notes: 'Crush injury, right foot.' },
+    ];
+    // Things that happen after the demo starts (seconds), for the commander screen's self-updating demo.
+    const DEMO_EVENTS = [
+        { s: 30, add: { n: 25, p: 3, tool: 'TST', cat: 'P2', why: 'Talking, No Penetrating Injury', base: 'site', at: [-35, 30], sector: 'Inner Cordon', landmark: 'Behind the north grandstand', demos: 'Adult M, about 25', notes: 'Found by USAR. Leg injury.' } },
+        { s: 60, evac: 9, dest: 'QEHB (major trauma centre)', vehicle: 'Ambulance 4' },
+        { s: 90, tri: 20, step: ['MITT', 'P1', 'Heart Rate 100 or More', 2], note: 'Deteriorated: pale, HR 124.' },
+        { s: 120, tri: 4, step: ['MITT', 'P1', 'Does Not Respond to Voice', 2], note: 'Breathing after airway opened by the MERIT doctor.' },
+        { s: 150, evac: 17, dest: "Birmingham Children's Hospital", vehicle: 'Ambulance 5' },
+        { s: 180, add: { n: 26, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', base: 'ccs', at: [-28, -14], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult M, about 50' } },
+        { s: 210, evac: 7, dest: 'QEHB (major trauma centre)', vehicle: 'Ambulance 6' },
+    ];
+    function demoOffset(base, at) {
+        const m = 111320;
+        return { lat: base.lat + (at[1] || 0) / m, lng: base.lng + (at[0] || 0) / (m * Math.cos(base.lat * Math.PI / 180)) };
+    }
+    // Where a casualty ends up at the CCS: the area for their final priority.
+    function demoArea(c) {
+        const cat = c.tri && c.tri.length ? c.tri[c.tri.length - 1][1] : c.cat;
+        if (c.moved && c.moved.to === 'loading') return 'Waiting for an ambulance';
+        return cat === 'P1' ? 'P1 area' : cat === 'P2' ? 'P2 area' : cat === 'P3' ? 'P3 area (marquee)' : 'Screened area';
+    }
+    function demoTime(ts) { return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+    function demoId(c) {
+        const phone = DEMO_INCIDENT.phones[c.p];
+        const firstTool = c.tool;
+        const same = DEMO_CASUALTIES.concat(DEMO_EVENTS.filter(e => e.add).map(e => e.add)).filter(x => x.p === c.p && x.tool === firstTool && x.n <= c.n).length;
+        return `${phone.prefix}-${firstTool}-${('00' + same).slice(-3)}`;
+    }
+    function buildDemoRecord(c, now, startedAgoMs) {
+        const min = 60 * 1000;
+        const phone = DEMO_INCIDENT.phones[c.p];
+        const ts = now - startedAgoMs;
+        const action = DEMO_ACTIONS[`${c.tool}|${c.why}`] || '';
+        const rec = {
+            id: demoId(c), uid: 'demo' + ('0000' + c.n).slice(-4) + 'kestrel', createdAt: ts, createdBy: phone.triager, deviceId: phone.deviceId,
+            updatedAt: ts, fts: {}, time: demoTime(ts), timestamp: ts, tool: c.tool, category: c.cat, action, reason: c.why, triager: phone.triager,
+            triageHistory: [{ ts, category: c.cat, reason: c.why, action, tool: c.tool, by: phone.triager, kind: 'triage' }],
+            tod: c.tod ? demoTime(now - c.tod * min) : '',
+            location: null, initialLocation: null, currentLocation: null, locationHistory: [],
+            locationConfidence: c.base ? 'gps-exact' : 'sector-only',
+            sector: c.sector || '', landmark: c.landmark || '', floor: '', area: '', incidentCode: DEMO_INCIDENT.incidentCode,
+            demos: c.demos || '', allergies: c.allergies || '', notes: c.notes || '', highRisk: !!c.highRisk, interventions: {}, injuries: [],
+            evacuated: false, evacDest: '', evacVehicle: '', hospitalId: '', handoverState: '', _rev: 1, demo: true,
+        };
+        let out = rec;
+        if (c.base) {
+            const p = demoOffset(DEMO_INCIDENT[c.base], c.at || [0, 0]);
+            out = appendLocationHistory(out, { lat: p.lat, lng: p.lng, accuracy: 6 + (c.n % 5) * 3, timestamp: ts, source: 'gps-watch' }, { user: phone.triager, reason: 'initial capture', source: 'gps-watch', confidence: 'gps-exact', sector: rec.sector, landmark: rec.landmark, at: ts });
+        } else {
+            out = appendLocationHistory(out, { timestamp: ts, source: 'sector-label' }, { user: phone.triager, reason: 'initial sector label', source: 'sector-label', confidence: 'sector-only', sector: rec.sector, landmark: rec.landmark, at: ts });
+        }
+        if (c.moved) {
+            const mt = now - c.moved.t * min;
+            const p = demoOffset(DEMO_INCIDENT[c.moved.to], c.moved.at || [0, 0]);
+            out = appendLocationHistory(out, { lat: p.lat, lng: p.lng, accuracy: 8, timestamp: mt, source: 'gps-watch' }, { user: phone.triager, reason: c.moved.to === 'loading' ? 'Moved to the loading point' : 'Moved to casualty clearing', action: 'Moved', source: 'gps-watch', confidence: 'gps-exact', sector: c.moved.sector, landmark: c.moved.landmark || demoArea(c), at: mt });
+        }
+        Object.keys(c.ints || {}).forEach(k => { const t = now - c.ints[k] * min; out.interventions[k] = { time: demoTime(t), ts: t, by: phone.triager }; });
+        out.injuries = (c.inj || []).map(i => buildInjuryMark({ x: i[0], y: i[1], label: i[2], severity: i[3], ts: now - i[4] * min, time: demoTime(now - i[4] * min) }));
+        (c.tri || []).forEach(s => {
+            const t = now - s[3] * min, by = DEMO_INCIDENT.phones[s[4]].triager;
+            const act = DEMO_ACTIONS[`${s[0]}|${s[2]}`] || '';
+            const worse = categoryWorsened(out.category, s[1]);
+            out.triageHistory.push({ ts: t, category: s[1], reason: s[2], action: act, tool: s[0], by, kind: 'retriage' });
+            Object.assign(out, { category: s[1], reason: s[2], action: act, tool: s[0], triager: by, time: demoTime(t), timestamp: t, lastReassessed: t, reassessOutcome: 're-triaged' });
+            if (worse) out.lastDeteriorationAt = t;
+            if (s[1] === 'DEAD' && !out.tod) out.tod = demoTime(t);
+        });
+        if (c.re) { out.lastReassessed = now - c.re.t * min; out.reassessOutcome = c.re.outcome; }
+        if (c.ho) {
+            const t = now - c.ho.t * min;
+            out.handoverState = c.ho.state; out.handoverTo = c.ho.to || ''; out.handoverAt = t;
+            if (c.ho.state !== 'pending') out.handoverLog = [{ to: c.ho.to, at: t, by: phone.triager, method: 'qr-ack', state: c.ho.state }];
+        }
+        if (c.evac) { out.evacuated = true; out.evacDest = c.evac.dest; out.evacVehicle = c.evac.vehicle; }
+        const times = [out.timestamp, out.lastReassessed || 0, out.handoverAt || 0, c.evac ? now - c.evac.t * min : 0].concat(Object.keys(out.interventions).map(k => out.interventions[k].ts));
+        out.updatedAt = Math.max.apply(null, times.concat(out.locationHistory.map(h => h.at || 0)));
+        return out;
+    }
+    // Returns { incident, records, devices }. opts.now (ms), opts.elapsedMs (time since the demo started; plays DEMO_EVENTS).
+    function buildDemoScenario(opts) {
+        opts = opts || {};
+        const now = opts.now || Date.now();
+        const elapsed = Math.max(0, opts.elapsedMs || 0);
+        const start = now - elapsed; // when the demo was opened: the fixed casualties are timed back from here
+        const min = 60 * 1000;
+        const records = DEMO_CASUALTIES.map(c => buildDemoRecord(c, start, c.t * min));
+        const byN = {};
+        DEMO_CASUALTIES.forEach((c, i) => { byN[c.n] = records[i]; });
+        DEMO_EVENTS.filter(e => e.s * 1000 <= elapsed).forEach(e => {
+            const at = start + e.s * 1000;
+            if (e.add) { const r = buildDemoRecord(e.add, start, -e.s * 1000); records.push(r); byN[e.add.n] = r; return; }
+            const r = byN[e.evac || e.tri];
+            if (!r) return;
+            if (e.evac) {
+                Object.assign(r, { evacuated: true, evacDest: e.dest, evacVehicle: e.vehicle, handoverState: 'accepted', handoverTo: `${e.vehicle} crew`, handoverAt: at, updatedAt: at, _rev: (r._rev || 1) + 1 });
+            } else {
+                const by = DEMO_INCIDENT.phones[e.step[3]].triager, act = DEMO_ACTIONS[`${e.step[0]}|${e.step[2]}`] || '';
+                if (categoryWorsened(r.category, e.step[1])) r.lastDeteriorationAt = at;
+                r.triageHistory = r.triageHistory.concat([{ ts: at, category: e.step[1], reason: e.step[2], action: act, tool: e.step[0], by, kind: 'retriage' }]);
+                Object.assign(r, { category: e.step[1], reason: e.step[2], action: act, tool: e.step[0], triager: by, time: demoTime(at), timestamp: at, lastReassessed: at, reassessOutcome: 're-triaged', updatedAt: at, _rev: (r._rev || 1) + 1 });
+                if (e.note) r.notes = (r.notes ? r.notes + ' ' : '') + e.note;
+            }
+        });
+        const devices = DEMO_INCIDENT.phones.map((ph, i) => {
+            const mine = records.filter(r => r.deviceId === ph.deviceId);
+            const last = Math.max.apply(null, [start - 50 * min].concat(mine.map(r => r.updatedAt || 0)));
+            return { deviceId: ph.deviceId, triager: ph.triager, role: i === 2 ? 'creator' : 'member', records: mine.length, lastSeen: Math.max(last, now - (i + 1) * 40 * 1000), joinedAt: start - 45 * min };
+        });
+        const ccs = normaliseLocation({ lat: DEMO_INCIDENT.ccs.lat, lng: DEMO_INCIDENT.ccs.lng, accuracy: 5, timestamp: start - 40 * min, source: 'map-pin' });
+        const incident = {
+            code: DEMO_INCIDENT.code, name: DEMO_INCIDENT.name, incidentCode: DEMO_INCIDENT.incidentCode, training: true, demo: true,
+            createdAt: start - 45 * min, updatedAt: now, methane: Object.assign({}, DEMO_INCIDENT.methane), ccs,
+            phones: DEMO_INCIDENT.phones.map(p => Object.assign({}, p)),
+            nextEventInMs: (() => { const nx = DEMO_EVENTS.find(e => e.s * 1000 > elapsed); return nx ? nx.s * 1000 - elapsed : null; })(),
+        };
+        return { incident, records, devices };
+    }
+    function isDemoRecord(r) { return !!(r && (r.demo || /^demo\d{4}kestrel$/.test(String(r.uid || '')))); }
+
     const api = {
         QR_SCHEMA_VERSION, QR_DEFAULT_TTL_MS, QR_MAX_FUTURE_SKEW_MS,
         BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
@@ -1875,6 +2065,7 @@
         csvCell, isoWithOffset, migrateLegacyRecords,
         wgs84ToOsgb36, osgb36ToEastNorth, eastNorthToGridRef, toOsGridRef, formatCoords, mapsLinks, orderNearest, googleMapsRouteUrl, GOOGLE_ROUTE_MAX_POINTS,
         locationPoints, buildGpx, buildKml, buildGeoJson, classifyLocationFix, describeGeoError,
+        buildDemoScenario, isDemoRecord, DEMO_INCIDENT,
     };
 
     if (typeof module !== 'undefined' && module.exports) {

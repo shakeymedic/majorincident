@@ -121,6 +121,7 @@
         <input type="password" id="in-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 digits">
         <div class="danger hidden" id="signin-error"></div>
         <button type="button" class="btn" style="margin-top:0.8rem;" onclick="signIn()">Open dashboard</button>
+        <p class="muted" style="margin:1rem 0 0;">No incident? <a href="#DEMO">See the demo incident</a> (made up, updates by itself, nothing sent or received).</p>
     </div>
 
     <div id="dash" class="hidden">
@@ -185,10 +186,12 @@
     let lastOkAt = 0;
     let map = null, cluster = null, ccsMarker = null, circles = null;
     let firstFit = true;
+    let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
 
     function loadCfg() {
         try { const s = sessionStorage.getItem('mit_commander'); if (s) cfg = JSON.parse(s); } catch (e) {}
         const raw = (location.hash || '').replace('#', '').toUpperCase();
+        if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) setWall(true); return 'demo'; }
         const h = raw.split('/')[0].replace(/[^A-Z0-9]/g, '');
         if (h && h.length === 6) $('in-code').value = h;
         // Opened on the phone that is sharing (same site, same browser): sign in with that phone's own code and PIN.
@@ -217,6 +220,7 @@
         start();
     }
     function signOut() {
+        if (demo) { demo = null; firstFit = true; try { history.replaceState(null, '', location.pathname); } catch (e) {} $('training-banner').textContent = 'TRAINING INCIDENT — practice data, not real patients'; }
         cfg = null; data = null; etag = ''; knownSeq = '';
         try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
         if (timer) clearTimeout(timer);
@@ -227,6 +231,7 @@
     function setText(id, t) { $(id).textContent = t; }
     function start() {
         $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = '';
+        $('btn-signout').textContent = 'Sign out';
         refreshNow();
     }
     // Wall display: for a big screen in the command post. Toggle with the button, the W key, or #CODE/wall in the link.
@@ -239,7 +244,38 @@
     function toggleWall() { setWall(!document.body.classList.contains('wall')); }
     function tickClock() { $('clock').textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
     setInterval(tickClock, 1000); tickClock();
+    // Demo: the made-up incident from MITTLib.buildDemoScenario, built in the page. Casualties arrive, deteriorate and
+    // are evacuated over the first few minutes. Nothing is fetched or sent.
+    function startDemo() {
+        if (timer) clearTimeout(timer);
+        cfg = null; etag = ''; knownSeq = ''; firstFit = true;
+        try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
+        demo = { startedAt: Date.now() };
+        $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
+        $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = '';
+        $('btn-signout').textContent = 'Leave demo';
+        demoTick();
+    }
+    function demoTick() {
+        if (!demo) return;
+        if (timer) clearTimeout(timer);
+        const now = Date.now();
+        const d = MITTLib.buildDemoScenario({ now, elapsedMs: now - demo.startedAt });
+        const order = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
+        const records = d.records.map(r => Object.assign(MITTLib.sanitisePatientRecord(r), { reportedBy: r.deviceId, reportedAt: r.updatedAt }))
+            .sort((x, y) => ((x.category in order ? order[x.category] : 99) - (y.category in order ? order[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
+        data = { code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
+        lastOkAt = now;
+        setStatus('live', 'Demo');
+        const next = d.incident.nextEventInMs;
+        setText('hdr-updated', `Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
+        $('conn-warn').classList.add('hidden');
+        render();
+        setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Leave and reopen the demo to start again.');
+        timer = setTimeout(demoTick, next ? Math.min(10000, next + 200) : 30000);
+    }
     async function refreshNow() {
+        if (demo) { demoTick(); return; }
         if (!cfg) return;
         if (timer) clearTimeout(timer);
         $('btn-refresh').disabled = true;
@@ -403,9 +439,10 @@
         if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
         if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();
     });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && cfg) refreshNow(); });
-    loadCfg();
-    if (cfg && cfg.code && cfg.pin) start();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && (cfg || demo)) refreshNow(); });
+    window.addEventListener('hashchange', () => { if (/^#DEMO/i.test(location.hash) && !demo) startDemo(); });
+    if (loadCfg() === 'demo') startDemo();
+    else if (cfg && cfg.code && cfg.pin) start();
 </script>
 </body>
 </html>

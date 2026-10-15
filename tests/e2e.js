@@ -1273,6 +1273,69 @@ async function test(name, fn) {
     });
     await CA._ctx.close(); await CB._ctx.close(); await CC._ctx.close();
 
+    console.log('\ne2e: demo incident');
+    await test('the demo opens in training mode, loads 24 made-up casualties and leaves real records alone', async () => {
+        const D = await device('Demo');
+        await setup(D, 'Dr Demo');
+        await triage(D, 'TST', [true]);
+        const realUid = await D.evaluate(() => incidentLog[0].uid);
+        await D.evaluate(() => { startDemo(); });
+        await answerDialog(D, true);
+        await D.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
+        await page_visible(D, '#demo-modal');
+        assert.ok(await D.evaluate(() => document.body.classList.contains('training') && incidentLog.every(r => MITTLib.isDemoRecord(r))));
+        assert.match(await D.textContent('#demo-summary'), /24 casualties/);
+        assert.strictEqual(await D.evaluate(() => incidentCode), 'DEMO-KESTREL');
+        assert.ok(await D.evaluate(() => auditLog.some(a => a.action === 'DEMO_LOADED')));
+        // Things to show
+        await D.evaluate(() => demoGo('patient'));
+        assert.strictEqual(await D.evaluate(() => currentEntry().id), 'DEMO-HT-MITT-001');
+        assert.ok(await D.evaluate(() => !!currentEntry().interventions.Tourniquet));
+        await D.evaluate(() => demoGo('log'));
+        assert.ok(await D.$$eval('#log-body tr', r => r.length) >= 20);
+        await D.evaluate(() => demoGo('map'));
+        await D.waitForFunction(() => document.querySelectorAll('#map-screen .leaflet-marker-icon').length > 0, null, { timeout: 8000 });
+        await D.evaluate(() => showScreen('home-screen'));
+        assert.ok(await D.$('#home-demo'), 'orange demo card on the home screen');
+        // A new casualty triaged during the demo joins it; restarting the demo asks first
+        await triage(D, 'TST', [true]);
+        assert.strictEqual(await D.evaluate(() => incidentLog.length), 25);
+        await D.evaluate(() => { startDemo(); });
+        await answerDialog(D, true);
+        await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
+        // Back to real use: the real patient is still there and no demo record leaked into it
+        await D.evaluate(() => { closeDemoGuide(); toggleTrainingMode(false); });
+        await answerDialog(D, true);
+        await D.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === false && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        assert.deepStrictEqual(await D.evaluate(() => incidentLog.map(r => r.uid)), [realUid]);
+        await D._ctx.close();
+    });
+    await test('the commander demo shows the incident with no sign-in and no network, and plays its events', async () => {
+        const ctx = await browser.newContext({ serviceWorkers: 'block' });
+        const P = await ctx.newPage();
+        P.on('pageerror', e => errors.push(`CmdDemo: ${e.message}`));
+        const api = [];
+        P.on('request', r => { if (r.url().includes('/api/')) api.push(r.url()); });
+        await P.addInitScript(() => { const real = Date.now; let skew = 0; window.__skip = (ms) => { skew += ms; }; Date.now = () => real() + skew; });
+        await P.goto(url.replace('index.html', 'commander.html#DEMO'));
+        await P.waitForFunction(() => document.querySelectorAll('#rows tr').length > 0, null, { timeout: 8000 });
+        assert.match(await P.textContent('#status-pill'), /Demo/);
+        assert.match(await P.textContent('#training-banner'), /DEMO/);
+        assert.ok(await P.isHidden('#signin'));
+        assert.strictEqual(await P.$$eval('#rows tr', r => r.length), 21, 'on-scene casualties');
+        assert.match(await P.textContent('#counts'), /24 casualties in total/);
+        assert.strictEqual(await P.$$eval('#phones .phone', r => r.length), 4);
+        await P.evaluate(() => { __skip(5 * 60 * 1000); refreshNow(); });
+        await P.waitForFunction(() => /26 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 5000 });
+        await P.evaluate(() => toggleWall());
+        assert.ok(await P.evaluate(() => document.body.classList.contains('wall')));
+        await P.evaluate(() => { toggleWall(); signOut(); });
+        assert.ok(await P.isVisible('#signin'));
+        assert.deepStrictEqual(api, []);
+        await ctx.close();
+    });
+
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
 
     await browser.close();
