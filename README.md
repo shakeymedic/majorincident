@@ -153,6 +153,12 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.12.0 build 2026-10-15-demo-roles — demo roles and transfer practice
+
+- **Try the demo incident** now asks **who you are**: everything on this device; one of the four phones (HART 1, Medic 2, MERIT doctor, Fire crew 3), which loads only that phone's casualties with its name, role, sector and ID prefix; the **commander screen** for this device only (`commander.html#DEMO`); or the **commander of a live practice**, which creates a training incident (needs internet) that other devices link to by scanning its code, so their demo casualties, handovers and new patients appear on the commander screen.
+- **Transfer practice** in the demo guide: *Practise receiving a patient* (a casualty from another phone arrives as a real patient QR through the normal review-and-accept screen) and *Practise handing a patient over* (shows the real handover QR; the demo-only button "the receiver scanned it" sends back the confirmation a receiving phone would). With two devices, real QR handovers work as normal.
+- Training mode now keeps its own name, role, sector and ID prefix (starting from the real-use values), so the demo's phone names never carry back into real use.
+
 ### v0.11.0 build 2026-10-15-demo — demo incident for showing the app
 
 - **Try the demo incident** (bottom of the start screen, or ⚙ Settings → Incident & training) switches to **training mode** and loads a made-up incident: a grandstand collapse at a fictional festival in Cannon Hill Park, Birmingham. 24 casualties recorded on four phones (HART 1, Medic 2, MERIT doctor, Fire crew 3) across every category (P1, P1 Hold, P2, P3, Not Breathing, Dead), with GPS positions, a CCS, interventions with times (tourniquets, TXA, chest seal, pelvic binder), body-map injuries, a re-triage that got worse, overdue reassessments, three evacuations and handovers, and a METHANE report. All times are relative to when the demo is opened.
