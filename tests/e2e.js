@@ -1394,23 +1394,45 @@ async function test(name, fn) {
         assert.ok(await E.isVisible('#btn-demo'), 'pick another role from the start page');
         await E._ctx.close();
     });
-    await test('live practice: one device is the commander, a phone links and its casualties appear on the commander screen', async () => {
+    await test('live exercise: the control room creates it, a demo phone and a CCZ phone link, and both appear on the commander screen', async () => {
         const K = await device('DemoCmd');
         await K.evaluate(() => { demoChoose('cmd'); });
         await K.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof cmdActive === 'function' && cmdActive() && CMD.cfg.commander, null, { timeout: 15000 });
         const share = await K.evaluate(() => ({ code: CMD.cfg.code, pin: CMD.cfg.pin }));
         assert.strictEqual(await K.evaluate(() => incidentLog.length), 0);
+        assert.match(await K.textContent('#training-banner-text'), /EXERCISE — Control room/);
+        // A demo phone can link to it
         const F = await device('DemoHART');
         await F.evaluate(() => { demoChoose('p0'); });
         await F.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 7, null, { timeout: 10000 });
         assert.strictEqual(await F.evaluate(s => cmdJoin(s.code, s.pin), share), true);
         await F.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        // A live-exercise CCZ phone: blank, asks for a name, then offers to scan the control room's code
+        const C = await device('ExerciseCCZ');
+        await C.evaluate(() => startDemo());
+        await C.click('#btn-exercise');
+        await page_visible(C, '#exercise-modal');
+        await C.evaluate(() => showExerciseGuide());
+        await page_visible(C, '#exercise-guide-modal');
+        await C.evaluate(() => closeExerciseGuide());
+        await C.evaluate(() => { exerciseChoose('xc'); });
+        await C.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady, null, { timeout: 10000 });
+        await answerDialog(C, true, 'Nurse CCZ');
+        await page_visible(C, '#cmd-link-modal');
+        assert.deepStrictEqual(await C.evaluate(() => [triagerName, userRole, currentSector, incidentLog.length, demoMode()]), ['Nurse CCZ', 'HCP', 'Casualty Clearing', 0, 'xc']);
+        assert.match(await C.textContent('#training-banner-text'), /EXERCISE — CCZ/);
+        assert.ok(await C.$('#home-exercise'));
+        assert.strictEqual(await C.evaluate(s => cmdJoin(s.code, s.pin), share), true);
+        await triage(C, 'MITT', [true]);
+        await C.waitForFunction(() => incidentLog.length === 1 && CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        assert.ok(await C.evaluate(() => incidentLog[0].atCcs), 'a CCZ phone records its patients as at the CCS');
         const P = await K._ctx.newPage();
         P.on('pageerror', e => errors.push(`DemoCmdPage: ${e.message}`));
         await P.goto(url.replace('index.html', 'commander.html#' + share.code));
-        await P.waitForFunction(() => /7 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 10000 });
+        await P.waitForFunction(() => /8 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 10000 });
         assert.match(await P.textContent('#phones'), /HART 1/);
-        await K._ctx.close(); await F._ctx.close();
+        assert.match(await P.textContent('#phones'), /Nurse CCZ/);
+        await K._ctx.close(); await F._ctx.close(); await C._ctx.close();
     });
 
     await test('the commander demo shows the incident with no sign-in and no network, and plays its events', async () => {
