@@ -1834,8 +1834,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.11.0';
-    const APP_BUILD = '2026-10-15-demo';
+    const APP_VERSION = '0.11.1';
+    const APP_BUILD = '2026-10-15-location-help';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2309,8 +2309,16 @@
         LOC.watchHi = LOC.watchLo = null;
     }
     function retryLocation() {
+        const wasDenied = LOC.permission === 'denied' || (LOC.lastError && LOC.lastError.code === 1);
         LOC.lastError = null; gpsFixes = [];
         if (!('geolocation' in navigator)) { updateGPSIndicator(); return; }
+        if (wasDenied && navigator.permissions && navigator.permissions.query) {
+            // Re-check the permission first: if it is still off, say so instead of pretending to search.
+            navigator.permissions.query({ name: 'geolocation' }).then(st => {
+                LOC.permission = st.state;
+                if (st.state === 'denied') { LOC.lastError = { code: 1, at: Date.now() }; updateGPSIndicator(); renderLocationHelp(); showToast('Location is still switched off for this app. Follow the steps above, then try again.', { alert: true, long: true }); }
+            }).catch(() => {});
+        }
         LOC.started = true;
         restartLocationWatches();
         try { navigator.geolocation.getCurrentPosition(p => onLocationFix(p, 'retry'), onLocationError, { enableHighAccuracy: false, maximumAge: 0, timeout: 15000 }); } catch (e) {}
@@ -2355,11 +2363,20 @@
         return (Date.now() - currentPosition.timestamp) <= GPS_STAMP_MAX_AGE_MS ? currentPosition : null;
     }
     function devicePlatform() { return isIOS() ? 'ios' : /Android/i.test(navigator.userAgent) ? 'android' : 'other'; }
+    // Which browser's permissions apply (an installed web app keeps the permissions of the browser it came from).
+    function deviceBrowser() {
+        const ua = navigator.userAgent || '';
+        if (/FxiOS|Firefox/i.test(ua)) return 'firefox';
+        if (/SamsungBrowser/i.test(ua)) return 'samsung';
+        if (/CriOS|Chrome/i.test(ua)) return 'chrome';
+        if (/Safari/i.test(ua)) return 'safari';
+        return 'other';
+    }
     // One-line state for the blue bar: what the phone knows, how good it is, and whether it needs the user.
     function locationSummary() {
         const now = Date.now();
         const fix = currentPosition ? MITTLib.classifyLocationFix(currentPosition, now) : null;
-        if (LOC.lastError && LOC.lastError.code === 1) return { state: 'denied', short: 'Location off', long: 'Location is blocked for this app. Tap for how to allow it.' };
+        if ((LOC.lastError && LOC.lastError.code === 1) || LOC.permission === 'denied') return { state: 'denied', short: 'Location off', long: 'Location is switched off for this app. Tap for how to turn it on.' };
         if (!('geolocation' in navigator) || (LOC.lastError && LOC.lastError.code === 0)) return { state: 'none', short: 'No location', long: 'This browser cannot report a position.' };
         if (fix && fix.ok) {
             const acc = fix.accuracy !== null ? `±${Math.round(fix.accuracy)} m` : '';
@@ -2392,9 +2409,17 @@
             const grid = MITTLib.toOsGridRef(currentPosition.lat, currentPosition.lng);
             box.appendChild(el('p', { className: 'location-mini', text: `${grid ? 'OS grid ' + grid + ' • ' : ''}${MITTLib.formatCoords(currentPosition.lat, currentPosition.lng)} • ${MITTLib.formatLocationAge(currentPosition.timestamp)}` }));
         }
-        if (LOC.lastError && LOC.lastError.code) {
-            const d = MITTLib.describeGeoError(LOC.lastError.code, platform);
-            box.appendChild(el('div', { className: 'alert-card' + (d.kind === 'denied' ? '' : ' info') }, [el('h4', { text: d.title }), d.help]));
+        const denied = (LOC.lastError && LOC.lastError.code === 1) || LOC.permission === 'denied';
+        if (denied || (LOC.lastError && LOC.lastError.code)) {
+            const browser = deviceBrowser();
+            const d = MITTLib.describeGeoError(denied ? 1 : LOC.lastError.code, platform, isStandalone(), browser);
+            if (d.steps) {
+                const ol = el('ol', { style: 'margin:6px 0 0 1.1rem; padding:0; line-height:1.45;' });
+                d.steps.forEach(t => ol.appendChild(el('li', { text: t, style: 'margin-bottom:6px;' })));
+                box.appendChild(el('div', { className: 'alert-card' }, [el('h4', { text: d.title }), el('div', { text: `How to turn it on (${isStandalone() ? 'app installed from ' : 'in '}${browser === 'firefox' ? 'Firefox' : browser === 'samsung' ? 'Samsung Internet' : browser === 'chrome' ? 'Chrome' : browser === 'safari' ? 'Safari' : 'the browser'} on ${platform === 'ios' ? 'iPhone' : platform === 'android' ? 'Android' : 'this device'}):` }), ol, el('div', { className: 'qr-meta', style: 'text-align:left; margin-top:6px;', text: d.note || '' })]));
+            } else {
+                box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: d.title }), d.help]));
+            }
         } else if (!('geolocation' in navigator)) {
             const d = MITTLib.describeGeoError(0, platform);
             box.appendChild(el('div', { className: 'alert-card' }, [el('h4', { text: d.title }), d.help]));
