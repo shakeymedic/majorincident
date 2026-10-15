@@ -11,7 +11,7 @@ function blobStore() {
         async get(key) { try { return await s.get(key, { type: 'json' }); } catch (e) { return null; } },
         async set(key, value) { await s.setJSON(key, value); },
         async delete(key) { await s.delete(key); },
-        async list(prefix) { const r = await s.list({ prefix }); return (r.blobs || []).map(b => b.key).sort(); },
+        async list(prefix) { const r = await s.list({ prefix }); return (r.blobs || []).map(b => ({ key: b.key, etag: b.etag || '' })).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0); },
     };
 }
 

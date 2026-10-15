@@ -24,6 +24,7 @@ function serve() {
                 req.on('data', c => { body += c; });
                 req.on('end', () => {
                     apiCore.handle(req.method, req.url.split('?')[0], req.headers, body, req.socket.remoteAddress).then(r => {
+                        if (process.env.E2E_LOG) console.log(`    [api ${new Date().toISOString().slice(11, 23)}] ${req.method} ${req.url} -> ${r.status}${req.headers['x-incident-seq'] ? ' seq ' + req.headers['x-incident-seq'] : ''} ${body.slice(0, 60)}`);
                         res.writeHead(r.status, r.headers);
                         res.end(r.body === null || r.body === undefined ? '' : JSON.stringify(r.body));
                     });
@@ -1207,6 +1208,56 @@ async function test(name, fn) {
         await CC.evaluate(() => refreshNow());
         await CC.waitForFunction(() => document.querySelectorAll('#rows tr').length === 2, null, { timeout: 8000 });
     });
+    await test('v0.14.0: deterioration raises an alert; METHANE, hospital board, timeline, print summary and the view-only PIN work', async () => {
+        // Medic Bravo's P1 arrived after the commander's first load, so it was announced; clear it for a clean start.
+        assert.match(await CC.evaluate(() => document.getElementById('alerts').textContent), /New P1/);
+        await CC.evaluate(() => { ALERTS.sound = false; dismissAlert(); });
+        assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('#alerts .alert').length), 0);
+        // CA's TST P3 casualty gets worse (re-triaged as P1 by hand, as a re-triage would do)
+        await CA.evaluate(() => { const e = incidentLog[0]; e.category = 'P1'; e.triageHistory = (e.triageHistory || []).concat([{ ts: Date.now(), category: 'P1', reason: 'Severe Bleeding', tool: 'TST', by: triagerName, kind: 'retriage' }]); e.lastDeteriorationAt = Date.now(); touch(e, ['category']); saveState(); });
+        await CA.waitForFunction(() => CMD.dirty.size === 0, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.querySelectorAll('#alerts .alert').length === 1, null, { timeout: 8000 });
+        assert.match(await CC.evaluate(() => document.querySelector('#alerts .alert').textContent), /got worse: P3 → P1/);
+        assert.match(await CC.evaluate(() => document.getElementById('timeline').textContent), /Deteriorated/);
+        await CC.evaluate(() => dismissAlert());
+        assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('#alerts .alert').length), 0);
+        // METHANE saved on a phone reaches the commander screen
+        const sentBefore = await CB.evaluate(() => CMD.lastSentAt);
+        await CB.evaluate(() => { document.getElementById('m-decl').value = 'DECLARED'; document.getElementById('m-loc').value = 'Platform 2, Piccadilly'; document.getElementById('m-num').value = 'About 20'; saveMethane(); });
+        await CB.waitForFunction((b) => CMD.lastSentAt > b && !CMD.inflight, sentBefore, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => /Piccadilly/.test(document.getElementById('methane').textContent), null, { timeout: 8000 });
+        assert.match(await CC.evaluate(() => document.getElementById('methane-note').textContent), /Medic Bravo/);
+        // hospital board: a hospital can be added with an agreed capacity before anyone is sent there
+        assert.match(await CC.evaluate(() => document.getElementById('hosp').textContent), /Nobody evacuated yet/);
+        await CC.evaluate(() => { const sel = document.getElementById('hosp-add'); sel.value = 'Good Hope Hospital'; addHospitalRow(); setCap('Good Hope Hospital', 4); });
+        assert.match(await CC.evaluate(() => document.querySelector('#hosp table').textContent), /Good Hope Hospital/);
+        assert.strictEqual(await CC.evaluate(() => document.querySelector('#hosp input').value), '4');
+        // timeline lists the triages, newest first, and the print summary is built from the same data
+        assert.ok(await CC.evaluate(() => document.querySelectorAll('#timeline li').length) >= 3);
+        await CC.evaluate(() => { window.print = () => { window._printed = true; }; printSummary(); });
+        await CC.waitForFunction(() => window._printed === true, null, { timeout: 3000 });
+        const pv = await CC.evaluate(() => document.getElementById('print-view').textContent);
+        assert.match(pv, /commander summary/); assert.match(pv, /-TST-001/); assert.match(pv, /Piccadilly/); assert.match(pv, /Medic Bravo/);
+        // the view-only PIN opens the same screen, marked view only, and cannot be used to join
+        const viewPin = await CA.evaluate(() => CMD.cfg.viewPin);
+        assert.match(viewPin, /^\d{6}$/);
+        assert.match(await CA.evaluate(() => { cmdShowDetails(); return document.getElementById('cmd-view-pin').textContent; }), /^\d{6}$/);
+        await CA.evaluate(() => closeCmdDetails());
+        const CV = await browser.newPage();
+        CV.on('pageerror', e => errors.push(`Cmd V: ${e.message}`));
+        await CV.goto(url.replace('index.html', 'commander.html#' + share.code));
+        await CV.fill('#in-pin', viewPin);
+        await CV.click('#signin button');
+        await CV.waitForFunction(() => document.querySelectorAll('#rows tr').length === 2, null, { timeout: 8000 });
+        assert.match(await CV.evaluate(() => document.getElementById('hdr-incident').textContent), /View only/);
+        await CV.close();
+        const CW = await device('Cmd W');
+        await setup(CW, 'Observer');
+        assert.strictEqual(await CW.evaluate((s) => cmdJoin(s.code, s.pin), { code: share.code, pin: viewPin }), false);
+        await CW._ctx.close();
+    });
     await test('a wrong training state cannot join, and a join QR scanned on a third phone joins after confirmation', async () => {
         const CD = await device('Cmd D');
         await setup(CD, 'Medic Delta');
@@ -1268,6 +1319,9 @@ async function test(name, fn) {
         assert.strictEqual((gpx.match(/<wpt /g) || []).length, 2);
     });
     await test('an unchanged incident costs a 304 and the page keeps its data', async () => {
+        // phones joined since the last read, which (from v0.14.0) counts as a change: pick that up first
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.querySelectorAll('.phone').length >= 4, null, { timeout: 8000 });
         const before = await CC.evaluate(() => data.seq);
         await CC.evaluate(() => refreshNow());
         await CC.waitForFunction(() => /no change/.test(document.getElementById('hdr-updated').textContent), null, { timeout: 8000 });

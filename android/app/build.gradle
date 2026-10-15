@@ -1,0 +1,49 @@
+plugins { id 'com.android.application' }
+
+def versionProps = [name: '0.14.0', code: 1]   // keep in step with APP_VERSION in index.html; Play needs code to rise every upload
+
+android {
+    namespace 'org.emevidence.mitriage'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'org.emevidence.mitriage'
+        minSdk 24
+        targetSdk 36          // Play requires the current API level for new apps and updates (36 from 31 Aug 2026)
+        versionCode versionProps.code
+        versionName versionProps.name
+        // The web app the launcher opens. Change these if the site moves to a custom domain (and assetlinks.json with it).
+        manifestPlaceholders = [hostName: 'majorincident.netlify.app', defaultUrl: 'https://majorincident.netlify.app/index.html', launcherName: 'MI Triage', assetStatements: '[{ "relation": ["delegate_permission/common.handle_all_urls"], "target": {"namespace": "web", "site": "https://majorincident.netlify.app"}}]']
+    }
+
+    // Release signing comes from the environment (GitHub secrets); a build without them is unsigned and will not install.
+    signingConfigs {
+        release {
+            def ks = System.getenv('ANDROID_KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (System.getenv('ANDROID_KEYSTORE_FILE')) signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    bundle { language { enableSplit = false } }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.6.0'
+    implementation 'com.google.androidbrowserhelper:locationdelegation:1.1.1'   // location permission owned by the app, not only by Chrome
+}

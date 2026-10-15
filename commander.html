@@ -223,6 +223,59 @@
     footer { text-align:center; color:var(--muted); font-size:0.8rem; padding:1rem; }
     .legend { display:none; }
 
+    /* ---------- Alerts (new P1, deterioration, tourniquet over an hour, phone silent) ---------- */
+    .alerts { display:flex; flex-direction:column; gap:6px; margin-bottom:0.9rem; }
+    .alert { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:10px; padding:8px 12px; border-radius:10px; background:#fff3a8; border-left:6px solid #c9a700; font-weight:700; cursor:pointer; }
+    .alert.red { background:#ffe3e0; border-left-color:var(--nhs-red); }
+    .alert .when { color:var(--muted); font-weight:500; font-variant-numeric:tabular-nums; white-space:nowrap; font-size:0.85em; }
+    .alert .x { background:none; border:none; font-size:1.1rem; cursor:pointer; color:var(--muted); padding:2px 6px; min-height:0; }
+    .alert .msg { min-width:0; overflow-wrap:anywhere; }
+    .alert .msg small { display:block; color:var(--muted); font-weight:500; }
+    .alerts-foot { display:flex; justify-content:flex-end; gap:8px; }
+    body.wall .alerts { margin:0; gap:0.4vw; }
+    body.wall .alert { font-size:1.15vw; padding:0.45vw 0.9vw; border-radius:0.6vw; border-left-width:0.45vw; background:#4a3b00; color:#ffe27a; }
+    body.wall .alert.red { background:#4a1410; color:#ffd9d6; }
+    body.wall .alert .when, body.wall .alert .msg small { color:inherit; opacity:0.75; }
+    body.wall .alert .x { color:inherit; font-size:1.2vw; }
+    body.wall .alerts-foot { display:none; }
+    @keyframes flash { 0%, 100% { opacity:1; } 50% { opacity:0.45; } }
+    .alert.new { animation:flash 1s ease-in-out 3; }
+    /* METHANE */
+    .methane { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:0.92rem; }
+    .methane dt { font-weight:900; color:var(--nhs-dark-blue); font-family:var(--mono); }
+    .methane dd { margin:0; overflow-wrap:anywhere; }
+    /* Hospital board */
+    .hb { width:100%; border-collapse:collapse; font-size:0.9rem; }
+    .hb th, .hb td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:middle; }
+    .hb th { position:static; }
+    .hb td.n, .hb th.n { text-align:center; font-variant-numeric:tabular-nums; font-weight:800; }
+    .hb input { width:64px; font-size:0.95rem; padding:4px 6px; border:1px solid #b9c3cb; border-radius:6px; font-family:var(--font); letter-spacing:0; text-transform:none; }
+    .hb tr.over td { background:#ffe3e0; }
+    .hb .cap-note { color:var(--muted); font-size:0.8rem; }
+    /* Timeline */
+    .timeline { list-style:none; margin:0; padding:0; max-height:46vh; overflow:auto; font-size:0.9rem; }
+    .timeline li { display:grid; grid-template-columns:auto auto minmax(0,1fr); gap:10px; align-items:baseline; padding:5px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+    .timeline li:hover { background:var(--soft); }
+    .timeline .t { font-family:var(--mono); color:var(--muted); font-size:0.82rem; white-space:nowrap; }
+    .timeline .id { font-family:var(--mono); font-weight:800; white-space:nowrap; }
+    .timeline .ev { min-width:0; overflow-wrap:anywhere; }
+    .timeline .ev small { color:var(--muted); }
+    body.wall #methane-card, body.wall #hosp-card, body.wall #timeline-card, body.wall #btn-print, body.wall #print-view { display:none !important; }
+    #print-view { display:none; }
+    @media print {
+        @page { size:A4; margin:12mm; }
+        body { background:#fff; color:#000; font-size:11pt; }
+        header, main > *:not(#print-view), footer, .modal, .training { display:none !important; }
+        #print-view { display:block !important; }
+        #print-view h1 { font-size:16pt; margin:0 0 4pt; }
+        #print-view h2 { font-size:12.5pt; margin:12pt 0 4pt; border-bottom:1px solid #000; padding-bottom:2pt; }
+        #print-view table { width:100%; border-collapse:collapse; font-size:9.5pt; page-break-inside:auto; }
+        #print-view th, #print-view td { border:1px solid #999; padding:3pt 4pt; text-align:left; vertical-align:top; }
+        #print-view tr { page-break-inside:avoid; }
+        #print-view .muted { color:#444; }
+        #print-view .cat-chip { border:1px solid #000; color:#000 !important; background:none !important; padding:0 3pt; }
+    }
+
     @media (max-width:600px) {
         .stages { grid-template-columns:1fr; gap:6px; }
         header { padding:0.5rem 0.7rem; gap:8px; }
@@ -354,6 +407,8 @@
             <button type="button" class="btn small ghost" id="btn-refresh" onclick="refreshNow()">Refresh</button>
             <button type="button" class="btn small ghost" id="btn-wall" onclick="toggleWall()" style="display:none;">Wall display</button>
             <button type="button" class="btn small ghost" id="btn-fs" onclick="toggleFullscreen()" style="display:none;" title="Full screen (F)">⛶</button>
+            <button type="button" class="btn small ghost" id="btn-sound" onclick="toggleSound()" style="display:none;" title="Sound for new P1s, deterioration and tourniquets (S)">🔔 Sound on</button>
+            <button type="button" class="btn small ghost" id="btn-print" onclick="printSummary()" style="display:none;" title="Print or save a summary (P)">🖨 Print summary</button>
             <button type="button" class="btn small ghost" id="btn-signout" onclick="signOut()" style="display:none;">Sign out</button>
             <a class="btn small ghost" id="btn-start-page" href="index.html#start" style="display:none; text-decoration:none;">↩ Start page</a>
         </div>
@@ -363,7 +418,7 @@
 <main>
     <div class="card" id="signin">
         <h2>Open an incident</h2>
-        <p class="muted lead">Enter the code and PIN shown on the commander's phone. The page refreshes every 30 seconds while open.</p>
+        <p class="muted lead">Enter the code and PIN shown on the commander's phone. The page refreshes every 30 seconds while open. The view-only PIN (also on that phone) opens the same screen for a hospital or observer.</p>
         <div class="fields">
             <div>
                 <label for="in-code">Incident code</label>
@@ -384,6 +439,7 @@
 
     <div id="dash" class="hidden">
         <div class="danger hidden" id="conn-warn"></div>
+        <div class="alerts hidden" id="alerts" aria-live="polite"></div>
         <div class="card count-wrap">
             <div class="counts" id="counts"></div>
             <div class="stages" id="stages"></div>
@@ -409,6 +465,14 @@
                 <div class="card" id="sectors-card">
                     <h2>Where casualties are <small id="where-note"></small></h2>
                     <div id="sectors"></div>
+                </div>
+                <div class="card" id="hosp-card">
+                    <h2>Hospital board <small id="hosp-note"></small></h2>
+                    <div id="hosp"></div>
+                </div>
+                <div class="card" id="timeline-card">
+                    <h2>Incident timeline <small id="timeline-note"></small></h2>
+                    <ul class="timeline" id="timeline"></ul>
                 </div>
             </div>
             <div class="wall-right">
@@ -436,10 +500,15 @@
                         </table>
                     </div>
                 </div>
+                <div class="card" id="methane-card">
+                    <h2>METHANE <small id="methane-note"></small></h2>
+                    <div id="methane"></div>
+                </div>
             </div>
         </div>
         <div class="legend" id="legend"></div>
     </div>
+    <div id="print-view"></div>
 </main>
 <div class="modal" id="pt-modal" role="dialog" aria-modal="true" aria-labelledby="pt-id" onclick="if (event.target === this) closePatient()">
     <div class="modal-box">
@@ -505,7 +574,8 @@
         cfg = null; data = null; etag = ''; knownSeq = '';
         try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
         if (timer) clearTimeout(timer);
-        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none'; $('btn-start-page').style.display = 'none';
+        $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none'; $('btn-start-page').style.display = 'none'; $('btn-sound').style.display = 'none'; $('btn-print').style.display = 'none';
+        ALERTS.seen = null; ALERTS.list = []; $('alerts').classList.add('hidden');
         $('training-banner').classList.add('hidden');
         lastOkAt = 0; setStatus('wait', 'Not connected'); renderHeader(); setUpdated('');
     }
@@ -527,10 +597,12 @@
         bits.push(`<span class="chip">Code <b>${esc(data.code || '')}</b></span>`);
         if (data.incidentCode) bits.push(`<span class="chip">Incident <b>${esc(data.incidentCode)}</b></span>`);
         if (data.createdAt) bits.push(`<span class="chip">Running <b id="hdr-elapsed">${elapsedText(Date.now() - data.createdAt)}</b></span>`);
+        if (data.viewOnly) bits.push(`<span class="chip" title="Opened with the view-only PIN">👁 View only</span>`);
         $('hdr-incident').innerHTML = bits.join('');
     }
     function start() {
         $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
+        $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
         $('btn-signout').textContent = 'Sign out';
         refreshNow();
     }
@@ -558,6 +630,7 @@
         $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
         $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
         $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
+        $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
         demoTick();
     }
     function demoTick() {
@@ -612,7 +685,7 @@
             render();
         } catch (e) {
             setStatus('bad', 'No connection');
-            $('conn-warn').textContent = `Cannot reach the server (${e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || 'offline'}). ${lastOkAt ? 'Showing the data from ' + time(lastOkAt) + '.' : ''} Retrying every 30 seconds.`;
+            $('conn-warn').textContent = `SERVER UNREACHABLE (${e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || 'offline'}). ${lastOkAt ? 'Showing the data from ' + time(lastOkAt) + '; phones keep their records and send them when the link is back.' : 'Nothing received yet.'} Retrying every 30 seconds. Fallback: phones can show "Send all patients" as a QR for the control room's phone to scan.`;
             $('conn-warn').classList.remove('hidden');
         } finally {
             $('btn-refresh').disabled = false;
@@ -710,6 +783,180 @@
         if (openUid) renderPatient(byUid(openUid));
         renderLegend();
         renderMap(vis);
+        detectAlerts(all, devs, now);
+        renderMethane();
+        renderHospitals(all);
+        renderTimeline(all);
+    }
+
+    // ---------- Alerts: things the control room must not miss, with a sound ----------
+    // Raised when something changes between two refreshes: a new P1 / P1 Hold / not-breathing casualty, a casualty
+    // whose category got worse, a tourniquet that has been on for an hour, a phone that has gone quiet. The first
+    // load raises nothing (everything is "new" then). Sound is a short WebAudio tone; no media file needed.
+    const TOURNIQUET_WARN_MS = 60 * 60 * 1000;
+    const ALERTS = { seen: null, list: [], sound: (() => { try { return localStorage.getItem('mit_cmd_sound') !== '0'; } catch (e) { return true; } })(), ctx: null, id: 0 };
+    function renderSoundBtn() { $('btn-sound').textContent = ALERTS.sound ? '🔔 Sound on' : '🔕 Sound off'; $('btn-sound').setAttribute('aria-pressed', ALERTS.sound ? 'true' : 'false'); }
+    function toggleSound() { ALERTS.sound = !ALERTS.sound; try { localStorage.setItem('mit_cmd_sound', ALERTS.sound ? '1' : '0'); } catch (e) {} renderSoundBtn(); if (ALERTS.sound) beep(1); }
+    function beep(n) {
+        if (!ALERTS.sound) return;
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            if (!ALERTS.ctx) ALERTS.ctx = new AC();
+            const ctx = ALERTS.ctx;
+            if (ctx.state === 'suspended') ctx.resume();
+            for (let i = 0; i < (n || 2); i++) {
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.type = 'sine'; o.frequency.value = i % 2 ? 1175 : 880;
+                g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.22);
+                g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + i * 0.22 + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.22 + 0.2);
+                o.connect(g); g.connect(ctx.destination);
+                o.start(ctx.currentTime + i * 0.22); o.stop(ctx.currentTime + i * 0.22 + 0.21);
+            }
+        } catch (e) {}
+    }
+    function tourniquetSince(r) {
+        const t = r.interventions && r.interventions.Tourniquet;
+        if (!t) return null;
+        if (t.ts) return Number(t.ts);
+        const m = /^(\d{1,2}):(\d{2})/.exec(String(t.time || ''));
+        if (!m) return null;
+        const d = new Date(); d.setHours(+m[1], +m[2], 0, 0);
+        if (d.getTime() > Date.now() + 60000) d.setDate(d.getDate() - 1);   // "23:50" seen at 00:10 was yesterday
+        return d.getTime();
+    }
+    function detectAlerts(records, devices, now) {
+        const seen = ALERTS.seen;
+        const next = { r: {}, d: {} };
+        const fresh = [];
+        records.forEach(r => {
+            const prev = seen && seen.r[r.uid];
+            const tq = tourniquetSince(r);
+            const cur = { category: r.category, tq: !!(tq && now - tq >= TOURNIQUET_WARN_MS && !r.evacuated) };
+            next.r[r.uid] = cur;
+            if (!seen) return;
+            if (!prev) {
+                if (!r.evacuated && (r.category === 'P1' || r.category === 'P1_HOLD' || r.category === 'NOT_BREATHING')) fresh.push({ red: true, uid: r.uid, msg: `New ${MITTLib.categoryShort(r.category)}: ${shortId(r.id)}`, sub: `${esc(place(r) || 'no place recorded')}${r.triager ? ' • ' + esc(r.triager) : ''}` });
+                return;
+            }
+            if (prev.category !== r.category && MITTLib.categoryWorsened(prev.category, r.category) && !r.evacuated) fresh.push({ red: true, uid: r.uid, msg: `${shortId(r.id)} got worse: ${MITTLib.categoryShort(prev.category)} → ${MITTLib.categoryShort(r.category)}`, sub: esc(place(r) || '') });
+            if (cur.tq && !prev.tq) fresh.push({ red: false, uid: r.uid, msg: `${shortId(r.id)}: tourniquet on for over an hour`, sub: `since ${esc((r.interventions.Tourniquet || {}).time || '?')} • ${esc(place(r) || '')}` });
+        });
+        (devices || []).forEach(d => {
+            next.d[d.deviceId] = !!d.stale;
+            if (seen && d.stale && seen.d[d.deviceId] === false) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)} not heard from for 5 minutes`, sub: `last report ${esc(age(d.lastSeen))}` });
+        });
+        ALERTS.seen = next;
+        if (!fresh.length) return;
+        fresh.forEach(a => { a.id = ++ALERTS.id; a.at = now; ALERTS.list.unshift(a); });
+        ALERTS.list = ALERTS.list.slice(0, 20);
+        renderAlerts(fresh.map(a => a.id));
+        beep(fresh.some(a => a.red) ? 3 : 2);
+    }
+    function renderAlerts(newIds) {
+        const box = $('alerts');
+        if (!ALERTS.list.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+        const isNew = (id) => (newIds || []).indexOf(id) > -1;
+        box.innerHTML = ALERTS.list.map(a => `<div class="alert${a.red ? ' red' : ''}${isNew(a.id) ? ' new' : ''}" onclick="${a.uid ? `openPatient('${esc(a.uid)}')` : ''}"><span>${a.red ? '🔴' : '🟠'}</span><span class="msg">${a.msg}<small>${a.sub || ''}</small></span><span class="when">${hm(a.at)}</span><button type="button" class="x" title="Dismiss" onclick="event.stopPropagation(); dismissAlert(${a.id})">✕</button></div>`).join('') +
+            `<div class="alerts-foot"><button type="button" class="btn small sec" onclick="dismissAlert()">Clear all</button></div>`;
+        box.classList.remove('hidden');
+    }
+    function dismissAlert(id) { ALERTS.list = id ? ALERTS.list.filter(a => a.id !== id) : []; renderAlerts(); }
+
+    // ---------- METHANE (the newest one any phone has saved) ----------
+    function renderMethane() {
+        const m = data && data.methane;
+        const card = $('methane-card');
+        if (!m) { card.classList.add('hidden'); return; }
+        card.classList.remove('hidden');
+        const rows = [['M', 'Major incident', m.m], ['E', 'Exact location', m.e], ['T', 'Type', m.t], ['H', 'Hazards', m.h], ['A', 'Access', m.a], ['N', 'Number of casualties', m.n], ['E', 'Emergency services', m.e_svc]];
+        $('methane').innerHTML = `<dl class="methane">${rows.map(r => `<dt title="${esc(r[1])}">${r[0]}</dt><dd>${r[2] ? esc(r[2]) : '<span class="muted">—</span>'}</dd>`).join('')}</dl>`;
+        setText('methane-note', `${m.by ? 'by ' + m.by + ' • ' : ''}${hm(m.timestamp)}${m.device ? ' • phone ' + m.device : ''}`);
+    }
+
+    // ---------- Hospital board: who has gone where, against a capacity the control room types in ----------
+    function capKey() { return 'mit_cmd_cap_' + ((data && data.code) || ''); }
+    function loadCaps() { try { return JSON.parse(localStorage.getItem(capKey()) || '{}') || {}; } catch (e) { return {}; } }
+    function setCap(h, v) { const c = loadCaps(); const n = parseInt(v, 10); if (isFinite(n) && n >= 0) c[h] = n; else delete c[h]; try { localStorage.setItem(capKey(), JSON.stringify(c)); } catch (e) {} renderHospitals((data && data.records) || []); }
+    function addHospitalRow() { const sel = $('hosp-add'); const h = sel && sel.value; if (!h) return; const c = loadCaps(); if (c[h] === undefined) c[h] = 0; try { localStorage.setItem(capKey(), JSON.stringify(c)); } catch (e) {} renderHospitals((data && data.records) || []); }
+    function renderHospitals(all) {
+        const caps = loadCaps();
+        const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+        const by = {};
+        all.filter(r => r.evacuated).forEach(r => { const h = String(r.evacDest || '').trim() || 'Destination not recorded'; (by[h] = by[h] || []).push(r); });
+        Object.keys(caps).forEach(h => { by[h] = by[h] || []; });
+        const names = Object.keys(by).sort((a, b) => by[b].length - by[a].length || a.localeCompare(b));
+        const defaults = (MITTLib.DEFAULT_HOSPITALS || []).filter(h => !by[h]);
+        const rows = names.map(h => {
+            const rs = by[h];
+            const cap = caps[h];
+            const over = cap !== undefined && cap > 0 && rs.length > cap;
+            const vehicles = Array.from(new Set(rs.map(r => r.evacVehicle).filter(Boolean)));
+            const last = rs.length ? Math.max.apply(null, rs.map(r => r.evacAt || r.handoverAt || r.updatedAt || 0)) : 0;
+            return `<tr class="${over ? 'over' : ''}"><td><b>${esc(h)}</b>${vehicles.length ? `<div class="cap-note">${esc(vehicles.join(', '))}</div>` : ''}${last ? `<div class="cap-note">last ${hm(last)}</div>` : ''}</td>` +
+                order.map(c => `<td class="n">${rs.filter(r => r.category === c).length || ''}</td>`).join('') +
+                `<td class="n">${rs.length}</td><td><input type="number" min="0" inputmode="numeric" value="${cap === undefined ? '' : cap}" placeholder="—" onchange="setCap(${JSON.stringify(h).replace(/"/g, '&quot;')}, this.value)" title="Capacity agreed with this hospital"> ${over ? '<span class="flag">over</span>' : ''}</td></tr>`;
+        }).join('');
+        $('hosp').innerHTML = (names.length ? `<table class="hb"><thead><tr><th>Hospital</th>${order.map(c => `<th class="n">${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th class="n">Sent</th><th>Capacity</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">Nobody evacuated yet. Add a hospital to record its agreed capacity.</p>') +
+            (defaults.length ? `<div class="row" style="margin-top:8px"><select id="hosp-add" style="font-size:0.9rem; padding:6px; max-width:60%"><option value="">Add a hospital…</option>${defaults.map(h => `<option>${esc(h)}</option>`).join('')}</select><button type="button" class="btn small sec" onclick="addHospitalRow()">Add</button></div>` : '');
+        const sent = all.filter(r => r.evacuated).length;
+        setText('hosp-note', `${sent} evacuated to ${names.filter(h => by[h].length).length} destination${names.filter(h => by[h].length).length === 1 ? '' : 's'} • capacity is typed here and stays on this screen only`);
+    }
+
+    // ---------- Incident timeline, built from what the records already carry ----------
+    let timelineAll = false;
+    function timelineEvents(all) {
+        const ev = [];
+        all.forEach(r => {
+            const id = shortId(r.id);
+            const hist = r.triageHistory || [];
+            if (hist.length) hist.forEach((t, i) => { if (t.ts) ev.push({ ts: t.ts, uid: r.uid, id, text: `${i === 0 ? 'Triaged' : t.kind === 'correction' ? 'Corrected' : 'Re-triaged'} ${esc(t.tool || '')} <b>${esc(MITTLib.categoryShort(t.category))}</b>`, sub: [t.reason, t.by].filter(Boolean).join(' • ') }); });
+            else if (r.timestamp) ev.push({ ts: r.timestamp, uid: r.uid, id, text: `Triaged ${esc(r.tool || '')} <b>${esc(MITTLib.categoryShort(r.category))}</b>`, sub: [r.reason, r.triager].filter(Boolean).join(' • ') });
+            Object.keys(r.interventions || {}).forEach(k => { const t = r.interventions[k]; if (t && t.ts) ev.push({ ts: t.ts, uid: r.uid, id, text: esc(k), sub: t.by || '' }); });
+            if (r.lastDeteriorationAt) ev.push({ ts: r.lastDeteriorationAt, uid: r.uid, id, text: '<b style="color:#DA291C">Deteriorated</b>', sub: '' });
+            if (r.ccsAt) ev.push({ ts: r.ccsAt, uid: r.uid, id, text: 'Arrived at CCS', sub: '' });
+            if (r.handoverAt && r.handoverTo) ev.push({ ts: r.handoverAt, uid: r.uid, id, text: `Handed to ${esc(r.handoverTo)}`, sub: r.handoverState || '' });
+            if (r.evacuated) { const t = r.evacAt || (r.handoverAt && r.handoverState === 'accepted' ? r.handoverAt : 0) || r.updatedAt; if (t) ev.push({ ts: t, uid: r.uid, id, text: `<b>Evacuated</b> to ${esc(r.evacDest || 'destination not recorded')}`, sub: r.evacVehicle || '' }); }
+        });
+        ev.sort((a, b) => b.ts - a.ts);
+        return ev;
+    }
+    function renderTimeline(all) {
+        const ev = timelineEvents(all);
+        const shown = timelineAll ? ev : ev.slice(0, 40);
+        $('timeline').innerHTML = shown.map(e => `<li onclick="openPatient('${esc(e.uid)}')"><span class="t">${hm(e.ts)}</span><span class="id">${esc(e.id)}</span><span class="ev">${e.text}${e.sub ? ` <small>${esc(e.sub)}</small>` : ''}</span></li>`).join('') || '<li class="muted">Nothing recorded yet.</li>';
+        $('timeline-note').innerHTML = `${ev.length} event${ev.length === 1 ? '' : 's'}, newest first${ev.length > 40 ? ` • <a href="#" onclick="timelineAll = !timelineAll; renderTimeline(data.records || []); return false;">${timelineAll ? 'show latest 40' : 'show all'}</a>` : ''}`;
+    }
+
+    // ---------- Printable summary: a record for the incident log and the debrief ----------
+    function printSummary() {
+        if (!data) return;
+        const all = data.records || [];
+        const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+        const sc = MITTLib.stageCounts(all);
+        const onScene = all.filter(r => !r.evacuated);
+        const m = data.methane;
+        const when = new Date().toLocaleString('en-GB');
+        const counts = `<table><thead><tr><th></th>${order.map(c => `<th>${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th>Total</th></tr></thead><tbody>` +
+            `<tr><td>On scene (field + CCS)</td>${order.map(c => `<td>${onScene.filter(r => r.category === c).length}</td>`).join('')}<td>${onScene.length}</td></tr>` +
+            `<tr><td>Evacuated</td>${order.map(c => `<td>${all.filter(r => r.evacuated && r.category === c).length}</td>`).join('')}<td>${sc.evacuated}</td></tr>` +
+            `<tr><td><b>All casualties</b></td>${order.map(c => `<td><b>${all.filter(r => r.category === c).length}</b></td>`).join('')}<td><b>${all.length}</b></td></tr></tbody></table>` +
+            `<p>In the field ${sc.field} • at CCS ${sc.ccs} • evacuated ${sc.evacuated} • TST only (no MITT sort) ${onScene.filter(r => !hadMitt(r)).length}</p>`;
+        const hosp = Object.keys(sc.hospitals).sort().map(h => { const rs = all.filter(r => r.evacuated && (String(r.evacDest || '').trim() || 'Destination not recorded') === h); return `<tr><td>${esc(h)}</td>${order.map(c => `<td>${rs.filter(r => r.category === c).length || ''}</td>`).join('')}<td>${rs.length}</td><td>${esc(Array.from(new Set(rs.map(r => r.evacVehicle).filter(Boolean))).join(', '))}</td></tr>`; }).join('');
+        const phones = (data.devices || []).map(d => `<tr><td>${esc(d.triager || 'Unnamed')}</td><td>${esc(d.deviceId)}</td><td>${d.records || 0}</td><td>${hm(d.joinedAt)}</td><td>${hm(d.lastSeen)}</td></tr>`).join('');
+        const tl = timelineEvents(all).slice().reverse().map(e => `<tr><td>${hm(e.ts)}</td><td>${esc(e.id)}</td><td>${e.text}${e.sub ? ` <span class="muted">${esc(e.sub)}</span>` : ''}</td></tr>`).join('');
+        const rows = all.map(r => { const l = loc(r); const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : ''; return `<tr><td>${esc(r.id)}</td><td>${cat(r.category)} ${hadMitt(r) ? 'MITT' : 'TST only'}</td><td>${esc(MITTLib.STAGE_INFO[stage(r)].short)}${r.evacuated ? ' → ' + esc(r.evacDest || '?') : ''}</td><td>${hm(r.timestamp)}</td><td>${esc(place(r) || '')}${grid ? ` <span class="muted">${esc(grid)}</span>` : ''}</td><td>${Object.keys(r.interventions || {}).map(k => esc(k) + ' ' + esc((r.interventions[k] || {}).time || '')).join(', ')}</td><td>${esc(r.triager || '')}</td></tr>`; }).join('');
+        $('print-view').innerHTML = `<h1>Major Incident Triage — commander summary</h1>` +
+            `<p>${data.name ? esc(data.name) + ' • ' : ''}Code ${esc(data.code || '')}${data.incidentCode ? ' • Incident ' + esc(data.incidentCode) : ''}${data.training ? ' • <b>TRAINING / EXERCISE</b>' : ''}<br>Started ${data.createdAt ? new Date(data.createdAt).toLocaleString('en-GB') : '?'} • printed ${when} • ${all.length} casualties from ${(data.devices || []).length} phones</p>` +
+            `<h2>Counts</h2>${counts}` +
+            (m ? `<h2>METHANE (${m.by ? esc(m.by) + ', ' : ''}${hm(m.timestamp)})</h2><table><tbody>${[['M', m.m], ['E', m.e], ['T', m.t], ['H', m.h], ['A', m.a], ['N', m.n], ['E', m.e_svc]].map(x => `<tr><th style="width:2em">${x[0]}</th><td>${esc(x[1] || '')}</td></tr>`).join('')}</tbody></table>` : '') +
+            `<h2>Hospitals</h2>${hosp ? `<table><thead><tr><th>Hospital</th>${order.map(c => `<th>${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th>Sent</th><th>Vehicles</th></tr></thead><tbody>${hosp}</tbody></table>` : '<p>Nobody evacuated.</p>'}` +
+            `<h2>Phones</h2><table><thead><tr><th>Triager</th><th>Phone</th><th>Records</th><th>Joined</th><th>Last report</th></tr></thead><tbody>${phones}</tbody></table>` +
+            `<h2>Casualties (${all.length})</h2><table><thead><tr><th>ID</th><th>Category</th><th>Stage</th><th>Triaged</th><th>Where</th><th>Interventions</th><th>By</th></tr></thead><tbody>${rows}</tbody></table>` +
+            `<h2>Timeline</h2><table><thead><tr><th>Time</th><th>ID</th><th>Event</th></tr></thead><tbody>${tl}</tbody></table>` +
+            `<p class="muted">An aid for a live incident, not a clinical record: the phones keep the audit trail. Printed from the commander screen.</p>`;
+        setTimeout(() => window.print(), 50);
     }
     // The phone's ID is "<prefix>-<TOOL>-<number>"; on the wall the prefix is noise, so show "TST 014" style.
     function shortId(id) { const m = /^(?:.*-)?(TST|MITT)-(\d+)$/.exec(String(id || '')); return m ? `${m[1]} ${m[2]}` : String(id || ''); }
@@ -847,6 +1094,8 @@
         if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
         if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();
         if ((e.key === 'f' || e.key === 'F') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleFullscreen();
+        if ((e.key === 's' || e.key === 'S') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '')) toggleSound();
+        if ((e.key === 'p' || e.key === 'P') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '')) printSummary();
     });
     document.addEventListener('visibilitychange', () => { if (!document.hidden && (cfg || demo)) refreshNow(); });
     window.addEventListener('hashchange', () => { if (/^#DEMO/i.test(location.hash) && !demo) startDemo(); });

@@ -1083,6 +1083,13 @@ group('v0.11.0: demo incident', () => {
         assert.ok(d.records.some(r => r.handoverState === 'pending'));
         assert.ok(d.records.some(r => r.injuries.length && r.interventions.Tourniquet && !r.evacuated));
     });
+    test('v0.14.0: casualties at the CCS and evacuated to listed hospitals show as such on the commander screen', () => {
+        const sc = lib.stageCounts(d.records);
+        assert.ok(sc.field >= 5 && sc.ccs >= 10 && sc.evacuated >= 3, JSON.stringify(sc));
+        d.records.filter(r => r.atCcs).forEach(r => assert.ok(r.ccsAt && r.ccsAt <= now && r.ccsAt >= r.createdAt, r.id));
+        d.records.filter(r => r.evacuated).forEach(r => { assert.ok(r.evacAt && r.evacAt <= now, r.id); assert.ok(lib.DEFAULT_HOSPITALS.indexOf(r.evacDest) > -1, r.evacDest); });
+        d.records.filter(r => r.sector === 'Inner Cordon').forEach(r => assert.ok(!r.atCcs || r.locationHistory.length > 1, r.id));
+    });
     test('the same demo is built every time (fixed uids, so a reload replaces rather than duplicates)', () => {
         const again = lib.buildDemoScenario({ now: now + 5000 });
         assert.deepStrictEqual(again.records.map(r => r.uid), d.records.map(r => r.uid));

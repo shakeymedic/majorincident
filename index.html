@@ -1107,12 +1107,13 @@
         <ul>
             <li><strong>Field triagers</strong> triage each casualty, record bleeding control and position, then hand over to the CCZ: 📤 QR Handover on the patient, the CCZ phone scans it with 📷 Receive patient.</li>
             <li><strong>CCZ</strong> accepts each patient (the commander screen then shows them as at the CCS), re-triages with MITT, records treatment, then marks them evacuated and picks the receiving hospital.</li>
-            <li><strong>Control room</strong> runs the incident from the commander screen alone: counts split into field, CCS and evacuated, the map, the needs-attention list, phones, evacuations by hospital, and every patient (tap any patient for their full details). Use the wall display on a TV.</li>
+            <li><strong>Control room</strong> runs the incident from the commander screen alone: counts split into field, CCS and evacuated, the map, the needs-attention list, alerts with a sound (new P1, deterioration, tourniquet past an hour, phone gone quiet), the timeline, METHANE from the phones, the hospital board with each hospital's agreed capacity, phones, and every patient (tap any patient for their full details). Use the wall display on a TV. The view-only PIN lets an observer or a receiving hospital watch without being able to change anything.</li>
             <li>Ideas for injects: a casualty deteriorates (tell the triager to re-triage), a new casualty appears late, a phone loses signal (aeroplane mode for 2 minutes, then it catches up), a tourniquet passes 1 hour.</li>
+            <li><strong>If the commander screen says the server is unreachable</strong>, carry on: every phone keeps its own records and sends them when the link returns. For an urgent picture, a phone can use Home → More → <em>Send patients to another device</em> to show its patients as QR codes for the control room's phone to scan.</li>
         </ul>
         <h4>Finish and debrief</h4>
         <ul>
-            <li>Control room: download the CSV from the commander screen for the debrief, then ⚙ Settings → End incident for everyone.</li>
+            <li>Control room: 🖨 Print summary on the commander screen (or save it as a PDF) and download the CSV for the debrief, then ⚙ Settings → End incident for everyone.</li>
             <li>Everyone: tap <strong>↩ Start page</strong> in the orange bar to go back to normal use. Practice records stay separate from real ones.</li>
         </ul>
         <button type="button" class="btn btn-secondary" onclick="closeExerciseGuide()">Close</button>
@@ -1178,6 +1179,10 @@
             <div id="cmd-code" style="font-size:2.2rem; font-weight:900; letter-spacing:0.15em; font-family:ui-monospace, Menlo, monospace;"></div>
             <div class="qr-meta" style="margin-top:6px;">PIN</div>
             <div id="cmd-pin" style="font-size:1.8rem; font-weight:900; letter-spacing:0.2em; font-family:ui-monospace, Menlo, monospace;"></div>
+            <div id="cmd-view-wrap" style="display:none; margin-top:6px; border-top:1px solid rgba(0,0,0,0.12); padding-top:6px;">
+                <div class="qr-meta">View-only PIN (for a hospital or observer: sees the commander screen, cannot send or change anything)</div>
+                <div id="cmd-view-pin" style="font-size:1.3rem; font-weight:900; letter-spacing:0.2em; font-family:ui-monospace, Menlo, monospace;"></div>
+            </div>
         </div>
         <p class="qr-meta" style="text-align:left;" id="cmd-detail-status"></p>
         <div id="cmd-qr" style="display:flex; justify-content:center; margin:0.5rem 0;"></div>
@@ -1290,6 +1295,7 @@
             <summary>About &amp; help <span class="rs-sum">quick reference, location help, version</span></summary>
             <div class="rs-body">
                 <a class="btn btn-secondary" href="quick-reference.html" target="_blank" rel="noopener" style="margin-top:8px;">📄 Quick reference card (print for the kit bag)</a>
+                <a class="btn btn-secondary" href="privacy.html" target="_blank" rel="noopener">🔒 Privacy notice</a>
                 <button class="btn btn-secondary" onclick="closeModesMenu(); openLocationHelp();">📍 Location status &amp; help</button>
                 <p class="qr-meta" id="device-info" style="text-align:left;"></p>
             </div>
@@ -1976,8 +1982,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.13.1';
-    const APP_BUILD = '2026-10-15-exercise';
+    const APP_VERSION = '0.14.0';
+    const APP_BUILD = '2026-10-15-commander-reliability';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2747,6 +2753,7 @@
         if (action === 'Loaded/evacuated/destination' && !entry.evacuated) {
             commitDirtyFields('Evacuation');
             entry.evacuated = true;
+            entry.evacAt = Date.now();
             touch(entry, ['evacuated']);
             logAudit('EVACUATION', entry.id, `Vehicle: ${entry.evacVehicle || '-'}, Dest: ${entry.evacDest || '-'} (location quick action)`, Date.now(), { uid: entry.uid });
             if (!entry.evacDest) setTimeout(openHospitalChooser, 50);
@@ -3550,6 +3557,7 @@
         commitDirtyFields('Evacuation');
         const ts = takeClinicalTimestamp();
         entry.evacuated = !entry.evacuated;
+        entry.evacAt = entry.evacuated ? ts : null;
         touch(entry, ['evacuated']);
         logAudit(entry.evacuated ? 'EVACUATION' : 'EVACUATION_UNDO', entry.id, `Vehicle: ${entry.evacVehicle || '-'}, Dest: ${entry.evacDest || '-'}, Hospital ID: ${entry.hospitalId || '-'}`, ts, { uid: entry.uid });
         saveState(); updateDashboard();
@@ -4937,6 +4945,7 @@
         methaneHistory.push(m);
         logAudit('METHANE_SAVED', '-', `v${methaneHistory.length}: M=${m.m}; E=${m.e}; T=${m.t}; H=${m.h}; A=${m.a}; N=${m.n}; E=${m.e_svc}`, Date.now());
         saveState();
+        if (cmdActive()) cmdSchedule(300);   // the commander screen shows the latest METHANE
         showToast('METHANE report saved');
         showScreen('home-screen');
     }
@@ -5422,7 +5431,7 @@
         uids.forEach(u => { if (indexByUid(u) === -1) CMD.dirty.delete(u); });
         CMD.inflight = true;
         try {
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined } });
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
                 CMD.lastSentAt = Date.now();
@@ -5483,7 +5492,7 @@
         try {
             const r = await cmdFetch('/api/incident', { method: 'POST', body: { deviceId, triager: triagerName, name: '', incidentCode, training: TRAINING, app: APP_VERSION } });
             if (r.status !== 201 || !r.body.code) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
-            CMD.cfg = { code: r.body.code, pin: r.body.pin, role: 'creator', commander: !!opts.commander, startedAt: Date.now() };
+            CMD.cfg = { code: r.body.code, pin: r.body.pin, viewPin: r.body.viewPin || '', role: 'creator', commander: !!opts.commander, startedAt: Date.now() };
             cmdSaveCfg();
             logAudit('COMMANDER_SHARE_START', '-', `Started live sharing: incident ${CMD.cfg.code} created by this phone${opts.commander ? ' (incident commander)' : ''}`, Date.now());
             cmdQueueAll();
@@ -5536,6 +5545,8 @@
         if (!cmdActive()) { openModesMenu(); return; }
         setText('cmd-code', CMD.cfg.code);
         setText('cmd-pin', CMD.cfg.pin);
+        $('cmd-view-wrap').style.display = CMD.cfg.viewPin ? '' : 'none';
+        setText('cmd-view-pin', CMD.cfg.viewPin || '');
         const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}commander.html#${CMD.cfg.code}`;
         const a = $('cmd-link'); a.href = link; a.textContent = link;
         $('cmd-open-btn').href = link;
@@ -5549,7 +5560,7 @@
         $('cmd-modal').style.display = 'flex';
     }
     function closeCmdDetails() { $('cmd-modal').style.display = 'none'; }
-    function cmdCopyLink() { if (!cmdActive()) return; copyText(`Incident commander view: ${$('cmd-link').href}\nCode ${CMD.cfg.code}  PIN ${CMD.cfg.pin}`, 'Link, code and PIN copied.'); }
+    function cmdCopyLink() { if (!cmdActive()) return; copyText(`Incident commander view: ${$('cmd-link').href}\nCode ${CMD.cfg.code}  PIN ${CMD.cfg.pin}${CMD.cfg.viewPin ? `\nView-only PIN ${CMD.cfg.viewPin}` : ''}`, 'Link, code and PIN copied.'); }
     function cmdStopLocal(reason) {
         const code = CMD.cfg ? CMD.cfg.code : '';
         CMD.cfg = null; cmdSaveCfg();

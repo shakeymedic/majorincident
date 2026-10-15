@@ -2,3 +2,5 @@
 /node_modules/*   /   404!
 /netlify/*        /   404!
 /tests/*          /   404!
+/android/*        /   404!
+/.github/*        /   404!
