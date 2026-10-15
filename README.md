@@ -153,6 +153,10 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.11.1 build 2026-10-15-location-help — "Location off" in the installed app
+
+- An installed web app has no address bar, so the old "tap the padlock" instruction could not be followed, and an app installed from Firefox or Samsung Internet keeps *that* browser's permissions, not Chrome's. The location pill now shows **Location off** as soon as the permission is found to be off (not only after a failed fix), and tapping it gives numbered steps for the exact case: installed or in the browser, Chrome / Firefox / Samsung Internet on Android, Safari or Home Screen app on iPhone, including the phone's own app permission and the phone-wide location toggle. "Try again" re-checks the permission and says plainly if it is still off instead of pretending to search.
+
 ### v0.11.0 build 2026-10-15-demo — demo incident for showing the app
 
 - **Try the demo incident** (bottom of the start screen, or ⚙ Settings → Incident & training) switches to **training mode** and loads a made-up incident: a grandstand collapse at a fictional festival in Cannon Hill Park, Birmingham. 24 casualties recorded on four phones (HART 1, Medic 2, MERIT doctor, Fire crew 3) across every category (P1, P1 Hold, P2, P3, Not Breathing, Dead), with GPS positions, a CCS, interventions with times (tourniquets, TXA, chest seal, pelvic binder), body-map injuries, a re-triage that got worse, overdue reassessments, three evacuations and handovers, and a METHANE report. All times are relative to when the demo is opened.
