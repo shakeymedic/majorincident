@@ -568,13 +568,15 @@
     let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
     let demoMarks = [];       // map markings placed during the demo (kept in the page only)
     let marksLayer = null, marking = false;
+    let wallRequested = false;
 
     function loadCfg() {
         try { const s = sessionStorage.getItem('mit_commander'); if (s) cfg = JSON.parse(s); } catch (e) {}
         const raw = (location.hash || '').replace('#', '').toUpperCase();
-        if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) setWall(true); return 'demo'; }
+        if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) wallRequested = true; return 'demo'; }
         const h = raw.split('/')[0].replace(/[^A-Z0-9]/g, '');
         if (h && h.length === 6) $('in-code').value = h;
+        if (h && h.length === 6 && cfg && cfg.code && cfg.code !== h) cfg = null; // a link to another incident wins over this tab's saved sign-in
         // Opened on the phone that is sharing (same site, same browser): sign in with that phone's own code and PIN.
         if (!cfg) {
             try {
@@ -587,7 +589,8 @@
         }
         let wall = /\/WALL/.test(raw);
         try { if (sessionStorage.getItem('mit_commander_wall') === '1') wall = true; } catch (e) {}
-        if (wall) setWall(true);
+        // Wall mode hides the sign-in card, so it is only switched on once signed in (start()/startDemo()).
+        wallRequested = wall;
         if (cfg && cfg.code) { $('in-code').value = cfg.code; $('in-pin').value = cfg.pin || ''; }
     }
     function setStatus(cls, text) { const p = $('status-pill'); p.className = 'pill ' + cls; p.textContent = text; }
@@ -632,6 +635,7 @@
         $('hdr-incident').innerHTML = bits.join('');
     }
     function start() {
+        if (wallRequested) { wallRequested = false; setWall(true); }
         $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
         $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
         $('btn-signout').textContent = 'Sign out';
@@ -659,6 +663,7 @@
         try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
         demo = { startedAt: Date.now() };
         $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
+        if (wallRequested) { wallRequested = false; setWall(true); }
         $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
         $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
         $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
@@ -716,7 +721,7 @@
             render();
         } catch (e) {
             setStatus('bad', 'No connection');
-            $('conn-warn').textContent = `SERVER UNREACHABLE (${e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || 'offline'}). ${lastOkAt ? 'Showing the data from ' + time(lastOkAt) + '; phones keep their records and send them when the link is back.' : 'Nothing received yet.'} Retrying every 30 seconds. Fallback: phones can show "Send all patients" as a QR for the control room's phone to scan.`;
+            $('conn-warn').textContent = `SERVER UNREACHABLE (${e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || 'offline'}). ${lastOkAt ? 'Showing the data from ' + time(lastOkAt) + '; phones keep their records and send them when the link is back.' : 'Nothing received yet.'} Retrying every 30 seconds. Fallback: phones can use Hand over › Send patients to another device to show their records as QR codes for the control room's phone to scan.`;
             $('conn-warn').classList.remove('hidden');
         } finally {
             $('btn-refresh').disabled = false;
@@ -935,11 +940,11 @@
             next.r[r.uid] = cur;
             if (!seen) return;
             if (!prev) {
-                if (!r.evacuated && (r.category === 'P1' || r.category === 'P1_HOLD' || r.category === 'NOT_BREATHING')) fresh.push({ red: true, uid: r.uid, msg: `New ${MITTLib.categoryShort(r.category)}: ${shortId(r.id)}`, sub: `${esc(place(r) || 'no place recorded')}${r.triager ? ' • ' + esc(r.triager) : ''}` });
+                if (!r.evacuated && (r.category === 'P1' || r.category === 'P1_HOLD' || r.category === 'NOT_BREATHING')) fresh.push({ red: true, uid: r.uid, msg: `New ${MITTLib.categoryShort(r.category)}: ${esc(shortId(r.id))}`, sub: `${esc(place(r) || 'no place recorded')}${r.triager ? ' • ' + esc(r.triager) : ''}` });
                 return;
             }
-            if (prev.category !== r.category && MITTLib.categoryWorsened(prev.category, r.category) && !r.evacuated) fresh.push({ red: true, uid: r.uid, msg: `${shortId(r.id)} got worse: ${MITTLib.categoryShort(prev.category)} → ${MITTLib.categoryShort(r.category)}`, sub: esc(place(r) || '') });
-            if (cur.tq && !prev.tq) fresh.push({ red: false, uid: r.uid, msg: `${shortId(r.id)}: tourniquet on for over an hour`, sub: `since ${esc((r.interventions.Tourniquet || {}).time || '?')} • ${esc(place(r) || '')}` });
+            if (prev.category !== r.category && MITTLib.categoryWorsened(prev.category, r.category) && !r.evacuated) fresh.push({ red: true, uid: r.uid, msg: `${esc(shortId(r.id))} got worse: ${MITTLib.categoryShort(prev.category)} → ${MITTLib.categoryShort(r.category)}`, sub: esc(place(r) || '') });
+            if (cur.tq && !prev.tq) fresh.push({ red: false, uid: r.uid, msg: `${esc(shortId(r.id))}: tourniquet on for over an hour`, sub: `since ${esc((r.interventions.Tourniquet || {}).time || '?')} • ${esc(place(r) || '')}` });
         });
         (devices || []).forEach(d => {
             const low = typeof d.battery === 'number' && !d.charging && d.battery <= 10;
@@ -979,9 +984,14 @@
     // ---------- Hospital board: who has gone where, against a capacity the control room types in ----------
     function capKey() { return 'mit_cmd_cap_' + ((data && data.code) || ''); }
     function loadCaps() { try { return JSON.parse(localStorage.getItem(capKey()) || '{}') || {}; } catch (e) { return {}; } }
-    function setCap(h, v) { const c = loadCaps(); const n = parseInt(v, 10); if (isFinite(n) && n >= 0) c[h] = n; else delete c[h]; try { localStorage.setItem(capKey(), JSON.stringify(c)); } catch (e) {} renderHospitals((data && data.records) || []); }
+    function setCap(h, v) { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} const c = loadCaps(); const n = parseInt(v, 10); if (isFinite(n) && n >= 0) c[h] = n; else delete c[h]; try { localStorage.setItem(capKey(), JSON.stringify(c)); } catch (e) {} renderHospitals((data && data.records) || []); }
+    // Capacity boxes carry the hospital name in data-h (escaped); one listener on the board, so no script is ever built from a phone-supplied name.
+    document.addEventListener('DOMContentLoaded', () => { $('hosp').addEventListener('change', e => { const t = e.target; if (t && t.matches && t.matches('input[data-h]')) setCap(t.getAttribute('data-h'), t.value); }); });
     function addHospitalRow() { const sel = $('hosp-add'); const h = sel && sel.value; if (!h) return; const c = loadCaps(); if (c[h] === undefined) c[h] = 0; try { localStorage.setItem(capKey(), JSON.stringify(c)); } catch (e) {} renderHospitals((data && data.records) || []); }
     function renderHospitals(all) {
+        // Polls redraw the board every 30 s; do not wipe a capacity someone is still typing.
+        const ae = document.activeElement;
+        if (ae && ae.matches && ae.matches('#hosp input[data-h]')) return;
         const caps = loadCaps();
         const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
         const by = {};
@@ -997,7 +1007,7 @@
             const last = rs.length ? Math.max.apply(null, rs.map(r => r.evacAt || r.handoverAt || r.updatedAt || 0)) : 0;
             return `<tr class="${over ? 'over' : ''}"><td><b>${esc(h)}</b>${vehicles.length ? `<div class="cap-note">${esc(vehicles.join(', '))}</div>` : ''}${last ? `<div class="cap-note">last ${hm(last)}</div>` : ''}</td>` +
                 order.map(c => `<td class="n">${rs.filter(r => r.category === c).length || ''}</td>`).join('') +
-                `<td class="n">${rs.length}</td><td><input type="number" min="0" inputmode="numeric" value="${cap === undefined ? '' : cap}" placeholder="—" onchange="setCap(${JSON.stringify(h).replace(/"/g, '&quot;')}, this.value)" title="Capacity agreed with this hospital"> ${over ? '<span class="flag">over</span>' : ''}</td></tr>`;
+                `<td class="n">${rs.length}</td><td><input type="number" min="0" inputmode="numeric" value="${cap === undefined ? '' : cap}" placeholder="—" data-h="${esc(h)}" title="Capacity agreed with this hospital"> ${over ? '<span class="flag">over</span>' : ''}</td></tr>`;
         }).join('');
         $('hosp').innerHTML = (names.length ? `<table class="hb"><thead><tr><th>Hospital</th>${order.map(c => `<th class="n">${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th class="n">Sent</th><th>Capacity</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">Nobody evacuated yet. Add a hospital to record its agreed capacity.</p>') +
             (defaults.length ? `<div class="row" style="margin-top:8px"><select id="hosp-add" style="font-size:0.9rem; padding:6px; max-width:60%"><option value="">Add a hospital…</option>${defaults.map(h => `<option>${esc(h)}</option>`).join('')}</select><button type="button" class="btn small sec" onclick="addHospitalRow()">Add</button></div>` : '');

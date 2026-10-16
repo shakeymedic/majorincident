@@ -271,7 +271,7 @@
         if (entry.interventions && Object.keys(entry.interventions).length > 0) short.in = entry.interventions;
         if (entry.evacuated) short.ev = 1;
         if (entry.atCcs) short.cc = 1;
-        if (entry.ccsAt) short.ca = entry.ccsAt;
+        if (entry.ccsAt) short.cca = entry.ccsAt; // distinct from 'ca' (createdAt)
         if (entry.evacDest) short.ed = entry.evacDest;
         if (entry.evacVehicle) short.evv = entry.evacVehicle;
         if (Array.isArray(entry.injuries) && entry.injuries.length) short.inj = entry.injuries;
@@ -336,7 +336,8 @@
             interventions: short.in || {},
             evacuated: !!short.ev,
             atCcs: !!short.cc,
-            ccsAt: short.ca || null,
+            // Older senders (≤0.17.2) wrote ccsAt into 'ca' when the casualty was at the CCS.
+            ccsAt: short.cca || (short.cc ? short.ca : null) || null,
             evacDest: short.ed || '',
             evacVehicle: short.evv || '',
             injuries: Array.isArray(short.inj) ? short.inj : [],

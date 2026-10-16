@@ -140,7 +140,7 @@ Switching store does not copy anything across, so any incident being shared at t
 ## Privacy posture
 
 - **No names, DOB, or NHS numbers are stored by default.** The free-text demographics field accepts anything the user types; teams should set local guidance accordingly.
-- All patient data lives in **IndexedDB on the device** (no server). **Close / Reset Incident** requires an archive first (see Audit trail). Transfer and archive files contain patient data: handle them under your local information-governance rules.
+- All patient data lives in **IndexedDB on the device**; nothing leaves the phone unless live sharing is started (see above). **Close / Reset Incident** requires an archive first (see Audit trail). Transfer and archive files contain patient data: handle them under your local information-governance rules.
 - Offline-first: no analytics, no third-party requests at runtime apart from OpenStreetMap tile fetches when the map view is opened.
 - **Voice notes** (🎙, optional) use the browser's built-in speech recognition, which may send the recording to the browser maker's online speech service (for example Google for Chrome). Real-use phones show a notice before first use. Do not dictate identifying details; check with your information governance lead before using voice notes with real patients.
 
@@ -163,6 +163,15 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.17.3 build 2026-10-16-review — full review fixes
+Triage rules unchanged.
+- Handover QR and all-patient transfer: `ccsAt` now has its own short key (`cca`); it used to share `ca` with `createdAt`, so a casualty handed over from the CCS arrived with the wrong creation time and every received casualty gained a CCS arrival time (wrong debrief and commander CCS timings). Older QR codes still decode.
+- Patients saved while the device database was unavailable (backup browser storage) are brought back into the database on the next start instead of staying invisible (audit `FALLBACK_RECOVERED`).
+- Commander screen: record ids are escaped in the alerts list and hospital names no longer build script in the capacity boxes (two cross-site scripting routes closed); `#CODE/wall` on a screen that is not signed in now shows the sign-in card and switches to wall mode after sign-in; a half-typed hospital capacity survives the 30-second poll; a link to another incident wins over this tab's saved sign-in; corrected the fallback wording in the "server unreachable" message.
+- Printed-number reader (Tesseract) kept in its own cache so app updates no longer throw it away.
+- "At CCS/loading area" quick action keeps the sector in step with the record; "Reviewed — mark resolved" no longer collapses the open sections; stray duplicate `style` attribute, dead code and a typo removed; live-sharing wording now says the call sign and notes are sent.
+- Privacy notice: camera covers tag barcodes and the printed-number reader; new microphone/voice notes section. README contradictions on reassessment intervals and "no server" fixed. Android `versionName` brought into step with the app version.
 
 ### v0.17.2 build 2026-10-15-uk-hosting — live sharing can be kept in the UK
 - The two server functions run in Netlify's London region (`region: 'lhr'`).
@@ -353,4 +362,3 @@ Changes taken from a review of comparable products (Pulsara, Peak Response, KatA
 - Very large casualty logs can require many QR chunks; use the transfer-file fallback if camera scanning becomes operationally slow.
 - Voice transcription uses on-device Web Speech APIs where supported (most Chromium-based mobile browsers + Safari iOS 14.5+). On unsupported browsers the user is told to type instead.
 - Print labels rely on the OS print dialog (`window.print()`); AirPrint and most label printers work, but exotic networked label printers may need a dedicated driver.
-- Reassessment intervals are hard-coded defaults (P1=10m, P2=30m, P3=60m). Per-incident overrides are not yet exposed.

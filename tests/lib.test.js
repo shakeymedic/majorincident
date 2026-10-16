@@ -1073,10 +1073,21 @@ group('review v0.9.0: reading a device fix', () => {
         assert.strictEqual(s.atCcs, true); assert.strictEqual(s.ccsAt, 1700000000000);
         assert.strictEqual(lib.sanitisePatientRecord({ id: 'X', category: 'P2' }).atCcs, undefined, 'older phones leave it unset so the sector fallback applies');
         const w = lib.buildPatientPayload({ id: 'X-TST-001', uid: 'u1', category: 'P2', atCcs: true, ccsAt: 123, timestamp: 1 }, {}, { now: 1700000000000 });
-        assert.strictEqual(w.d.cc, 1); assert.strictEqual(w.d.ca, 123);
+        assert.strictEqual(w.d.cc, 1); assert.strictEqual(w.d.cca, 123);
         const dec = lib.decompressData(w.d);
         assert.strictEqual(dec.atCcs, true); assert.strictEqual(dec.ccsAt, 123);
         assert.strictEqual(lib.decompressData({ i: 'Y', c: 'P3' }).atCcs, false);
+        // Regression: 'ca' used to carry both createdAt and ccsAt, so a handover at the CCS lost createdAt
+        // and every received record gained a ccsAt. createdAt must come through untouched, ccsAt only when set.
+        const w2 = lib.buildPatientPayload({ id: 'X-TST-002', uid: 'u2', category: 'P2', createdAt: 1000, atCcs: true, ccsAt: 5000, timestamp: 1 }, {}, { now: 1700000000000 });
+        assert.strictEqual(w2.d.ca, 1000); assert.strictEqual(w2.d.cca, 5000);
+        const dec2 = lib.decompressData(w2.d);
+        assert.strictEqual(dec2.createdAt, 1000); assert.strictEqual(dec2.ccsAt, 5000);
+        const w3 = lib.buildPatientPayload({ id: 'X-TST-003', uid: 'u3', category: 'P3', createdAt: 1000, timestamp: 1 }, {}, { now: 1700000000000 });
+        const dec3 = lib.decompressData(w3.d);
+        assert.strictEqual(dec3.createdAt, 1000); assert.strictEqual(dec3.ccsAt, null, 'a casualty never at the CCS has no ccsAt');
+        // A QR from an older phone (<= 0.17.2) at the CCS still yields a ccsAt.
+        assert.strictEqual(lib.decompressData({ i: 'Z', c: 'P2', cc: 1, ca: 777 }).ccsAt, 777);
         assert.ok(lib.ALL_PATIENT_FIELD_ORDER.indexOf('atCcs') > -1 && lib.ALL_PATIENT_FIELD_ORDER.indexOf('ccsAt') > -1);
     });
     test('describeGeoError explains each code and tailors the fix to the phone', () => {

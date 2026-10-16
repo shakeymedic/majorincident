@@ -1,6 +1,9 @@
-const CACHE_NAME = 'mit-triage-v30-2026-10-15-uk-hosting';
+const CACHE_NAME = 'mit-triage-v31-2026-10-16-review';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
+// The printed-number reader (vendor/tesseract, ~10 MB, fetched on demand) is kept across app updates too,
+// otherwise every release silently threw it away and the next offline read failed.
+const OCR_CACHE = 'mit-ocr-v1';
 const TILE_CACHE_MAX = 600;
 const PRECACHE_URLS = [
     './',
@@ -57,7 +60,7 @@ self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
-                cacheNames.filter(n => n !== CACHE_NAME && n !== TILE_CACHE).map(n => caches.delete(n))
+                cacheNames.filter(n => n !== CACHE_NAME && n !== TILE_CACHE && n !== OCR_CACHE).map(n => caches.delete(n))
             );
         }).then(() => self.clients.claim())
     );
@@ -82,6 +85,16 @@ self.addEventListener('fetch', event => {
                 }).catch(() => hit || Response.error());
                 return hit || fetchPromise;
             }))
+        );
+        return;
+    }
+    // Printed-number reader files: cache-first into their own long-lived cache.
+    if (url.origin === self.location.origin && url.pathname.indexOf('/vendor/tesseract/') > -1) {
+        event.respondWith(
+            caches.open(OCR_CACHE).then(cache => cache.match(req).then(hit => hit || fetch(req).then(resp => {
+                if (resp && resp.status === 200 && resp.type === 'basic') cache.put(req, resp.clone()).catch(() => {});
+                return resp;
+            })))
         );
         return;
     }
