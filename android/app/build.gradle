@@ -1,6 +1,6 @@
 plugins { id 'com.android.application' }
 
-def versionProps = [name: '0.17.4', code: 1]   // keep in step with APP_VERSION in index.html; Play needs code to rise every upload
+def versionProps = [name: '0.17.5', code: 1]   // keep in step with APP_VERSION in index.html; Play needs code to rise every upload
 
 android {
     namespace 'org.emevidence.mitriage'
