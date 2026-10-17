@@ -1390,7 +1390,7 @@
                 <div class="setting-row"><label for="set-incident-code"><strong>Incident code</strong><small>The same on every phone at this incident</small></label><input type="text" id="set-incident-code" class="set-input-short" autocomplete="off" autocapitalize="characters" onchange="saveIncidentCode(this.value)"></div>
                 <div class="setting-row setting-block"><label for="set-hospitals"><strong>Receiving hospitals</strong><small>One per line. Offered when a casualty is evacuated.</small></label><textarea id="set-hospitals" rows="4" onchange="saveHospitals(this.value)"></textarea></div>
                 <div class="setting-row setting-block">
-                    <span><strong>Share live with the incident commander</strong><small>Needs signal. Sends triage records (no names or NHS numbers), protected by a code and PIN. The server copy is deleted 24 hours after the last update.</small></span>
+                    <span><strong>Share live with the incident commander</strong><small>Needs signal. Sends triage records (no patient names or NHS numbers; your call sign and any notes go too), protected by a code and PIN. The server copy is deleted 24 hours after the last update.</small></span>
                     <p class="qr-meta" id="cmd-status" style="text-align:left; margin:8px 0;">Not sharing.</p>
                     <div id="cmd-off">
                         <button type="button" class="menu-item" onclick="cmdStart()"><b>Start sharing</b><span>This phone creates the incident</span></button>
@@ -1584,7 +1584,7 @@
         <button class="btn btn-primary" id="btn-demo-ack" style="display:none; width:100%; padding:0.8rem; font-size:0.95rem; background:#B35900;" onclick="demoReceiverScanned()">🎓 Demo: the receiver scanned it</button>
         <button class="btn btn-secondary" style="width:100%; padding:0.8rem; font-size:0.95rem;" onclick="copyCurrentQrText()">Copy QR text</button>
         <div class="modal-actions" style="width:100%;">
-            <button class="btn btn-secondary" style="margin-bottom:0;" onclick="toggleQrFullscreen()" id="btn-qr-full" style="white-space:nowrap;">⛶ Full screen</button>
+            <button class="btn btn-secondary" style="margin-bottom:0; white-space:nowrap;" onclick="toggleQrFullscreen()" id="btn-qr-full">⛶ Full screen</button>
             <button class="btn btn-secondary" style="margin-bottom:0;" onclick="closeQR()">Close</button>
         </div>
     </div>
@@ -1681,7 +1681,7 @@
         <span class="status-item" id="header-incident" style="font-weight:bold;"></span>
         <span class="status-item" id="header-device" title="Device code (default patient-ID prefix)"></span>
         <span class="status-pills" style="margin-left:auto; display:inline-flex; gap:6px; flex-shrink:0;">
-            <button type="button" id="bat-pill" class="gps-status loc-stale" style="display:none;" onclick="showToast('Battery low. Plug in or hand over to a charged phone before it dies; records are saved on this phone and already sent to the commander keep.', { long: true })" title="Battery">🔋</button>
+            <button type="button" id="bat-pill" class="gps-status loc-stale" style="display:none;" onclick="showToast('Battery low. Plug in or hand over to a charged phone before it dies; records are saved on this phone and already sent to the commander are kept.', { long: true })" title="Battery">🔋</button>
             <button type="button" id="cmd-pill" class="gps-status loc-searching" style="display:none;" onclick="cmdShowDetails()" title="Live sharing with the incident commander">☁ Commander</button>
             <button type="button" id="gps-indicator" class="gps-status loc-searching" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
         </span>
@@ -2144,8 +2144,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.17.2';
-    const APP_BUILD = '2026-10-15-uk-hosting';
+    const APP_VERSION = '0.17.3';
+    const APP_BUILD = '2026-10-16-review';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2292,6 +2292,15 @@
         const migrated = MITTLib.migrateLegacyRecords(stored, { now: Date.now() });
         incidentLog = migrated.records;
         early.forEach(r => { if (!incidentLog.some(x => x.uid === r.uid)) incidentLog.push(r); });
+        // A session that ran on backup browser storage (database slow or blocked) saved its patients under
+        // FALLBACK_KEY only. Bring any the database does not hold back in, so they are not left invisible.
+        let recovered = 0;
+        if (storageMode === 'indexeddb') {
+            const fb = lsJSON(FALLBACK_KEY, null);
+            const fbRecs = fb && Array.isArray(fb.incidentLog) ? MITTLib.migrateLegacyRecords(fb.incidentLog, { now: Date.now() }).records : [];
+            fbRecs.forEach(r => { if (r && r.uid && !incidentLog.some(x => x.uid === r.uid)) { incidentLog.push(r); recovered++; } });
+            if (fb) ls(FALLBACK_KEY, null);
+        }
         methaneHistory = Array.isArray(got.methaneHistory) ? got.methaneHistory : [];
         importedAudit = Array.isArray(got.importedAudit) ? got.importedAudit : [];
         wipeHistory = Array.isArray(got.wipeHistory) ? got.wipeHistory : [];
@@ -2303,6 +2312,7 @@
         auditLog = storedAudit;
         auditLoaded = true;
         dbReady = true;
+        if (recovered) pendingAudit.push({ action: 'FALLBACK_RECOVERED', patientId: '-', details: `${recovered} record${recovered === 1 ? '' : 's'} saved while the device database was unavailable ${recovered === 1 ? 'was' : 'were'} brought back into the database.`, sysTime: Date.now() });
         renderHospitalDatalist();
         setTimeout(cmdInit, 0);
         migrated.events.forEach(ev => logAudit(ev.action, ev.patientId, ev.details, Date.now()));
@@ -2784,10 +2794,8 @@
         const cls = MITTLib.classifyLocationAccuracy(loc && loc.acc);
         const pinned = entry.locationConfidence === 'manual-corrected';
         const text = locationLabel(entry);
-        setText('location-status-text', text);
         const ageText = loc && loc.timestamp ? `Recorded ${MITTLib.formatLocationAge(loc.timestamp)}.` : 'No position stored.';
         const warning = loc && loc.lat && cls.warning && !pinned ? ' The phone\'s estimate is rough (normal indoors): add the floor and room, or pin the spot on the map.' : '';
-        setText('location-age-warning', `${ageText}${warning}`);
         setText('location-editor-status', `${text}. ${ageText}${warning}`);
         const card = $('location-editor-status');
         if (card) card.className = 'location-status-card ' + (!loc || !loc.lat ? 'unknown' : pinned ? 'good' : cls.className);
@@ -2913,6 +2921,7 @@
             if (!$('p-sector').value) $('p-sector').value = 'Casualty Clearing';
             if (!$('p-area').value) $('p-area').value = 'Loading area';
             markAtCcs(entry, 'move recorded');
+            if ($('p-sector').value !== entry.sector) $('p-sector').value = entry.sector; // as toggleCcs does, or the form value wins below
         }
         if (action === 'Found at current location' && freshPosition()) { useCurrentGpsForPatient(action); return; }
         const changed = applyLocationFormToEntry(entry, action);
@@ -3523,7 +3532,7 @@
         open.forEach(c => { c.resolved = true; c.resolvedBy = triagerName; c.resolvedAt = Date.now(); });
         touch(entry, []);
         logAudit('IMPORT_CONFLICT_RESOLVED', entry.id, `Reviewed by ${triagerName}: ${open.map(c => `${c.field} kept "${c.field === 'category' ? catShort(entry[c.field]) : entry[c.field]}"`).join('; ')}`, Date.now(), { uid: entry.uid });
-        saveState(); renderResultScreen(entry, { keepDetailsOpen: $('details-container').classList.contains('show') });
+        saveState(); renderResultScreen(entry, { keepDetailsOpen: true });
     }
     function updateReassessPill(entry) {
         const pill = $('reassess-state-pill');
@@ -6047,7 +6056,7 @@
         const code = String(parsed.c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6), pin = String(parsed.p || '').replace(/\D/g, '').slice(0, 6);
         if (code.length !== 6 || pin.length !== 6) { showBlockingError('Not a valid join code', 'The scanned code is damaged. Ask for the code and PIN and type them in Settings.'); return; }
         if (cmdActive() && CMD.cfg.code === code) { showToast(`Already sharing with incident ${code}.`); return; }
-        const ok = await inAppConfirm({ title: `Join incident ${code}?`, message: `This phone's triage records (no names or NHS numbers) will be sent to that incident's commander screen whenever there is signal.${cmdActive() ? `\n\nThis replaces the current sharing with incident ${CMD.cfg.code}.` : ''}`, okLabel: 'Join' });
+        const ok = await inAppConfirm({ title: `Join incident ${code}?`, message: `This phone's triage records (no patient names or NHS numbers; your call sign and any notes go too) will be sent to that incident's commander screen whenever there is signal.${cmdActive() ? `\n\nThis replaces the current sharing with incident ${CMD.cfg.code}.` : ''}`, okLabel: 'Join' });
         if (!ok) return;
         await cmdJoin(code, pin);
     }

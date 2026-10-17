@@ -61,7 +61,7 @@ patients."**
 Change the declaration and the listing only if the intended purpose formally changes (after the clinical safety case
 and any UKCA marking).
 
-**Permissions:** INTERNET, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION. Camera (QR scanning) is requested by the
+**Permissions:** INTERNET, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION. Camera (QR and barcode scanning, and photographing a printed tag number for on-device reading) and microphone (voice notes, see the privacy notice) are requested by the
 website through Chrome, not by the app, so it does not appear in the app's permission list.
 
 **Account deletion:** not applicable, the app has no accounts.

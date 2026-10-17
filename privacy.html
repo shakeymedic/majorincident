@@ -38,7 +38,7 @@
 
     <h2>Live sharing with a commander screen (optional)</h2>
     <ul>
-        <li>If you start or join live sharing, the device sends its records (triage category, timings, interventions, injuries, positions, the sector and place labels, free-text notes, your typed name and the device's random code) and any METHANE report over HTTPS to a small server, so an incident commander can see them on one screen protected by an incident code and PIN.</li>
+        <li>If you start or join live sharing, the device sends its records (triage category, timings, interventions, injuries, positions, the sector and place labels, free-text notes, your typed name, the device's random code, its battery level and whether it is charging, and the app version) and any METHANE report over HTTPS to a small server, so an incident commander can see them on one screen protected by an incident code and PIN.</li>
         <li>The server is run for us by <a href="https://www.netlify.com" rel="noopener">Netlify</a> (Netlify Functions), set to run in Netlify's London (UK) region. Netlify also processes standard web server data (such as IP address and browser type) to deliver the site.</li>
         <li>We are moving where the shared records are kept to <a href="https://cloud.google.com/firestore" rel="noopener">Google Cloud Firestore</a> in London (europe-west2). Until that move is complete they are kept in Netlify Blobs, whose location we cannot choose and which may be outside the UK. Netlify and Google are both based in the United States and provide safeguards for international transfers under UK data protection law.</li>
         <li>Wrong-PIN attempts are counted against a hashed form of the connecting address for 15 minutes, to stop guessing; the address itself is not stored.</li>
@@ -49,12 +49,15 @@
     <p>With your permission the app uses the device's location to record where each casualty was found and where the casualty clearing station is. Location is used on the device and is sent to the commander screen only as part of live sharing. You can refuse or revoke the permission in the browser or phone settings; the app then records sector and place labels instead.</p>
 
     <h2>Camera</h2>
-    <p>The camera is used only to scan QR codes shown by other devices. No images are stored or sent anywhere.</p>
+    <p>The camera is used to scan QR codes shown by other devices, to scan barcodes on triage tags and wristbands, and to read a printed tag number from a photo. Reading the printed number happens on the device (the text reader is downloaded once); no images are stored or sent anywhere.</p>
+
+    <h2>Microphone (voice notes)</h2>
+    <p>If you choose to dictate a note, the app uses the browser's speech recognition. Depending on the browser, the recording may be sent to the browser maker's online speech service (for example Google for Chrome, or Apple for Safari) to be turned into text; the app itself stores only the text. The app warns you of this before the first use and the feature is refused when there is no signal. Type the note instead if you do not want this.</p>
 
     <h2>What we do not do</h2>
     <ul>
         <li>No accounts, no sign-in, no analytics, no advertising, no crash reporting and no cookies.</li>
-        <li>Nothing is sold or shared with anyone else. The map tiles are loaded from OpenStreetMap when you open the map, which sees the standard web request for each tile.</li>
+        <li>Nothing is sold or shared with anyone else, apart from the browser's own speech service if you dictate a note (above). The map tiles are loaded from OpenStreetMap when you open the map, which sees the standard web request for each tile.</li>
     </ul>
 
     <h2>Android app</h2>
