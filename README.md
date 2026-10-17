@@ -126,7 +126,7 @@ Use **one iPhone and one Android phone** for at least one full run, and do steps
 
 ## Live sharing with an incident commander (optional, needs signal)
 
-Off by default. When a phone starts or joins sharing, its triage records go over HTTPS to `/api/incident/<code>/records` on this site, protected by the incident code and PIN. The server keeps only the minimised record (the same fields as a QR handover: no names, no NHS numbers) for 24 hours after the last update, then deletes it. The phones remain the record of truth and keep the audit trail. The commander page is an aid for a live incident, not a clinical record system. The server functions run in Netlify's London region. The records are kept in Google Cloud Firestore in London (europe-west2) once the three `FIRESTORE_*` settings below are in place; until then they stay in Netlify Blobs, whose region cannot be chosen. Each API response carries an `X-Incident-Store` header (`firestore` or `netlify-blobs`) saying which is in use. The app is for training and exercise use only.
+Off by default. When a phone starts or joins sharing, its triage records go over HTTPS to `/api/incident/<code>/records` on this site, protected by the incident code and PIN. The server keeps only the minimised record (the same fields as a QR handover: no names, no NHS numbers) for 24 hours after the last update, then deletes it. The phones remain the record of truth and keep the audit trail. The commander page is an aid for a live incident, not a clinical record system. The server functions run in Netlify's London region. The records are kept in Google Cloud Firestore in London (europe-west2) when the three `FIRESTORE_*` settings below are in place (the live site has used Firestore since 17 October 2026); without them they fall back to Netlify Blobs, whose region cannot be chosen. Each API response carries an `X-Incident-Store` header (`firestore` or `netlify-blobs`) saying which is in use. The app is for training and exercise use only.
 
 ### UK hosting (Firestore, London)
 
@@ -163,6 +163,9 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.17.5 build 2026-10-17-london — shared records now in London
+- Live sharing on majorincident.netlify.app now keeps its records in Google Cloud Firestore, London (europe-west2): the live server reports `X-Incident-Store: firestore` (checked 17 October 2026). The privacy notice says so instead of "we are moving". Triage rules unchanged.
 
 ### v0.17.4 build 2026-10-17-reassess — reassessment for every role; data controller named
 - Non-clinical users can record a reassessment check (Jake's decision, 17 October 2026); clinical-only actions unchanged. Triage rules unchanged.
