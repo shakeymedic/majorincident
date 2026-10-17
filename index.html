@@ -1845,7 +1845,7 @@
             </div>
             <div class="rs-row rs-hcp-row" id="rs-hcp-row">
                 <button id="btn-mitt-now" class="btn rs-small" style="display:none; background:#B35900; color:#fff;" onclick="mittThisPatient()">MITT this patient now</button>
-                <button id="btn-reassess" class="btn btn-secondary rs-small hcp-only" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
+                <button id="btn-reassess" class="btn btn-secondary rs-small" onclick="openReassessModal()">⏱ Reassess <span id="reassess-state-pill"></span></button>
             </div>
 
             <details id="clinical-prompts" class="clinical-prompt rs-prompts"></details>
@@ -2144,8 +2144,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.17.3';
-    const APP_BUILD = '2026-10-16-review';
+    const APP_VERSION = '0.17.4';
+    const APP_BUILD = '2026-10-17-reassess';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();

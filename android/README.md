@@ -13,7 +13,7 @@ workflow run to need a fix or two.
 ## One-off set-up (Jake)
 
 1. **Google Play developer account.** Google says health apps should use an organisation account (D-U-N-S number
-   needed); an organisation account also skips the 12-tester closed test that new personal accounts must run.
+   needed) in the name of West Midlands Evidence Based Emergency Medicine Ltd (company number 16644703); an organisation account also skips the 12-tester closed test that new personal accounts must run.
 2. **Upload key.** On a machine with Java:
    `keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000`
    Then add four GitHub secrets: `ANDROID_KEYSTORE_BASE64` (`base64 -w0 upload.keystore`), `ANDROID_KEYSTORE_PASSWORD`,
