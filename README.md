@@ -164,6 +164,10 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.17.4 build 2026-10-17-reassess — reassessment for every role; data controller named
+- Non-clinical users can record a reassessment check (Jake's decision, 17 October 2026); clinical-only actions unchanged. Triage rules unchanged.
+- Privacy notice names West Midlands Evidence Based Emergency Medicine Ltd (company number 16644703) as data controller.
+
 ### v0.17.3 build 2026-10-16-review — full review fixes
 Triage rules unchanged.
 - Handover QR and all-patient transfer: `ccsAt` now has its own short key (`cca`); it used to share `ca` with `createdAt`, so a casualty handed over from the CCS arrived with the wrong creation time and every received casualty gained a CCS arrival time (wrong debrief and commander CCS timings). Older QR codes still decode.
@@ -279,7 +283,7 @@ Changes taken from a review of comparable products (Pulsara, Peak Response, KatA
 - **MITT counting help:** on the breathing-rate and heart-rate questions, a 15-second timer with an optional tap counter, or a typed rate. It suggests YES or NO; the clinician still answers. Measured rates are added to the result's action text (e.g. "Measured: RR 28/min").
 - **MITT this patient now:** clinicians get a one-tap button on any TST result to run MITT on the same record, and TST results remind clinicians to reassess with MITT as soon as possible (NHS England guidance).
 - **Handover:** the "Handover details look thin" confirmation now appears only for a clinician's MITT patient, not for every TST handover.
-- **Non-clinical role:** Reassess, ATMIST, thoracostomy, TXA and IO access buttons are hidden for non-clinical users.
+- **Non-clinical role:** ATMIST, thoracostomy, TXA and IO access buttons are hidden for non-clinical users. Reassess is available to every role (a non-clinical responder records the check and is told to ask a clinician if the category needs changing).
 - **Readability:** the role is shown as a white-on-colour pill before the user name; the counters show patients still on scene with a one-line legend (totals remain in the Patient log).
 - **Result screen:** Next Patient and QR Handover sit directly under the category; MITT P3 result reminds that walking patients may be compensating.
 - **Quick reference card:** now includes the TST and MITT flowcharts.

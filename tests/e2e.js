@@ -729,7 +729,9 @@ async function test(name, fn) {
         assert.strictEqual(await P.textContent('#header-role'), 'Non-clinical');
         assert.strictEqual(await P.evaluate(() => getComputedStyle(document.getElementById('header-role')).color), 'rgb(255, 255, 255)');
         await triage(P, 'TST', [false, true]);
-        for (const sel of ['#btn-reassess', '#btn-atmist', '#btn-mitt-now', '.int-btn[data-type="TXA"]', '.int-btn[data-type="Needle Decomp"]', '.int-btn[data-type="IO Access"]']) {
+        // Non-clinical users may record a reassessment check (Jake, 17 Oct 2026); the clinical-only actions stay hidden.
+        assert.ok(await P.evaluate(() => document.getElementById('btn-reassess').getClientRects().length > 0), '#btn-reassess should be visible to non-clinical users');
+        for (const sel of ['#btn-atmist', '#btn-mitt-now', '.int-btn[data-type="TXA"]', '.int-btn[data-type="Needle Decomp"]', '.int-btn[data-type="IO Access"]']) {
             assert.strictEqual(await P.evaluate(s => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0; }, sel), false, sel + ' should be hidden');
         }
         assert.ok(await P.evaluate(() => { openPatientMore(); document.getElementById('sec-interventions').open = true; return document.querySelector('.int-btn[data-type="Tourniquet"]').getClientRects().length > 0; }));
