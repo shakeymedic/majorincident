@@ -74,8 +74,8 @@ restricted", because live sharing needs a code and PIN that the user makes. Add 
 
 - Name: `Live sharing with a commander screen`
 - Username and password: leave blank (there are no accounts).
-- Any other instructions: `No sign-in is needed. On the start page type any name and tap a role (Clinician shows
-  everything), then tap START TRIAGE and answer the questions; this works offline. To see live sharing, on the start
+- Any other instructions: `No sign-in is needed. On the start page type any name and tap "I'm a healthcare
+  professional" (it shows everything), then tap START TRIAGE and answer the questions; this works offline. To see live sharing, on the start
   page of one device tap Demo, then Run a live exercise, then Control room.
   This creates a training incident and shows its code, PIN and QR code; tap Open the commander screen. On a second
   device type a name, tap Demo, Run a live exercise, choose a field role, and scan that QR code (or type the code and PIN). The
