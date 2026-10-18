@@ -52,9 +52,10 @@ training only: those describe use on real patients, which the listing says the a
 if the app is cleared for real incidents. Intended purpose, word for word everywhere: **"Training and exercise use only. Not for use with real
 patients."**
 
-**Listing text (use as is):**
+**Listing text (use as is; the whole full description is in [play-listing.md](play-listing.md)):**
 
-- Short description: *Major incident triage practice (TST and MITT) for training and exercises. Not for real patients.*
+- Short description (80 characters max): *Major incident triage practice (TST, MITT) for exercises. Not for real patients.*
+  (80; the earlier wording was 96 characters, too long for Play)
 - Start of the full description: *Major Incident Triage helps trained responders practise NHS England Ten Second Triage
   and the Major Incident Triage Tool, record interventions and hand casualties over between phones in exercises.
   Training and exercise use only. Not for use with real patients. This app is not a medical device and has not been
