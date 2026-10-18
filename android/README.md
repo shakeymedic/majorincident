@@ -28,7 +28,7 @@ workflow run to need a fix or two.
 
 ## Play Console answers (prepared; you are responsible for their accuracy)
 
-**App category:** Medical. **Free.** **Contains ads:** no. **Target audience:** 18 and over (emergency responders).
+**App category:** Medical. **Free.** **Contains ads:** no. **Target audience:** 18 and over (emergency responders). **App name on Play:** Major Incident Triage.
 
 **Privacy policy URL:** https://majorincident.netlify.app/privacy.html
 
@@ -46,8 +46,10 @@ Data is encrypted in transit (HTTPS). Users can delete it: the server copy is de
 or at once with *End incident for everyone*; records on the phone are deleted with *Close / reset incident*.
 Data is not collected for advertising and is not sold.
 
-**Health apps declaration:** Clinical Decision Support / Emergency and First Aid, with the "not a medical device"
-disclaimer. Intended purpose, word for word everywhere: **"Training and exercise use only. Not for use with real
+**Health apps declaration:** Medical, **Medical reference and education** (training and exercises), with the "not a
+medical device" disclaimer. Don't tick Clinical Decision Support or Medical Device Apps while the intended purpose is
+training only: those describe use on real patients, which the listing says the app is not for. Change both together
+if the app is cleared for real incidents. Intended purpose, word for word everywhere: **"Training and exercise use only. Not for use with real
 patients."**
 
 **Listing text (use as is):**
@@ -65,6 +67,30 @@ and any UKCA marking).
 website through Chrome, not by the app, so it does not appear in the app's permission list.
 
 **Account deletion:** not applicable, the app has no accounts.
+
+**App access** (Play Console → Policy → App content → App access): choose "All or some functionality in my app is
+restricted", because live sharing needs a code and PIN that the user makes. Add one set of instructions:
+
+- Name: `Live sharing with a commander screen`
+- Username and password: leave blank (there are no accounts).
+- Any other instructions: `No sign-in is needed. On the start page type any name and tap a role (Clinician shows
+  everything), then tap START TRIAGE and answer the questions; this works offline. To see live sharing, on the start
+  page of one device tap Demo, then Run a live exercise, then Control room.
+  This creates a training incident and shows its code, PIN and QR code; tap Open the commander screen. On a second
+  device type a name, tap Demo, Run a live exercise, choose a field role, and scan that QR code (or type the code and PIN). The
+  first device's commander screen then shows the second device's casualties. Location and camera permissions are
+  optional.`
+
+**Testing tracks:** upload every bundle to **Internal testing** first and install it from Play on a phone. Check it
+opens full screen (no address bar, which means `assetlinks.json` matches), works in flight mode, asks for location only
+when needed, and that the live exercise above works between two phones. Then promote the same bundle to Production.
+A personal developer account made after 13 November 2023 would also need a closed test with at least 12 testers for
+14 days in a row; an organisation account does not.
+
+**Store graphics:** icon 512 × 512 (32-bit PNG), feature graphic 1024 × 500 (no transparency), at least 2 phone
+screenshots (4 at 1080 × 1920 recommended) that show the current version, with no device frames and no "Best",
+"#1" or "Download now". Ready-made files are in the EM Evidence project at
+`/mnt/project-files/plans/play-store/major-incident/`. Retake them when the screens change.
 
 **Play Integrity API:** considered and not used. The app has no server-side accounts or paid content; joining an
 incident is already gated by its code and PIN, and a tampered copy could only ever send its own triage records. Revisit
