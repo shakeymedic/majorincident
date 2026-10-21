@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-const files = { 'lib.js': fs.readFileSync(path.join(ROOT, 'lib.js'), 'utf8'), 'sw.js': fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8') };
+const files = { 'lib.js': fs.readFileSync(path.join(ROOT, 'lib.js'), 'utf8'), 'sw.js': fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8'), 'commander.js': fs.readFileSync(path.join(ROOT, 'commander.js'), 'utf8') };
 [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].forEach((m, i) => { files['index.html inline script #' + (i + 1)] = m[1]; });
 const commander = fs.readFileSync(path.join(ROOT, 'commander.html'), 'utf8');
 [...commander.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].forEach((m, i) => { files['commander.html inline script #' + (i + 1)] = m[1]; });

@@ -1,0 +1,725 @@
+/* Incident commander screen. Kept out of commander.html so the page's script policy needs no 'unsafe-inline':
+   clicks and changes are wired below with data-act attributes instead of onclick="" handlers. */
+const REFRESH_MS = 30 * 1000;
+// A tab nobody is looking at checks less often; it refreshes at once when it is shown again.
+const HIDDEN_REFRESH_MS = 60 * 1000;
+const $ = (id) => document.getElementById(id);
+const esc = MITTLib.escapeHTML;
+let cfg = null;           // { code, pin }
+let data = null;          // last payload
+let etag = '';
+let knownSeq = '';       // sequence number of the data on screen; sent back so an unchanged incident costs a 304
+let timer = null;
+let lastOkAt = 0;
+let map = null, cluster = null, ccsMarker = null, circles = null;
+let firstFit = true;
+let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
+let demoMarks = [];       // map markings placed during the demo (kept in the page only)
+let marksLayer = null, marking = false;
+let wallRequested = false;
+
+function loadCfg() {
+    try { const s = sessionStorage.getItem('mit_commander'); if (s) cfg = JSON.parse(s); } catch (e) {}
+    const raw = (location.hash || '').replace('#', '').toUpperCase();
+    if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) wallRequested = true; return 'demo'; }
+    const h = raw.split('/')[0].replace(/[^A-Z0-9]/g, '');
+    if (h && h.length === 6) $('in-code').value = h;
+    if (h && h.length === 6 && cfg && cfg.code && cfg.code !== h) cfg = null; // a link to another incident wins over this tab's saved sign-in
+    // Opened on the phone that is sharing (same site, same browser): sign in with that phone's own code and PIN.
+    if (!cfg) {
+        try {
+            ['mit_commander', 'trn_mit_commander'].forEach(k => {
+                if (cfg) return;
+                const app = JSON.parse(localStorage.getItem(k) || 'null');
+                if (app && app.code && app.pin && (!h || h === app.code)) cfg = { code: app.code, pin: app.pin, fromPhone: true };
+            });
+        } catch (e) {}
+    }
+    let wall = /\/WALL/.test(raw);
+    try { if (sessionStorage.getItem('mit_commander_wall') === '1') wall = true; } catch (e) {}
+    // Wall mode hides the sign-in card, so it is only switched on once signed in (start()/startDemo()).
+    wallRequested = wall;
+    if (cfg && cfg.code) { $('in-code').value = cfg.code; $('in-pin').value = cfg.pin || ''; }
+}
+function setStatus(cls, text) { const p = $('status-pill'); p.className = 'pill ' + cls; p.textContent = text; }
+function signIn() {
+    const code = $('in-code').value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    const pin = $('in-pin').value.replace(/\D/g, '').slice(0, 6);
+    $('signin-error').classList.add('hidden');
+    if (code.length !== 6 || pin.length !== 6) { $('signin-error').textContent = 'The code is 6 letters or digits and the PIN is 6 digits.'; $('signin-error').classList.remove('hidden'); return; }
+    cfg = { code, pin };
+    try { sessionStorage.setItem('mit_commander', JSON.stringify(cfg)); } catch (e) {}
+    start();
+}
+function signOut() {
+    if (demo) { demo = null; firstFit = true; try { history.replaceState(null, '', location.pathname); } catch (e) {} $('training-banner').textContent = 'TRAINING INCIDENT — practice data, not real patients'; }
+    cfg = null; data = null; etag = ''; knownSeq = '';
+    try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
+    if (timer) clearTimeout(timer);
+    $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none'; $('btn-start-page').style.display = 'none'; $('btn-sound').style.display = 'none'; $('btn-print').style.display = 'none'; $('btn-sound-unlock').style.display = 'none';
+    ALERTS.seen = null; ALERTS.list = []; $('alerts').classList.add('hidden');
+    $('training-banner').classList.add('hidden');
+    lastOkAt = 0; setStatus('wait', 'Not connected'); renderHeader(); setUpdated('');
+}
+function setText(id, t) { $(id).textContent = t; }
+let updBase = '';
+function setUpdated(t) { updBase = t; tickClock(); }
+function agoShort(ms) { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? s + ' s ago' : s < 3600 ? Math.floor(s / 60) + ' min ago' : Math.floor(s / 3600) + ' h ' + Math.floor((s % 3600) / 60) + ' min ago'; }
+function elapsedText(ms) { const m = Math.max(0, Math.floor(ms / 60000)); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min'; }
+function toggleFullscreen() {
+    try {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen();
+    } catch (e) {}
+}
+function renderHeader() {
+    if (!data) { $('hdr-incident').innerHTML = ''; return; }
+    const bits = [];
+    if (data.name) bits.push(`<span class="inc-name">${esc(data.name)}</span>`);
+    bits.push(`<span class="chip">Code <b>${esc(data.code || '')}</b></span>`);
+    if (data.incidentCode) bits.push(`<span class="chip">Incident <b>${esc(data.incidentCode)}</b></span>`);
+    if (data.createdAt) bits.push(`<span class="chip">Running <b id="hdr-elapsed">${elapsedText(Date.now() - data.createdAt)}</b></span>`);
+    if (data.viewOnly) bits.push(`<span class="chip" title="Opened with the view-only PIN">👁 View only</span>`);
+    $('hdr-incident').innerHTML = bits.join('');
+}
+function start() {
+    if (wallRequested) { wallRequested = false; setWall(true); }
+    $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
+    $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
+    $('btn-signout').textContent = 'Sign out';
+    checkSoundUnlocked();
+    refreshNow();
+}
+// Wall display: for a big screen in the command post. Toggle with the button, the W key, or #CODE/wall in the link.
+function setWall(on) {
+    document.body.classList.toggle('wall', !!on);
+    $('btn-wall').textContent = on ? 'Normal view' : 'Wall display';
+    try { sessionStorage.setItem('mit_commander_wall', on ? '1' : ''); } catch (e) {}
+    if (map) setTimeout(() => { map.invalidateSize(); fitMap(); }, 150);
+}
+function toggleWall() { setWall(!document.body.classList.contains('wall')); }
+function tickClock() {
+    $('clock').textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    $('hdr-updated').textContent = updBase ? updBase + (lastOkAt ? ' · ' + agoShort(Date.now() - lastOkAt) : '') : '';
+    const el = $('hdr-elapsed'); if (el && data && data.createdAt) el.textContent = elapsedText(Date.now() - data.createdAt);
+}
+setInterval(tickClock, 1000); tickClock();
+// Demo: the made-up incident from MITTLib.buildDemoScenario, built in the page. Casualties arrive, deteriorate and
+// are evacuated over the first few minutes. Nothing is fetched or sent.
+function startDemo() {
+    if (timer) clearTimeout(timer);
+    cfg = null; etag = ''; knownSeq = ''; firstFit = true;
+    try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
+    demo = { startedAt: Date.now() };
+    $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
+    if (wallRequested) { wallRequested = false; setWall(true); }
+    $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
+    $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
+    $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
+    checkSoundUnlocked();
+    demoTick();
+}
+function demoTick() {
+    if (!demo) return;
+    if (timer) clearTimeout(timer);
+    const now = Date.now();
+    const d = MITTLib.buildDemoScenario({ now, elapsedMs: now - demo.startedAt });
+    const order = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
+    const records = d.records.map(r => Object.assign(MITTLib.sanitisePatientRecord(r), { reportedBy: r.deviceId, reportedAt: r.updatedAt }))
+        .sort((x, y) => ((x.category in order ? order[x.category] : 99) - (y.category in order ? order[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
+    data = { marks: demoMarks, marksAt: 0, code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, methane: Object.assign({}, d.incident.methane, { timestamp: d.incident.createdAt + 7 * 60 * 1000, by: 'MERIT doctor', device: 'DEMODR' }), devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
+    lastOkAt = now;
+    setStatus('live', 'Demo');
+    const next = d.incident.nextEventInMs;
+    setUpdated(`Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
+    $('conn-warn').classList.add('hidden');
+    render();
+    setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Tap ↩ Start page to go back and pick another role.');
+    timer = setTimeout(demoTick, next ? Math.min(10000, next + 200) : 30000);
+}
+async function refreshNow() {
+    if (demo) { demoTick(); return; }
+    if (!cfg) return;
+    if (timer) clearTimeout(timer);
+    $('btn-refresh').disabled = true;
+    try {
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const to = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
+        const headers = { 'x-incident-pin': cfg.pin };
+        if (etag) headers['If-None-Match'] = etag;
+        if (knownSeq) headers['X-Incident-Seq'] = knownSeq;
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}`, { headers, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+        if (to) clearTimeout(to);
+        if (r.status === 304) { lastOkAt = Date.now(); setStatus('live', 'Live'); setUpdated(`Checked ${time(Date.now())} • no change`); $('conn-warn').classList.add('hidden'); render({ sameData: true }); return; }
+        if (r.status === 401 || r.status === 404 || r.status === 410 || r.status === 429) {
+            let msg = 'Could not open this incident.';
+            try { msg = (await r.json()).message || msg; } catch (e) {}
+            if (!data) { signOut(); $('signin').classList.remove('hidden'); $('signin-error').textContent = msg; $('signin-error').classList.remove('hidden'); return; }
+            setStatus('bad', r.status === 410 ? 'Incident expired' : 'Access refused');
+            $('conn-warn').textContent = msg + (r.status === 410 ? ' The data below is the last copy this page received.' : '');
+            $('conn-warn').classList.remove('hidden');
+            return;
+        }
+        if (!r.ok) throw new Error('Server error ' + r.status);
+        data = await r.json();
+        etag = r.headers.get('ETag') || '';
+        knownSeq = r.headers.get('X-Incident-Seq') || (data.seq !== undefined ? String(data.seq) : '');
+        lastOkAt = Date.now();
+        setStatus('live', 'Live');
+        setUpdated(`Updated ${time(Date.now())}`);
+        $('conn-warn').classList.add('hidden');
+        render();
+    } catch (e) {
+        setStatus('bad', 'No connection');
+        $('conn-warn').textContent = `SERVER UNREACHABLE (${e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || 'offline'}). ${lastOkAt ? 'Showing the data from ' + time(lastOkAt) + '; phones keep their records and send them when the link is back.' : 'Nothing received yet.'} Retrying every 30 seconds. Fallback: phones can use Hand over › Send patients to another device to show their records as QR codes for the control room's phone to scan.`;
+        $('conn-warn').classList.remove('hidden');
+    } finally {
+        $('btn-refresh').disabled = false;
+        if (cfg) timer = setTimeout(refreshNow, document.hidden ? HIDDEN_REFRESH_MS : REFRESH_MS);
+    }
+}
+function time(ts) { return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+function hm(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''; }
+function age(ts) { return ts ? MITTLib.formatLocationAge(ts, Date.now()) : '—'; }
+function place(r) { return [r.sector, r.landmark, r.floor ? 'Floor ' + r.floor : '', r.area].filter(Boolean).join(', '); }
+function loc(r) { return r.currentLocation || r.location || null; }
+function cat(c) { const i = MITTLib.CATEGORY_INFO[c] || { short: c, colour: '#4C6272', text: '#fff' }; return `<span class="cat-chip" style="background:${i.colour};color:${i.text}">${esc(i.short)}</span>`; }
+let stageFilter = 'scene';   // scene | field | ccs | evacuated | all
+function setStageFilter(f) {
+    stageFilter = f;
+    $('show-evac').checked = f === 'all' || f === 'evacuated';
+    document.querySelectorAll('#stage-seg button').forEach(b => b.classList.toggle('on', b.getAttribute('data-stage') === f));
+    render();
+}
+const stage = (r) => MITTLib.patientStage(r);
+// TST = the sieve (first look, anyone); MITT = the sort (clinician). A patient who has only had the sieve still needs the sort.
+function hadMitt(r) { return r.tool === 'MITT' || (r.triageHistory || []).some(t => t.tool === 'MITT'); }
+function toolChip(r) { return hadMitt(r) ? '<span class="tool-chip mitt" title="Has had MITT (sort) triage">MITT</span>' : '<span class="tool-chip tst" title="TST sieve only: no MITT sort yet">TST only</span>'; }
+const byUid = (uid) => ((data && data.records) || []).find(r => r.uid === uid) || null;
+function stageTag(r) { const st = stage(r); const i = MITTLib.STAGE_INFO[st]; return `<span class="stage-tag ${st}">${esc(i.short)}</span>`; }
+function visibleRecords() {
+    const all = (data && data.records) || [];
+    if (stageFilter === 'all') return all;
+    if (stageFilter === 'scene') return all.filter(r => !r.evacuated);
+    if (stageFilter === 'tst') return all.filter(r => !r.evacuated && !hadMitt(r));
+    return all.filter(r => stage(r) === stageFilter);
+}
+
+// opts.sameData: the server said nothing changed, so the map is left alone (redrawing it closes any open popup).
+// Everything else is redrawn because overdue times move on with the clock.
+function render(opts) {
+    if (!data) return;
+    const sameData = !!(opts && opts.sameData);
+    const now = Date.now();
+    renderHeader();
+    $('training-banner').classList.toggle('hidden', !data.training);
+    const all = data.records || [];
+    const onScene = all.filter(r => !r.evacuated);
+    const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+    $('counts').innerHTML = order.map(c => { const i = MITTLib.CATEGORY_INFO[c]; const here = onScene.filter(r => r.category === c); const n = here.length, t = all.filter(r => r.category === c).length, cc = here.filter(r => stage(r) === 'ccs').length; return `<div class="count" style="background:${i.colour};color:${i.text}"><div class="n">${n}</div><div class="l">${esc(i.short)}</div><div class="s">${n - cc} field • ${cc} CCS</div><div class="t">${t} in total</div></div>`; }).join('') +
+        `<div class="count" style="background:#4C6272"><div class="n">${all.filter(r => r.evacuated).length}</div><div class="l">Evacuated</div><div class="s">${Object.keys(MITTLib.stageCounts(all).hospitals).length} destination${Object.keys(MITTLib.stageCounts(all).hospitals).length === 1 ? '' : 's'}</div><div class="t">${all.length} casualties in total</div></div>`;
+    const sc = MITTLib.stageCounts(all);
+    const hosp = Object.keys(sc.hospitals).sort((a, b) => sc.hospitals[b] - sc.hospitals[a]);
+    const fieldSectors = {};
+    onScene.filter(r => stage(r) === 'field').forEach(r => { const k = r.sector || 'No sector'; fieldSectors[k] = (fieldSectors[k] || 0) + 1; });
+    const fieldSub = Object.keys(fieldSectors).sort().map(k => `${esc(k)} <b>${fieldSectors[k]}</b>`).join(' • ') || 'nobody left in the field';
+    const ccsCats = order.filter(c => onScene.some(r => stage(r) === 'ccs' && r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${onScene.filter(r => stage(r) === 'ccs' && r.category === c).length}</b>`).join(' • ') || 'none yet';
+    const hospSub = hosp.map(h => `${esc(h)} <b>${sc.hospitals[h]}</b>`).join(' • ') || 'none yet';
+    $('stages').innerHTML = `<div class="stage"><div class="n">${sc.field}</div><div><div class="lbl">In the field</div><div class="sub">${fieldSub}</div></div></div>` +
+        `<div class="stage ccs"><div class="n">${sc.ccs}</div><div><div class="lbl">At CCS</div><div class="sub">${ccsCats}</div></div></div>` +
+        `<div class="stage evac"><div class="n">${sc.evacuated}</div><div><div class="lbl">Evacuated</div><div class="sub">${hospSub}</div></div></div>` +
+        (() => { const t = onScene.filter(r => !hadMitt(r)); const sub = order.filter(c => t.some(r => r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${t.filter(r => r.category === c).length}</b>`).join(' • '); return `<div class="stage tst"><div class="n">${t.length}</div><div><div class="lbl">TST only</div><div class="sub">${t.length ? 'no MITT sort yet: ' + sub : 'everyone on scene has had MITT'}</div></div></div>`; })();
+    setText('counts-note', `Big number = on scene now (field + CCS); "in total" includes evacuated. CCS = casualty clearing station (set on the phone, or inferred from a "Casualty Clearing" sector on older phones). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
+    // phones
+    const devs = data.devices || [];
+    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
+    setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes`);
+    // sectors
+    const sectors = {};
+    onScene.filter(r => stage(r) === 'field').forEach(r => { const s = r.sector || 'No sector'; sectors[s] = sectors[s] || { P1: 0, P1_HOLD: 0, P2: 0, P3: 0, NOT_BREATHING: 0, DEAD: 0, n: 0 }; sectors[s][r.category] = (sectors[s][r.category] || 0) + 1; sectors[s].n++; });
+    const ccsRecs = onScene.filter(r => stage(r) === 'ccs');
+    const sectorRows = Object.keys(sectors).sort().map(s => `<div class="sector-row"><span class="sname">${esc(s)}</span>${order.filter(c => sectors[s][c]).map(c => `${cat(c)} <b>${sectors[s][c]}</b>`).join(' ')}<span class="muted">${sectors[s].n}</span></div>`).join('') || '<p class="muted">Nobody left in the field.</p>';
+    const ccsRow = ccsRecs.length ? `<div class="sector-row"><span class="sname">Casualty clearing station</span>${order.filter(c => ccsRecs.some(r => r.category === c)).map(c => `${cat(c)} <b>${ccsRecs.filter(r => r.category === c).length}</b>`).join(' ')}<span class="muted">${ccsRecs.length}</span></div>` : '<p class="muted">None at the CCS yet.</p>';
+    const hospRows = hosp.map(h => { const rs = all.filter(r => r.evacuated && (String(r.evacDest || '').trim() || 'Destination not recorded') === h); return `<div class="hosp-row"><span class="hname">${esc(h)}</span>${order.filter(c => rs.some(r => r.category === c)).map(c => `${cat(c)} <b>${rs.filter(r => r.category === c).length}</b>`).join(' ')}<span class="hn">${rs.length}</span></div>`; }).join('') || '<p class="muted">Nobody evacuated yet.</p>';
+    $('sectors').innerHTML = `<div class="where-h">In the field, by sector (${sc.field})</div>${sectorRows}<div class="where-h">At CCS (${sc.ccs})</div>${ccsRow}<div class="where-h">Evacuated, by hospital (${sc.evacuated})</div>${hospRows}`;
+    setText('where-note', `${sc.field} field • ${sc.ccs} CCS • ${sc.evacuated} evacuated`);
+    // attention
+    const att = [];
+    onScene.forEach(r => {
+        const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
+        if (rs.state === 'overdue') att.push({ k: 0, r, t: `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min` });
+        if (r.interventions && r.interventions.Tourniquet) att.push({ k: 1, r, t: `Tourniquet on since ${esc(r.interventions.Tourniquet.time || '?')}` });
+        if (r.highRisk) att.push({ k: 2, r, t: 'Flagged high risk of deterioration' });
+        if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' });
+    });
+    att.sort((a, b) => a.k - b.k);
+    $('attention').innerHTML = att.length ? `<div class="att">${att.map(a => `<div class="att-row k${a.k}" data-act="openPatient" data-uid="${esc(a.r.uid)}" role="button" tabindex="0">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))} ${toolChip(a.r)}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}</div>` : '<div class="all-clear">Nothing outstanding</div>';
+    setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • overdue first` : 'overdue reassessments, tourniquets, high risk');
+    // table
+    const vis = visibleRecords();
+    $('rows').innerHTML = vis.map(r => {
+        const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
+        const l = loc(r);
+        const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : null;
+        const ints = Object.keys(r.interventions || {}).map(k => `${esc(k)} ${esc((r.interventions[k] && r.interventions[k].time) || '')}`.trim()).join(', ');
+        const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? 'Due now' : `Due ${hm(rs.dueAt)}`;
+        const fresh = !r.evacuated && (now - (r.updatedAt || r.reportedAt || 0)) < 90000;
+        return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" data-act="openPatient" data-uid="${esc(r.uid)}" tabindex="0"><td><span class="id">${esc(r.id)}</span>${r.cardNo ? `<div><b>Card ${esc(r.cardNo)}</b></div>` : ''}<div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
+            `<td>${cat(r.category)}<div style="margin-top:4px">${toolChip(r)}</div></td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
+            `<td>${ints || '<span class="muted">none</span>'}</td><td>${re}</td><td>${esc(r.triager || '')}<div class="muted">${esc(r.reportedBy || '')} • ${age(r.updatedAt || r.reportedAt)}</div></td></tr>`;
+    }).join('');
+    setText('list-note', `${vis.length} shown, priority first • tap a row for full details • highlighted = updated in the last 90 s`);
+    if (openUid) renderPatient(byUid(openUid));
+    renderLegend();
+    if (!sameData || !map) renderMap(vis);
+    detectAlerts(all, devs, now);
+    renderMethane();
+    renderHospitals(all);
+    renderTimeline(all);
+    renderDebrief(all);
+    renderMarkTools();
+}
+
+// ---------- Debrief timings (same figures as the phones, for every linked phone) ----------
+function debriefRowsHtml(t) {
+    return t.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="t">${r.at ? `${hm(r.at)} <span class="muted">+${r.mins} min</span>` : '<span class="muted">not yet</span>'}</td><td class="muted">${esc(r.note || '')}</td></tr>`).join('') +
+        (t.p1SceneMedianMins !== null ? `<tr><td>P1 time on scene (median of ${t.p1SceneCount})</td><td class="t">${t.p1SceneMedianMins} min</td><td class="muted">first record to leaving</td></tr>` : '');
+}
+function renderDebrief(all) {
+    const t = MITTLib.debriefTimings(all, { startedAt: data.createdAt });
+    $('debrief').innerHTML = t.count ? `<table class="debrief"><tbody>${debriefRowsHtml(t)}</tbody></table>` : '<p class="muted">Nothing recorded yet.</p>';
+    setText('debrief-note', t.count ? `minutes from ${hm(t.start)} (incident started or first record)` : '');
+}
+
+// ---------- Shared map markings: placed here, sent to every linked phone with its next report ----------
+function canMark() { return !!data && (demo || (cfg && !data.viewOnly)); }
+function markTypeChanged() {
+    const ty = MITTLib.MAP_MARK_TYPES[$('mark-type').value];
+    $('mark-radius').style.display = ty.circle ? '' : 'none';
+    if (ty.circle) $('mark-radius').value = ty.radius;
+}
+function renderMarkTools() {
+    $('mark-tools').style.display = canMark() ? '' : 'none';
+    const marks = MITTLib.normaliseMapMarks(data.marks || []);
+    $('mark-list').innerHTML = marks.map(m => { const ty = MITTLib.MAP_MARK_TYPES[m.type]; return `<span class="mark-chip" style="background:${ty.colour}">${esc(ty.short)}${m.label ? ': ' + esc(m.label) : ''}${m.radius ? ` <small>${m.radius} m</small>` : ''}${canMark() ? `<button type="button" title="Remove" aria-label="Remove ${esc(ty.label)}" data-act="removeMark" data-id="${esc(m.id)}">✕</button>` : ''}</span>`; }).join('');
+}
+function startMarking() {
+    if (!canMark() || !ensureMap()) return;
+    marking = !marking;
+    document.body.classList.toggle('marking', marking);
+    $('btn-mark').textContent = marking ? 'Cancel' : 'Place on map';
+    setText('mark-hint', marking ? 'Click the map where it goes.' : '');
+}
+async function saveMarks(marks) {
+    marks = MITTLib.normaliseMapMarks(marks);
+    if (demo) { demoMarks = marks; data.marks = marks; render(); return true; }
+    try {
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/marks`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify({ marks }), cache: 'no-store' });
+        const b = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(b.message || `Could not save the map markings (server replied ${r.status}).`); return false; }
+        data.marks = b.marks || marks; data.marksAt = b.marksAt || Date.now();
+        render();
+        setText('mark-hint', 'Saved. Phones get it with their next report (within a minute).');
+        return true;
+    } catch (e) { alert('Could not reach the server, so the map markings were not saved. Try again.'); return false; }
+}
+function onMapClickMark(ev) {
+    if (!marking) return;
+    startMarking();
+    const type = $('mark-type').value;
+    const mark = { id: 'm' + Date.now().toString(36), type, lat: ev.latlng.lat, lng: ev.latlng.lng, label: $('mark-label').value.trim(), radius: Number($('mark-radius').value) || undefined, at: Date.now() };
+    $('mark-label').value = '';
+    saveMarks((data.marks || []).concat([mark]));
+}
+function removeMark(id) { saveMarks((data.marks || []).filter(m => m.id !== id)); }
+function renderMarks() {
+    if (!map) return;
+    if (!marksLayer) marksLayer = L.layerGroup().addTo(map);
+    marksLayer.clearLayers();
+    MITTLib.normaliseMapMarks(data.marks || []).forEach(m => {
+        const ty = MITTLib.MAP_MARK_TYPES[m.type];
+        const pop = `<b>${esc(ty.label)}</b>${m.label ? '<br>' + esc(m.label) : ''}${m.radius ? `<br>Radius about ${m.radius} m` : ''}`;
+        if (ty.circle) marksLayer.addLayer(L.circle([m.lat, m.lng], { radius: m.radius, color: ty.colour, weight: 3, dashArray: '8 6', fill: false, interactive: false }));
+        // A cordon's label sits on its northern edge, so an inner and outer cordon round the same point both read.
+        marksLayer.addLayer(L.marker([ty.circle ? m.lat + m.radius / 111320 : m.lat, m.lng], { icon: L.divIcon({ html: `<span class="mk-mark" style="background:${ty.colour}">${esc(m.label ? ty.short + ': ' + m.label : ty.short)}</span>`, className: 'mk-wrap', iconSize: [0, 0] }), zIndexOffset: 900 }).bindPopup(pop));
+    });
+}
+
+// ---------- Alerts: things the control room must not miss, with a sound ----------
+// Raised when something changes between two refreshes: a new P1 / P1 Hold / not-breathing casualty, a casualty
+// whose category got worse, a tourniquet that has been on for an hour, a phone that has gone quiet. The first
+// load raises nothing (everything is "new" then). Sound is a short WebAudio tone; no media file needed.
+const TOURNIQUET_WARN_MS = 60 * 60 * 1000;
+const ALERTS = { seen: null, list: [], sound: (() => { try { return localStorage.getItem('mit_cmd_sound') !== '0'; } catch (e) { return true; } })(), ctx: null, id: 0 };
+function renderSoundBtn() { $('btn-sound').textContent = ALERTS.sound ? '🔔 Sound on' : '🔕 Sound off'; $('btn-sound').setAttribute('aria-pressed', ALERTS.sound ? 'true' : 'false'); }
+function toggleSound() { ALERTS.sound = !ALERTS.sound; try { localStorage.setItem('mit_cmd_sound', ALERTS.sound ? '1' : '0'); } catch (e) {} renderSoundBtn(); if (ALERTS.sound) beep(1); checkSoundUnlocked(); }
+// Browsers keep a page silent until someone taps it. A screen that signed in by itself (a wall display, the
+// commander's own phone, a reload) would miss every alert sound, so show a "tap to enable sound" button until then.
+function checkSoundUnlocked() {
+    const b = $('btn-sound-unlock');
+    let need = false;
+    if (ALERTS.sound && !$('dash').classList.contains('hidden')) {
+        try {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) { if (!ALERTS.ctx) ALERTS.ctx = new AC(); need = ALERTS.ctx.state === 'suspended'; }
+        } catch (e) {}
+    }
+    b.style.display = need ? '' : 'none';
+}
+function unlockSound() {
+    if (!ALERTS.ctx || ALERTS.ctx.state !== 'suspended') { checkSoundUnlocked(); return; }
+    ALERTS.ctx.resume().then(() => { checkSoundUnlocked(); }).catch(() => {});
+}
+function beep(n) {
+    if (!ALERTS.sound) return;
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!ALERTS.ctx) ALERTS.ctx = new AC();
+        const ctx = ALERTS.ctx;
+        if (ctx.state === 'suspended') ctx.resume();
+        for (let i = 0; i < (n || 2); i++) {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'sine'; o.frequency.value = i % 2 ? 1175 : 880;
+            g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.22);
+            g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + i * 0.22 + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.22 + 0.2);
+            o.connect(g); g.connect(ctx.destination);
+            o.start(ctx.currentTime + i * 0.22); o.stop(ctx.currentTime + i * 0.22 + 0.21);
+        }
+    } catch (e) {}
+}
+function tourniquetSince(r) {
+    const t = r.interventions && r.interventions.Tourniquet;
+    if (!t) return null;
+    if (t.ts) return Number(t.ts);
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(t.time || ''));
+    if (!m) return null;
+    const d = new Date(); d.setHours(+m[1], +m[2], 0, 0);
+    if (d.getTime() > Date.now() + 60000) d.setDate(d.getDate() - 1);   // "23:50" seen at 00:10 was yesterday
+    return d.getTime();
+}
+function detectAlerts(records, devices, now) {
+    const seen = ALERTS.seen;
+    const next = { r: {}, d: {} };
+    const fresh = [];
+    records.forEach(r => {
+        const prev = seen && seen.r[r.uid];
+        const tq = tourniquetSince(r);
+        const cur = { category: r.category, tq: !!(tq && now - tq >= TOURNIQUET_WARN_MS && !r.evacuated) };
+        next.r[r.uid] = cur;
+        if (!seen) return;
+        if (!prev) {
+            if (!r.evacuated && (r.category === 'P1' || r.category === 'P1_HOLD' || r.category === 'NOT_BREATHING')) fresh.push({ red: true, uid: r.uid, msg: `New ${MITTLib.categoryShort(r.category)}: ${esc(shortId(r.id))}`, sub: `${esc(place(r) || 'no place recorded')}${r.triager ? ' • ' + esc(r.triager) : ''}` });
+            return;
+        }
+        if (prev.category !== r.category && MITTLib.categoryWorsened(prev.category, r.category) && !r.evacuated) fresh.push({ red: true, uid: r.uid, msg: `${esc(shortId(r.id))} got worse: ${MITTLib.categoryShort(prev.category)} → ${MITTLib.categoryShort(r.category)}`, sub: esc(place(r) || '') });
+        if (cur.tq && !prev.tq) fresh.push({ red: false, uid: r.uid, msg: `${esc(shortId(r.id))}: tourniquet on for over an hour`, sub: `since ${esc((r.interventions.Tourniquet || {}).time || '?')} • ${esc(place(r) || '')}` });
+    });
+    (devices || []).forEach(d => {
+        const low = typeof d.battery === 'number' && !d.charging && d.battery <= 10;
+        next.d[d.deviceId] = { stale: !!d.stale, low };
+        const prev = seen && seen.d[d.deviceId];
+        if (prev && d.stale && !prev.stale) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)} not heard from for 5 minutes`, sub: `last report ${esc(age(d.lastSeen))}` });
+        if (prev && low && !prev.low) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)}: battery ${d.battery}%`, sub: 'ask them to plug in or hand their patients to a charged phone' });
+    });
+    ALERTS.seen = next;
+    if (!fresh.length) return;
+    fresh.forEach(a => { a.id = ++ALERTS.id; a.at = now; ALERTS.list.unshift(a); });
+    ALERTS.list = ALERTS.list.slice(0, 20);
+    renderAlerts(fresh.map(a => a.id));
+    beep(fresh.some(a => a.red) ? 3 : 2);
+}
+function renderAlerts(newIds) {
+    const box = $('alerts');
+    if (!ALERTS.list.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    const isNew = (id) => (newIds || []).indexOf(id) > -1;
+    box.innerHTML = ALERTS.list.map(a => `<div class="alert${a.red ? ' red' : ''}${isNew(a.id) ? ' new' : ''}"${a.uid ? ` data-act="openPatient" data-uid="${esc(a.uid)}" role="button" tabindex="0"` : ''}><span>${a.red ? '🔴' : '🟠'}</span><span class="msg">${a.msg}<small>${a.sub || ''}</small></span><span class="when">${hm(a.at)}</span><button type="button" class="x" title="Dismiss" data-act="dismissAlert" data-id="${a.id}" aria-label="Dismiss">✕</button></div>`).join('') +
+        `<div class="alerts-foot"><button type="button" class="btn small sec" data-act="dismissAlert">Clear all</button></div>`;
+    box.classList.remove('hidden');
+}
+function dismissAlert(id) { ALERTS.list = id ? ALERTS.list.filter(a => a.id !== id) : []; renderAlerts(); }
+
+// ---------- METHANE (the newest one any phone has saved) ----------
+function renderMethane() {
+    const m = data && data.methane;
+    const card = $('methane-card');
+    if (!m) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    const rows = [['M', 'Major incident', m.m], ['E', 'Exact location', m.e], ['T', 'Type', m.t], ['H', 'Hazards', m.h], ['A', 'Access', m.a], ['N', 'Number of casualties', m.n], ['E', 'Emergency services', m.e_svc]];
+    $('methane').innerHTML = `<dl class="methane">${rows.map(r => `<dt title="${esc(r[1])}">${r[0]}</dt><dd>${r[2] ? esc(r[2]) : '<span class="muted">—</span>'}</dd>`).join('')}</dl>`;
+    setText('methane-note', `${m.by ? 'by ' + m.by + ' • ' : ''}${hm(m.timestamp)}${m.device ? ' • phone ' + m.device : ''}`);
+}
+
+// ---------- Hospital board: who has gone where, against a capacity the control room types in ----------
+function capKey() { return 'mit_cmd_cap_' + ((data && data.code) || ''); }
+function loadCaps() { try { return JSON.parse(localStorage.getItem(capKey()) || '{}') || {}; } catch (e) { return {}; } }
+function setCap(h, v) { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} const c = loadCaps(); const n = parseInt(v, 10); if (isFinite(n) && n >= 0) c[h] = n; else delete c[h]; try { localStorage.setItem(capKey(), JSON.stringify(c)); } catch (e) {} renderHospitals((data && data.records) || []); }
+// Capacity boxes carry the hospital name in data-h (escaped); one listener on the board, so no script is ever built from a phone-supplied name.
+document.addEventListener('DOMContentLoaded', () => { $('hosp').addEventListener('change', e => { const t = e.target; if (t && t.matches && t.matches('input[data-h]')) setCap(t.getAttribute('data-h'), t.value); }); });
+function addHospitalRow() { const sel = $('hosp-add'); const h = sel && sel.value; if (!h) return; const c = loadCaps(); if (c[h] === undefined) c[h] = 0; try { localStorage.setItem(capKey(), JSON.stringify(c)); } catch (e) {} renderHospitals((data && data.records) || []); }
+function renderHospitals(all) {
+    // Polls redraw the board every 30 s; do not wipe a capacity someone is still typing.
+    const ae = document.activeElement;
+    if (ae && ae.matches && ae.matches('#hosp input[data-h]')) return;
+    const caps = loadCaps();
+    const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+    const by = {};
+    all.filter(r => r.evacuated).forEach(r => { const h = String(r.evacDest || '').trim() || 'Destination not recorded'; (by[h] = by[h] || []).push(r); });
+    Object.keys(caps).forEach(h => { by[h] = by[h] || []; });
+    const names = Object.keys(by).sort((a, b) => by[b].length - by[a].length || a.localeCompare(b));
+    const defaults = (MITTLib.DEFAULT_HOSPITALS || []).filter(h => !by[h]);
+    const rows = names.map(h => {
+        const rs = by[h];
+        const cap = caps[h];
+        const over = cap !== undefined && cap > 0 && rs.length > cap;
+        const vehicles = Array.from(new Set(rs.map(r => r.evacVehicle).filter(Boolean)));
+        const last = rs.length ? Math.max.apply(null, rs.map(r => r.evacAt || r.handoverAt || r.updatedAt || 0)) : 0;
+        return `<tr class="${over ? 'over' : ''}"><td><b>${esc(h)}</b>${vehicles.length ? `<div class="cap-note">${esc(vehicles.join(', '))}</div>` : ''}${last ? `<div class="cap-note">last ${hm(last)}</div>` : ''}</td>` +
+            order.map(c => `<td class="n">${rs.filter(r => r.category === c).length || ''}</td>`).join('') +
+            `<td class="n">${rs.length}</td><td><input type="number" min="0" inputmode="numeric" value="${cap === undefined ? '' : cap}" placeholder="—" data-h="${esc(h)}" title="Capacity agreed with this hospital"> ${over ? '<span class="flag">over</span>' : ''}</td></tr>`;
+    }).join('');
+    $('hosp').innerHTML = (names.length ? `<table class="hb"><thead><tr><th>Hospital</th>${order.map(c => `<th class="n">${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th class="n">Sent</th><th>Capacity</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">Nobody evacuated yet. Add a hospital to record its agreed capacity.</p>') +
+        (defaults.length ? `<div class="row" style="margin-top:8px"><select id="hosp-add" style="font-size:0.9rem; padding:6px; max-width:60%"><option value="">Add a hospital…</option>${defaults.map(h => `<option>${esc(h)}</option>`).join('')}</select><button type="button" class="btn small sec" data-act="addHospitalRow">Add</button></div>` : '');
+    const sent = all.filter(r => r.evacuated).length;
+    setText('hosp-note', `${sent} evacuated to ${names.filter(h => by[h].length).length} destination${names.filter(h => by[h].length).length === 1 ? '' : 's'} • capacity is typed here and stays on this screen only`);
+}
+
+// ---------- Incident timeline, built from what the records already carry ----------
+let timelineAll = false;
+function timelineEvents(all) {
+    const ev = [];
+    all.forEach(r => {
+        const id = shortId(r.id);
+        const hist = r.triageHistory || [];
+        if (hist.length) hist.forEach((t, i) => { if (t.ts) ev.push({ ts: t.ts, uid: r.uid, id, text: `${i === 0 ? 'Triaged' : t.kind === 'correction' ? 'Corrected' : 'Re-triaged'} ${esc(t.tool || '')} <b>${esc(MITTLib.categoryShort(t.category))}</b>`, sub: [t.reason, t.by].filter(Boolean).join(' • ') }); });
+        else if (r.timestamp) ev.push({ ts: r.timestamp, uid: r.uid, id, text: `Triaged ${esc(r.tool || '')} <b>${esc(MITTLib.categoryShort(r.category))}</b>`, sub: [r.reason, r.triager].filter(Boolean).join(' • ') });
+        Object.keys(r.interventions || {}).forEach(k => { const t = r.interventions[k]; if (t && t.ts) ev.push({ ts: t.ts, uid: r.uid, id, text: esc(k), sub: t.by || '' }); });
+        if (r.lastDeteriorationAt) ev.push({ ts: r.lastDeteriorationAt, uid: r.uid, id, text: '<b style="color:#DA291C">Deteriorated</b>', sub: '' });
+        if (r.ccsAt) ev.push({ ts: r.ccsAt, uid: r.uid, id, text: 'Arrived at CCS', sub: '' });
+        if (r.handoverAt && r.handoverTo) ev.push({ ts: r.handoverAt, uid: r.uid, id, text: `Handed to ${esc(r.handoverTo)}`, sub: r.handoverState || '' });
+        if (r.evacuated) { const t = r.evacAt || (r.handoverAt && r.handoverState === 'accepted' ? r.handoverAt : 0) || r.updatedAt; if (t) ev.push({ ts: t, uid: r.uid, id, text: `<b>Evacuated</b> to ${esc(r.evacDest || 'destination not recorded')}`, sub: r.evacVehicle || '' }); }
+    });
+    ev.sort((a, b) => b.ts - a.ts);
+    return ev;
+}
+function renderTimeline(all) {
+    const ev = timelineEvents(all);
+    const shown = timelineAll ? ev : ev.slice(0, 40);
+    $('timeline').innerHTML = shown.map(e => `<li data-act="openPatient" data-uid="${esc(e.uid)}" role="button" tabindex="0"><span class="t">${hm(e.ts)}</span><span class="id">${esc(e.id)}</span><span class="ev">${e.text}${e.sub ? ` <small>${esc(e.sub)}</small>` : ''}</span></li>`).join('') || '<li class="muted">Nothing recorded yet.</li>';
+    $('timeline-note').innerHTML = `${ev.length} event${ev.length === 1 ? '' : 's'}, newest first${ev.length > 40 ? ` • <a href="#" data-act="toggleTimeline">${timelineAll ? 'show latest 40' : 'show all'}</a>` : ''}`;
+}
+
+// ---------- Printable summary: a record for the incident log and the debrief ----------
+function printSummary() {
+    if (!data) return;
+    const all = data.records || [];
+    const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+    const sc = MITTLib.stageCounts(all);
+    const onScene = all.filter(r => !r.evacuated);
+    const m = data.methane;
+    const when = new Date().toLocaleString('en-GB');
+    const counts = `<table><thead><tr><th></th>${order.map(c => `<th>${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th>Total</th></tr></thead><tbody>` +
+        `<tr><td>On scene (field + CCS)</td>${order.map(c => `<td>${onScene.filter(r => r.category === c).length}</td>`).join('')}<td>${onScene.length}</td></tr>` +
+        `<tr><td>Evacuated</td>${order.map(c => `<td>${all.filter(r => r.evacuated && r.category === c).length}</td>`).join('')}<td>${sc.evacuated}</td></tr>` +
+        `<tr><td><b>All casualties</b></td>${order.map(c => `<td><b>${all.filter(r => r.category === c).length}</b></td>`).join('')}<td><b>${all.length}</b></td></tr></tbody></table>` +
+        `<p>In the field ${sc.field} • at CCS ${sc.ccs} • evacuated ${sc.evacuated} • TST only (no MITT sort) ${onScene.filter(r => !hadMitt(r)).length}</p>`;
+    const hosp = Object.keys(sc.hospitals).sort().map(h => { const rs = all.filter(r => r.evacuated && (String(r.evacDest || '').trim() || 'Destination not recorded') === h); return `<tr><td>${esc(h)}</td>${order.map(c => `<td>${rs.filter(r => r.category === c).length || ''}</td>`).join('')}<td>${rs.length}</td><td>${esc(Array.from(new Set(rs.map(r => r.evacVehicle).filter(Boolean))).join(', '))}</td></tr>`; }).join('');
+    const phones = (data.devices || []).map(d => `<tr><td>${esc(d.triager || 'Unnamed')}</td><td>${esc(d.deviceId)}</td><td>${d.records || 0}</td><td>${hm(d.joinedAt)}</td><td>${hm(d.lastSeen)}</td></tr>`).join('');
+    const tl = timelineEvents(all).slice().reverse().map(e => `<tr><td>${hm(e.ts)}</td><td>${esc(e.id)}</td><td>${e.text}${e.sub ? ` <span class="muted">${esc(e.sub)}</span>` : ''}</td></tr>`).join('');
+    const rows = all.map(r => { const l = loc(r); const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : ''; return `<tr><td>${esc(r.id)}${r.cardNo ? `<br><b>card ${esc(r.cardNo)}</b>` : ''}</td><td>${cat(r.category)} ${hadMitt(r) ? 'MITT' : 'TST only'}</td><td>${esc(MITTLib.STAGE_INFO[stage(r)].short)}${r.evacuated ? ' → ' + esc(r.evacDest || '?') : ''}</td><td>${hm(r.timestamp)}</td><td>${esc(place(r) || '')}${grid ? ` <span class="muted">${esc(grid)}</span>` : ''}</td><td>${Object.keys(r.interventions || {}).map(k => esc(k) + ' ' + esc((r.interventions[k] || {}).time || '')).join(', ')}</td><td>${esc(r.triager || '')}</td></tr>`; }).join('');
+    $('print-view').innerHTML = `<h1>Major Incident Triage — commander summary</h1>` +
+        `<p>${data.name ? esc(data.name) + ' • ' : ''}Code ${esc(data.code || '')}${data.incidentCode ? ' • Incident ' + esc(data.incidentCode) : ''}${data.training ? ' • <b>TRAINING / EXERCISE</b>' : ''}<br>Started ${data.createdAt ? new Date(data.createdAt).toLocaleString('en-GB') : '?'} • printed ${when} • ${all.length} casualties from ${(data.devices || []).length} phones</p>` +
+        `<h2>Counts</h2>${counts}` +
+        (m ? `<h2>METHANE (${m.by ? esc(m.by) + ', ' : ''}${hm(m.timestamp)})</h2><table><tbody>${[['M', m.m], ['E', m.e], ['T', m.t], ['H', m.h], ['A', m.a], ['N', m.n], ['E', m.e_svc]].map(x => `<tr><th style="width:2em">${x[0]}</th><td>${esc(x[1] || '')}</td></tr>`).join('')}</tbody></table>` : '') +
+        (() => { const t = MITTLib.debriefTimings(all, { startedAt: data.createdAt }); return t.count ? `<h2>Debrief timings</h2><table><tbody>${debriefRowsHtml(t)}</tbody></table>` : ''; })() +
+        `<h2>Hospitals</h2>${hosp ? `<table><thead><tr><th>Hospital</th>${order.map(c => `<th>${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th>Sent</th><th>Vehicles</th></tr></thead><tbody>${hosp}</tbody></table>` : '<p>Nobody evacuated.</p>'}` +
+        `<h2>Phones</h2><table><thead><tr><th>Triager</th><th>Phone</th><th>Records</th><th>Joined</th><th>Last report</th></tr></thead><tbody>${phones}</tbody></table>` +
+        `<h2>Casualties (${all.length})</h2><table><thead><tr><th>ID</th><th>Category</th><th>Stage</th><th>Triaged</th><th>Where</th><th>Interventions</th><th>By</th></tr></thead><tbody>${rows}</tbody></table>` +
+        `<h2>Timeline</h2><table><thead><tr><th>Time</th><th>ID</th><th>Event</th></tr></thead><tbody>${tl}</tbody></table>` +
+        `<p class="muted">An aid for a live incident, not a clinical record: the phones keep the audit trail. Printed from the commander screen.</p>`;
+    setTimeout(() => window.print(), 50);
+}
+function batteryTag(d) { if (typeof d.battery !== 'number' || d.charging || d.battery > 25) return ''; return ` <span class="cat-chip" style="background:${d.battery <= 10 ? '#DA291C' : '#c9a700'};color:#fff;font-size:0.72rem;padding:1px 6px" title="Battery">🔋 ${d.battery}%</span>`; }
+// The phone's ID is "<prefix>-<TOOL>-<number>"; on the wall the prefix is noise, so show "TST 014" style.
+function shortId(id) { const m = /^(?:.*-)?(TST|MITT)-(\d+)$/.exec(String(id || '')); return m ? `${m[1]} ${m[2]}` : String(id || ''); }
+let legendDone = false;
+function renderLegend() {
+    if (legendDone) return; legendDone = true;
+    const sw = (c, extra) => `<span class="sw${extra ? ' ' + extra : ''}" style="background:${MITTLib.CATEGORY_INFO[c] ? MITTLib.CATEGORY_INFO[c].colour : '#4C6272'}"></span>`;
+    $('legend').innerHTML = ['P1', 'P2', 'P3', 'P1_HOLD', 'NOT_BREATHING', 'DEAD'].map(c => `<span class="lg">${sw(c)}${esc(MITTLib.CATEGORY_INFO[c].short)} <span class="muted">${esc(MITTLib.CATEGORY_INFO[c].label.toLowerCase())}</span></span>`).join('') +
+        `<span class="lg opt"><span class="sw dash"></span>dashed = TST sieve</span><span class="lg opt"><span class="sw sq" style="background:#aaa"></span>square = at CCS</span><span class="lg opt"><span class="sw sq" style="background:#007F3B"></span>CCS</span><span class="spacer"></span><span class="lg opt">Big number = on scene now • small = including evacuated • W wall • F full screen</span>`;
+}
+function markerIcon(r) {
+    const info = MITTLib.CATEGORY_INFO[r.category] || { colour: '#005EB8', text: '#fff' };
+    const tail = String(r.id || '').replace(/^.*-/, '').slice(-4) || '•';
+    return L.divIcon({ html: `<div class="mk${r.tool === 'TST' ? ' mk-tst' : ''}${r.evacuated ? ' mk-evac' : ''}${stage(r) === 'ccs' ? ' mk-atccs' : ''}" style="background:${info.colour};color:${info.text};">${esc(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
+}
+function ensureMap() {
+    if (map || typeof L === 'undefined') return !!map;
+    map = L.map('map').setView([54.0, -2.0], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
+    L.control.scale({ imperial: false }).addTo(map);
+    cluster = L.markerClusterGroup({ maxClusterRadius: 32, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19 });
+    map.addLayer(cluster);
+    circles = L.layerGroup().addTo(map);
+    map.on('click', onMapClickMark);
+    return true;
+}
+function renderMap(records) {
+    if (!ensureMap()) { setText('map-note', 'map library did not load'); return; }
+    cluster.clearLayers(); circles.clearLayers();
+    if (ccsMarker) { map.removeLayer(ccsMarker); ccsMarker = null; }
+    let n = 0;
+    records.forEach(r => {
+        const l = loc(r);
+        if (!l || !l.lat) return;
+        n++;
+        const ll = [Number(l.lat), Number(l.lng)];
+        const grid = MITTLib.toOsGridRef(ll[0], ll[1]);
+        const m = L.marker(ll, { icon: markerIcon(r) });
+        m.bindPopup(`<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div><button type="button" class="btn small" style="margin-top:6px" data-act="openPatient" data-uid="${esc(r.uid)}">Full details</button></div>`);
+        m._uid = r.uid;
+        cluster.addLayer(m);
+        if (l.acc && l.acc > 15) circles.addLayer(L.circle(ll, { radius: Number(l.acc), color: MITTLib.CATEGORY_INFO[r.category] ? MITTLib.CATEGORY_INFO[r.category].colour : '#005EB8', weight: 1, opacity: 0.6, fillOpacity: 0.08 }));
+    });
+    if (data.ccs && data.ccs.lat) {
+        ccsMarker = L.marker([Number(data.ccs.lat), Number(data.ccs.lng)], { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty Clearing Station').addTo(map);
+    }
+    renderMarks();
+    setText('map-note', `${n} with a position${records.length - n ? `, ${records.length - n} without` : ''}`);
+    if (firstFit && (n || ccsMarker)) { firstFit = false; fitMap(); }
+    setTimeout(() => map.invalidateSize(), 100);
+}
+function fitMap() {
+    if (!map) return;
+    const layers = cluster.getLayers().slice();
+    if (ccsMarker) layers.push(ccsMarker);
+    if (!layers.length) return;
+    const b = L.featureGroup(layers).getBounds();
+    map.fitBounds(b.pad(0.2), { maxZoom: 18 });
+}
+// ---------- Patient details (any row, attention item or marker) ----------
+let openUid = null;
+let ptReturnFocus = null;   // where focus goes back to when the details close
+function openPatient(uid) {
+    const r = byUid(uid); if (!r) return;
+    if (!openUid) ptReturnFocus = document.activeElement;
+    openUid = uid; renderPatient(r); $('pt-modal').classList.add('open');
+    try { $('pt-close').focus(); } catch (e) {}
+}
+function closePatient() {
+    const wasOpen = !!openUid;
+    openUid = null; $('pt-modal').classList.remove('open');
+    const back = ptReturnFocus; ptReturnFocus = null;
+    if (wasOpen && back && back.isConnected && back.focus) { try { back.focus(); } catch (e) {} }
+}
+function showPatientOnMap() {
+    const r = byUid(openUid); const l = r && loc(r);
+    if (!l || !l.lat || !map) return;
+    closePatient();
+    if (document.body.classList.contains('wall')) setWall(false);
+    map.setView([Number(l.lat), Number(l.lng)], Math.max(map.getZoom(), 18));
+    const m = cluster.getLayers().find(x => x._uid === r.uid);
+    if (m) setTimeout(() => cluster.zoomToShowLayer(m, () => m.openPopup()), 200);
+    $('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function dhm(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'; }
+function kv(rows) { return `<dl class="kv">${rows.filter(x => x[1] !== undefined && x[1] !== null && x[1] !== '').map(x => `<dt>${esc(x[0])}</dt><dd>${x[2] ? x[1] : esc(String(x[1]))}</dd>`).join('')}</dl>`; }
+function renderPatient(r) {
+    if (!r) { closePatient(); return; }
+    const now = Date.now();
+    const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
+    const st = stage(r);
+    setText('pt-id', r.id);
+    $('pt-chips').innerHTML = `${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <span class="cat-chip" style="background:#DA291C;color:#fff">HIGH RISK</span>' : ''}${rs.state === 'overdue' ? ` <span class="cat-chip" style="background:#DA291C;color:#fff">Reassessment overdue ${Math.round(rs.overdueMs / 60000)} min</span>` : ''}`;
+    const hist = (r.triageHistory || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const triage = `<ul class="tl">${hist.length ? hist.map(t => `<li><span class="t">${dhm(t.ts)}</span><span><b>${esc(t.tool || '')} ${esc(MITTLib.categoryShort(t.category))}</b> ${esc(t.reason || '')}${t.kind && t.kind !== 'triage' ? ` <span class="muted">(${esc(t.kind)})</span>` : ''}${t.by ? ` <span class="muted">by ${esc(t.by)}</span>` : ''}${t.action ? `<div class="muted">${esc(t.action)}</div>` : ''}</span></li>`).join('') : `<li><span class="t">${dhm(r.timestamp)}</span><span><b>${esc(r.tool || '')} ${esc(MITTLib.categoryShort(r.category))}</b> ${esc(r.reason || '')}</span></li>`}</ul>`;
+    const ints = Object.keys(r.interventions || {});
+    const intsHtml = ints.length ? `<div class="ints">${ints.map(k => `<span class="int">${esc(k)}<small>${esc((r.interventions[k] && r.interventions[k].time) || '')}</small></span>`).join('')}</div>` : '<span class="muted">None recorded</span>';
+    const inj = r.injuries || [];
+    const injHtml = inj.length ? `<div class="inj"><svg viewBox="0 0 200 400"><path d="M100,20 C120,20 130,40 130,60 C130,70 120,80 100,80 C80,80 70,70 70,60 C70,40 80,20 100,20 Z" fill="#e8ecef" stroke="#555" stroke-width="2"/><path d="M70,80 L40,100 L40,200 L60,200 L70,150 L70,250 L90,400 L110,400 L130,250 L130,150 L140,200 L160,200 L160,100 L130,80 Z" fill="#e8ecef" stroke="#555" stroke-width="2"/>${inj.map(m => `<circle cx="${(m.x * 200).toFixed(1)}" cy="${(m.y * 400).toFixed(1)}" r="9" fill="${m.severity === 'severe' ? '#DA291C' : m.severity === 'moderate' ? '#ff9800' : '#005EB8'}" stroke="#fff" stroke-width="2"/>`).join('')}</svg><ul>${inj.map(m => `<li><b>${esc([m.side, m.region].filter(Boolean).join(' '))}</b>${m.label ? ' ' + esc(m.label) : ''}${m.severity && m.severity !== 'unspecified' ? ` <span class="muted">(${esc(m.severity)})</span>` : ''}${m.time ? ` <span class="muted">${esc(m.time)}</span>` : ''}</li>`).join('')}</ul></div>` : '<span class="muted">None marked</span>';
+    const l = loc(r);
+    const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : '';
+    const lh = (r.locationHistory || []).slice().sort((a, b) => (a.at || a.timestamp || 0) - (b.at || b.timestamp || 0));
+    const locHtml = kv([['Place', place(r) || '—'], ['Grid ref', grid ? `${grid}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}` : 'no position'], ['Confidence', r.locationConfidence || '']]) +
+        (lh.length > 1 ? `<ul class="tl" style="margin-top:6px">${lh.map(h => `<li><span class="t">${dhm(h.at || h.timestamp)}</span><span>${esc(h.reason || h.action || 'position')}${h.sector || h.landmark ? ` <span class="muted">${esc([h.sector, h.landmark, h.area].filter(Boolean).join(', '))}</span>` : ''}${h.lat ? ` <span class="muted">${esc(MITTLib.toOsGridRef(h.lat, h.lng) || '')}</span>` : ''}${h.user ? ` <span class="muted">by ${esc(h.user)}</span>` : ''}</span></li>`).join('')}</ul>` : '');
+    const chain = kv([
+        ['Stage', `${stageTag(r)} ${st === 'ccs' && r.ccsAt ? 'since ' + dhm(r.ccsAt) : ''}`, true],
+        ['Evacuated to', r.evacuated ? (r.evacDest || 'destination not recorded') : ''],
+        ['Vehicle / crew', r.evacVehicle || ''], ['Hospital ID', r.hospitalId || ''],
+        ['Care handed to', r.handoverTo ? `${r.handoverTo}${r.handoverState ? ' (' + r.handoverState + ')' : ''}${r.handoverAt ? ' at ' + dhm(r.handoverAt) : ''}` : (r.handoverState ? r.handoverState : '')],
+        ['Time of death', r.tod || ''],
+    ]);
+    const reass = kv([
+        ['Last reassessed', r.lastReassessed ? `${dhm(r.lastReassessed)}${r.reassessOutcome ? ' • ' + r.reassessOutcome : ''}` : 'not yet'],
+        ['Next due', rs.state === 'na' ? 'n/a' : rs.state === 'overdue' ? `<span class="flag">overdue by ${Math.round(rs.overdueMs / 60000)} min</span>` : rs.state === 'due-soon' ? 'now' : dhm(rs.dueAt), true],
+        ['Deteriorated', r.lastDeteriorationAt ? dhm(r.lastDeteriorationAt) : ''],
+    ]);
+    const who = kv([['Triage card no.', r.cardNo || ''], ['Triaged by', `${r.triager || r.createdBy || '—'}${r.deviceId ? ' • phone ' + r.deviceId : ''}`], ['First triage', dhm(r.createdAt || r.timestamp)], ['Reported by', r.reportedBy ? `${r.reportedBy} • ${age(r.reportedAt || r.updatedAt)}` : ''], ['Last change', age(r.updatedAt)], ['Incident', r.incidentCode || '']]);
+    $('pt-body').innerHTML =
+        `<div class="pt-sec"><h4>Triage</h4>${triage}</div>` +
+        `<div class="pt-sec"><h4>Reassessment</h4>${reass}<h4 style="margin-top:10px">Where</h4>${locHtml}</div>` +
+        `<div class="pt-sec"><h4>Interventions</h4>${intsHtml}<h4 style="margin-top:10px">Injuries</h4>${injHtml}</div>` +
+        `<div class="pt-sec"><h4>CCS, evacuation and handover</h4>${chain}<h4 style="margin-top:10px">Recorded by</h4>${who}</div>` +
+        `<div class="pt-sec wide"><h4>Patient details and notes</h4>${kv([['Demographics', r.demos || ''], ['Allergies', r.allergies || '']])}${r.notes ? `<div class="pt-note">${esc(r.notes)}</div>` : '<span class="muted">No notes</span>'}</div>`;
+}
+function download(name, text, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+function stamp() { return MITTLib.isoWithOffset(Date.now()).replace(/[:.]/g, '-'); }
+function exportFile(kind) {
+    if (!data) return;
+    const recs = visibleRecords();
+    const opts = { name: `Major Incident Triage ${data.code} — casualties`, ccs: data.ccs };
+    const text = kind === 'gpx' ? MITTLib.buildGpx(recs, opts) : kind === 'kml' ? MITTLib.buildKml(recs, opts) : MITTLib.buildGeoJson(recs, opts);
+    download(`MITT_commander_${data.code}_${stamp()}.${kind}`, text, kind === 'gpx' ? 'application/gpx+xml' : kind === 'kml' ? 'application/vnd.google-earth.kml+xml' : 'application/geo+json');
+}
+function exportCsv() {
+    if (!data) return;
+    const c = MITTLib.csvCell;
+    const head = ['id', 'cardNo', 'category', 'tool', 'triaged', 'sector', 'landmark', 'floor', 'area', 'osGridRef', 'lat', 'lng', 'accuracyM', 'interventions', 'highRisk', 'evacuated', 'evacDest', 'triager', 'reportedBy', 'updated'];
+    const lines = [head.join(',')].concat(visibleRecords().map(r => { const l = loc(r) || {}; return [r.id, r.cardNo || '', r.category, r.tool, r.timestamp ? MITTLib.isoWithOffset(r.timestamp) : '', r.sector, r.landmark, r.floor, r.area, l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) || '' : '', l.lat || '', l.lng || '', l.acc || '', Object.keys(r.interventions || {}).map(k => k + ' ' + ((r.interventions[k] || {}).time || '')).join('; '), r.highRisk ? 'yes' : '', r.evacuated ? 'yes' : '', r.evacDest, r.triager, r.reportedBy, r.updatedAt ? MITTLib.isoWithOffset(r.updatedAt) : ''].map(c).join(','); }));
+    download(`MITT_commander_${data.code}_${stamp()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+}
+// ---------- Clicks, changes and keys: one listener each, no inline handlers ----------
+const ACTIONS = {
+    refreshNow, toggleWall, toggleFullscreen, toggleSound, unlockSound, printSummary, signOut, signIn, fitMap, exportCsv, startMarking,
+    showPatientOnMap, closePatient, addHospitalRow,
+    exportFile: (t) => exportFile(t.getAttribute('data-arg')),
+    setStageFilter: (t) => setStageFilter(t.getAttribute('data-stage')),
+    openPatient: (t) => openPatient(t.getAttribute('data-uid')),
+    removeMark: (t) => removeMark(t.getAttribute('data-id')),
+    dismissAlert: (t) => dismissAlert(t.hasAttribute('data-id') ? Number(t.getAttribute('data-id')) : undefined),
+    toggleTimeline: () => { timelineAll = !timelineAll; renderTimeline((data && data.records) || []); },
+};
+document.addEventListener('click', e => {
+    if (e.target === $('pt-modal')) { closePatient(); return; }
+    const t = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
+    if (!t || !ACTIONS[t.getAttribute('data-act')]) return;
+    if (t.tagName === 'A') e.preventDefault();
+    ACTIONS[t.getAttribute('data-act')](t, e);
+});
+document.addEventListener('change', e => {
+    if (e.target === $('mark-type')) markTypeChanged();
+    else if (e.target === $('show-evac')) render();
+});
+// The first tap or key anywhere also lets sound play.
+['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (ALERTS.ctx && ALERTS.ctx.state === 'suspended') unlockSound(); }, true));
+document.addEventListener('keydown', e => {
+    // Rows, alerts and timeline entries open with Enter or Space, as a button would.
+    if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(button):not(a)')) { e.preventDefault(); e.target.click(); return; }
+    if (e.key === 'Escape' && openUid) { closePatient(); return; }
+    if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
+    if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();
+    if ((e.key === 'f' || e.key === 'F') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleFullscreen();
+    if ((e.key === 's' || e.key === 'S') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '')) toggleSound();
+    if ((e.key === 'p' || e.key === 'P') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '')) printSummary();
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && (cfg || demo)) refreshNow(); });
+window.addEventListener('hashchange', () => { if (/^#DEMO/i.test(location.hash) && !demo) startDemo(); });
+if (loadCfg() === 'demo') startDemo();
+else if (cfg && cfg.code && cfg.pin) start();

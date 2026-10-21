@@ -288,6 +288,27 @@ function rec(uid, id, category, extra) {
         assert.deepStrictEqual(partial.body.records, []);
         assert.strictEqual((await core6.handle('POST', `/api/incident/${c.code}/lookup`, H(c.pin), JSON.stringify({}), '1.1.1.1')).status, 400);
     });
+    await test('patient IDs and card numbers keep only safe characters; the record is never refused for them', async () => {
+        const core7 = createCore({ store: makeStore(), now: () => clock });
+        const c = (await core7.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        await core7.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('s1', 'A1<b>"x\'</b>-TST-1', 'P1', { cardNo: 'WM&004/12 #3' }), rec('s2', '<>"\'&', 'P2'), rec('s3', 'José-7', 'P3')] }), '1.1.1.1');
+        const g = await core7.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        const by = {}; g.body.records.forEach(r => { by[r.uid] = r; });
+        assert.strictEqual(by.s1.id, 'A1bx/b-TST-1');
+        assert.strictEqual(by.s1.cardNo, 'WM004/12 #3');
+        assert.strictEqual(by.s2.id, 'UNNAMED-s2');
+        assert.strictEqual(by.s3.id, 'José-7');
+    });
+    await test('rate-limit keys are salted when a salt is given, so the same address gives a different key', async () => {
+        const plainStore = makeStore(), saltStore = makeStore();
+        const a = createCore({ store: plainStore, now: () => clock });
+        const b = createCore({ store: saltStore, now: () => clock, rateSalt: 'server-secret' });
+        await a.handle('GET', '/api/incident/ZZZZZZ', H('000000'), '', '9.9.9.9');
+        await b.handle('GET', '/api/incident/ZZZZZZ', H('000000'), '', '9.9.9.9');
+        const ka = (await plainStore.list('rl/')).map(e => e.key || e), kb = (await saltStore.list('rl/')).map(e => e.key || e);
+        assert.strictEqual(ka.length, 1); assert.strictEqual(kb.length, 1);
+        assert.notStrictEqual(ka[0], kb[0]);
+    });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);
 })();

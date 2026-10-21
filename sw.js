@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v34-2026-10-21-london';
+const CACHE_NAME = 'mit-triage-v35-2026-10-21-london';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 // The printed-number reader (vendor/tesseract, ~10 MB, fetched on demand) is kept across app updates too,
@@ -17,6 +17,8 @@ const PRECACHE_URLS = [
     './icon-maskable-512.png',
     './quick-reference.html',
     './commander.html',
+    './commander.js',
+    './accessibility.html',
     './lib.js',
     './vendor/qrcode.min.js',
     './vendor/html5-qrcode.min.js',
@@ -46,13 +48,18 @@ self.addEventListener('message', event => {
         self.skipWaiting();
     }
     // The page asks: is every file needed to work without signal stored on this phone?
+    // If the page lists the printed-number reader's files, say whether they are stored too (they are fetched on
+    // demand, so "ready offline" without them would be only half true for reading printed numbers).
     if (event.data && event.data.type === 'OFFLINE_STATUS') {
-        event.waitUntil(caches.open(CACHE_NAME)
-            .then(cache => Promise.all(PRECACHE_URLS.map(u => cache.match(u).then(hit => hit ? null : u))))
-            .then(results => {
-                const missing = results.filter(Boolean);
-                if (event.source) event.source.postMessage({ type: 'OFFLINE_STATUS', ready: missing.length === 0, missing, cache: CACHE_NAME });
-            }));
+        const ocrFiles = Array.isArray(event.data.ocrFiles) ? event.data.ocrFiles.slice(0, 10) : null;
+        event.waitUntil(Promise.all([
+            caches.open(CACHE_NAME).then(cache => Promise.all(PRECACHE_URLS.map(u => cache.match(u).then(hit => hit ? null : u)))),
+            ocrFiles ? caches.open(OCR_CACHE).then(cache => Promise.all(ocrFiles.map(u => cache.match(u).then(hit => !!hit)))) : Promise.resolve(null),
+        ]).then(([results, ocrHits]) => {
+            const missing = results.filter(Boolean);
+            const ocrReady = ocrHits ? ocrHits.every(Boolean) : null;
+            if (event.source) event.source.postMessage({ type: 'OFFLINE_STATUS', ready: missing.length === 0, missing, ocrReady, cache: CACHE_NAME });
+        }));
     }
 });
 
@@ -98,6 +105,15 @@ self.addEventListener('fetch', event => {
         );
         return;
     }
+    // The app page and lib.js: served from the cache at once, then fetched again in the background so a phone that
+    // opens the app once after a release already has the new files next time. Nothing reloads by itself.
+    if (url.origin === self.location.origin && isShellPath(url.pathname)) {
+        event.respondWith(caches.match(req).then(cached => {
+            if (cached) { event.waitUntil(refreshShell()); return cached; }
+            return fetch(req).catch(() => req.mode === 'navigate' ? caches.match('./index.html') : Response.error());
+        }));
+        return;
+    }
     // Same-origin: cache-first, fall back to network, then back to index for navigations
     event.respondWith(
         caches.match(req).then(cached => {
@@ -115,6 +131,20 @@ self.addEventListener('fetch', event => {
         })
     );
 });
+
+const SCOPE_PATH = new URL('./', self.location.href).pathname;
+function isShellPath(p) { return p === SCOPE_PATH || p === SCOPE_PATH + 'index.html' || p === SCOPE_PATH + 'lib.js'; }
+// index.html and lib.js are stored as a pair or not at all, so a refresh cut short by a lost signal can never
+// leave a new page running with an old lib.js. At most once a minute.
+let lastShellRefresh = 0;
+function refreshShell() {
+    if (Date.now() - lastShellRefresh < 60 * 1000) return Promise.resolve();
+    lastShellRefresh = Date.now();
+    const get = (u) => fetch(u, { cache: 'no-cache' }).then(r => (r && r.status === 200 && r.type === 'basic' && !r.redirected) ? r : Promise.reject(new Error(u)));
+    return Promise.all([get('./'), get('./lib.js')]).then(([page, lib]) => caches.open(CACHE_NAME).then(cache => Promise.all([
+        cache.put('./', page.clone()), cache.put('./index.html', page), cache.put('./lib.js', lib),
+    ]))).catch(() => {});
+}
 
 function trimTileCache(cache) {
     return cache.keys().then(keys => {

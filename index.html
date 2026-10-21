@@ -484,6 +484,7 @@
     details.rs-prompts { display:none; padding:0.8rem 1rem; margin-bottom:0.6rem; }
     details.rs-prompts > summary { font-weight:800; text-transform:uppercase; cursor:pointer; }
     
+    .modal-box[tabindex="-1"]:focus, .pm-sheet[tabindex="-1"]:focus, .modal-overlay[tabindex="-1"]:focus { outline: none; }
     .modal-overlay {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0,0,0,0.9); z-index: 2000; display: none;
@@ -1124,7 +1125,7 @@
 
 <div id="toast" role="status" aria-live="polite" aria-atomic="true">Notification</div>
 <div id="aria-alert-region" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
-<div id="blackout-curtain" onclick="toggleBlackout()">Tap to wake</div>
+<div id="blackout-curtain" role="button" tabindex="0" onclick="toggleBlackout()">Tap to wake</div>
 
 <div id="sw-update-banner" role="status" aria-live="polite">
     <span style="flex:1;">A new version of Major Incident Triage is ready.</span>
@@ -1424,6 +1425,7 @@
                 <button class="menu-item" onclick="closeModesMenu(); openLocationHelp();"><b>📍 Location help</b><span>If the position is missing or rough</span></button>
                 <button class="menu-item" onclick="downloadTextReader()"><b>⬇ Store the printed-number reader</b><span>About 6 MB, once; then it works without signal</span></button>
                 <a class="menu-item" href="privacy.html" target="_blank" rel="noopener"><b>🔒 Privacy notice</b><span>What the app stores and sends</span></a>
+                <a class="menu-item" href="accessibility.html" target="_blank" rel="noopener"><b>♿ Accessibility statement</b><span>What works, what does not yet, and how to tell us</span></a>
                 <p class="qr-meta" style="text-align:left;"><strong>Intended purpose:</strong> training and exercise use only. Not for use with real patients. It is not a medical device and has not been approved for clinical use.</p>
                 <p class="qr-meta" id="device-info" style="text-align:left;"></p>
             </div>
@@ -1805,7 +1807,7 @@
         <div id="question-screen" class="screen">
             <div class="q-meta">
                 <strong id="question-header">Assessment</strong>
-                <span>Patient <strong id="q-patient-id" class="editable-id" onclick="editPatientId()">...</strong></span>
+                <span>Patient <strong id="q-patient-id" class="editable-id" role="button" tabindex="0" aria-label="Patient ID, tap to edit" onclick="editPatientId()">...</strong></span>
                 <span id="q-progress" class="q-progress"></span>
             </div>
             <div class="instruction-card" id="question-text">Question goes here?</div>
@@ -1827,7 +1829,7 @@
 
         <div id="result-screen" class="screen">
             <div class="rs-head">
-                <span>ID: <strong id="r-patient-id" class="editable-id" onclick="editPatientId(true)"></strong> <button type="button" class="mini-btn" onclick="scanTagForCurrent()" aria-label="Scan the tag to set this ID" title="Scan the tag">📷</button></span>
+                <span>ID: <strong id="r-patient-id" class="editable-id" role="button" tabindex="0" aria-label="Patient ID, tap to edit" onclick="editPatientId(true)"></strong> <button type="button" class="mini-btn" onclick="scanTagForCurrent()" aria-label="Scan the tag to set this ID" title="Scan the tag">📷</button></span>
                 <span id="reassess-head"></span>
             </div>
             <div id="result-alerts"></div>
@@ -2144,8 +2146,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.17.5';
-    const APP_BUILD = '2026-10-17-london';
+    const APP_VERSION = '0.17.6';
+    const APP_BUILD = '2026-10-21-london';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2175,6 +2177,12 @@
             else if (k.indexOf('on') === 0) e[k] = props[k];
             else e.setAttribute(k, props[k]);
         });
+        // Something tappable that is not a button must still work from a keyboard or a switch control.
+        if (props && typeof props.onclick === 'function' && !/^(BUTTON|A|INPUT|SELECT|TEXTAREA|LABEL|SUMMARY|OPTION)$/.test(e.tagName)) {
+            if (!e.hasAttribute('tabindex')) e.setAttribute('tabindex', '0');
+            if (e.tagName !== 'TR' && !e.hasAttribute('role')) e.setAttribute('role', 'button');
+            e.setAttribute('data-kbd-click', '');
+        }
         (children || []).forEach(c => { if (c === null || c === undefined) return; e.appendChild(c instanceof Node ? c : document.createTextNode(String(c))); });
         return e;
     }
@@ -2243,13 +2251,21 @@
     let pendingAudit = [];
     const FALLBACK_KEY = TRAINING ? 'mit_fallback_state_training_v1' : 'mit_fallback_state_v1';
 
-    function setStorageBanner(message) {
+    // The red banner can carry more than one warning at once (backup storage, a failed save, another copy open),
+    // each under its own key, so one never overwrites or clears another.
+    const _bannerMsgs = {};
+    function setStorageBanner(message, key) {
+        _bannerMsgs[key || 'storage'] = message || '';
         const b = $('storage-banner');
         if (!b) return;
-        if (!message) { b.classList.remove('show'); clearChildren(b); return; }
         clearChildren(b);
-        b.appendChild(document.createTextNode('⚠ ' + message + ' '));
-        b.appendChild(el('button', { text: 'Export archive now', onclick: () => downloadArchive() }));
+        const keys = Object.keys(_bannerMsgs).filter(k => _bannerMsgs[k]);
+        if (!keys.length) { b.classList.remove('show'); return; }
+        keys.forEach((k, i) => {
+            if (i) b.appendChild(el('br'));
+            b.appendChild(document.createTextNode('⚠ ' + _bannerMsgs[k] + ' '));
+        });
+        if (keys.some(k => k !== 'other-copy')) b.appendChild(el('button', { text: 'Export archive now', onclick: () => downloadArchive() }));
         b.classList.add('show');
     }
     function openDatabase() {
@@ -2397,13 +2413,13 @@
         db.onversionchange = () => { try { db.close(); } catch (e) {} db = null; };
     }
     function markSaved() {
-        if (_lastSaveError) { _lastSaveError = null; if (storageMode === 'indexeddb') setStorageBanner(null); }
+        if (_lastSaveError) { _lastSaveError = null; setStorageBanner(null, 'save'); }
         setText('save-status', `Saved ${fmtTime(Date.now())}${storageMode === 'indexeddb' ? '' : ' (backup storage)'}`);
     }
     function saveFailed(msg) {
         _lastSaveError = msg;
         setText('save-status', 'NOT SAVED');
-        setStorageBanner(`Saving failed (${msg}). Recent changes may be lost if the app closes.`);
+        setStorageBanner(`Saving failed (${msg}). Recent changes may be lost if the app closes.`, 'save');
         announce('Saving failed. Export an archive now.', true);
     }
 
@@ -2488,6 +2504,39 @@
             osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime);
             osc.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.1);
         } catch (e) {}
+    }
+
+    // ---------- Keyboard and focus (WCAG 2.1.1 and 2.4.3) ----------
+    // Tappable rows, cards and the patient ID open with Enter or Space, as a button would.
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const t = e.target;
+        if (!t || !t.matches || !t.matches('[data-kbd-click], .editable-id[role="button"], #blackout-curtain')) return;
+        e.preventDefault(); t.click();
+    });
+    // Focus moves into a dialog when it opens and back to where it was when it closes. The dialog box itself takes
+    // focus, not its first field, so a phone keyboard does not pop up uninvited.
+    function watchDialogFocus() {
+        if (typeof MutationObserver === 'undefined') return;
+        const returnTo = new Map();
+        const isShown = (m) => getComputedStyle(m).display !== 'none';
+        const check = (m) => {
+            if (isShown(m) && !returnTo.has(m)) {
+                returnTo.set(m, document.activeElement);
+                setTimeout(() => {
+                    if (!isShown(m) || m.contains(document.activeElement)) return;
+                    const box = m.querySelector('.modal-box, .pm-sheet') || m;
+                    if (!box.hasAttribute('tabindex')) box.setAttribute('tabindex', '-1');
+                    try { box.focus({ preventScroll: true }); } catch (e) {}
+                }, 0);
+            } else if (!isShown(m) && returnTo.has(m)) {
+                const back = returnTo.get(m); returnTo.delete(m);
+                const lost = !document.activeElement || document.activeElement === document.body || m.contains(document.activeElement);
+                if (lost && back && back !== document.body && back.isConnected && back.getClientRects().length) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+            }
+        };
+        const obs = new MutationObserver(recs => recs.forEach(r => check(r.target)));
+        document.querySelectorAll('.modal-overlay, .pm-overlay').forEach(m => { obs.observe(m, { attributes: true, attributeFilter: ['style', 'class'] }); check(m); });
     }
 
     // ---------- Modals, Escape and the Android back button ----------
@@ -4144,7 +4193,10 @@
         scanMode = 'HANDOVER'; startScanner();
     }
     function scanTransferAck() { stopAutoCycle(); scanMode = 'TACK'; startScanner(); }
-    let _scanLastCode = null, _scanLastTs = 0, _facingMode = 'environment', _scanCleanupInProgress = false, _scanPaused = false;
+    let _scanLastCode = null, _scanLastTs = 0, _facingMode = 'environment', _scanPaused = false;
+    // Camera start and stop are queued one after another, so a quick double tap or a paste cannot start a camera
+    // that is never stopped (html5-qrcode cannot stop an instance whose start is still pending).
+    let _scanQueue = Promise.resolve(), _scanInitToken = 0;
     function startScanner() {
         $('scanner-modal').style.display = 'flex';
         _scanPaused = false;
@@ -4163,14 +4215,25 @@
         const t = titles[scanMode] || ['Receive (scan)', 'Any Major Incident Triage QR. For multi-part transfers keep scanning — the camera stays on and parts can be in any order.'];
         setText('scan-title', t[0]); setText('scan-instruction', t[1]);
         renderScanProgress();
-        _safeCleanupScanner().then(() => initScannerInstance()).catch(() => initScannerInstance());
+        _safeCleanupScanner(); initScannerInstance();
     }
     function initScannerInstance() {
+        const token = ++_scanInitToken;
+        _scanQueue = _scanQueue.then(() => {
+            // A later start, a close, or a scanner already running wins over this one.
+            if (token !== _scanInitToken || $('scanner-modal').style.display !== 'flex' || html5QrcodeScanner) return;
+            return startScannerInstance();
+        }).catch(() => {});
+    }
+    function startScannerInstance() {
         try { html5QrcodeScanner = new Html5Qrcode('scanner-reader', { verbose: false }); }
         catch (e) { $('scanner-modal').style.display = 'none'; showBlockingError('Scanner unavailable', 'The scanner library did not load. Use Paste or a transfer file.'); return; }
         const box = Math.min(320, Math.floor(Math.min(window.innerWidth, 600) * 0.8));
-        html5QrcodeScanner.start({ facingMode: _facingMode }, { fps: 12, qrbox: box, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, onScanSuccess, () => {})
+        const inst = html5QrcodeScanner;
+        inst._mittStart = inst.start({ facingMode: _facingMode }, { fps: 12, qrbox: box, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, onScanSuccess, () => {});
+        return inst._mittStart
             .catch(err => {
+                if (html5QrcodeScanner !== inst) return;   // already closed or replaced: nothing to report
                 const msg = (err && err.toString) ? err.toString() : 'Camera error';
                 stopScanner();
                 if (/NotAllowedError|Permission/i.test(msg)) showBlockingError('Camera blocked', 'Allow camera permission for this site, then try again. Or use Paste / transfer file.');
@@ -4179,17 +4242,14 @@
             });
     }
     function _safeCleanupScanner() {
-        if (_scanCleanupInProgress) return Promise.resolve();
-        _scanCleanupInProgress = true;
         const inst = html5QrcodeScanner; html5QrcodeScanner = null;
-        return new Promise(resolve => {
-            const done = () => { _scanCleanupInProgress = false; resolve(); };
-            if (!inst) { done(); return; }
-            try {
-                const scanning = (typeof inst.getState === 'function' && inst.getState() === 2) || inst._isScanning === true;
-                Promise.resolve(scanning ? inst.stop() : null).catch(() => {}).then(() => { try { return inst.clear(); } catch (e) {} }).catch(() => {}).then(done);
-            } catch (e) { done(); }
-        });
+        if (!inst) return _scanQueue;
+        // Wait for a pending start to finish (or fail) first, then stop the camera it opened.
+        _scanQueue = _scanQueue.then(() => Promise.resolve(inst._mittStart).catch(() => {})).then(() => {
+            const scanning = (typeof inst.getState === 'function' && inst.getState() === 2) || inst._isScanning === true;
+            return scanning ? inst.stop() : null;
+        }).catch(() => {}).then(() => { try { return inst.clear(); } catch (e) {} }).catch(() => {});
+        return _scanQueue;
     }
     function stopScanner() {
         $('scanner-modal').style.display = 'none'; _safeCleanupScanner(); ocrStatus('');
@@ -4197,15 +4257,15 @@
         if (scanMode === 'TAG' && _tagTarget === 'new' && !_tagDone) { scanMode = null; openManualId(); return; }
         if (scanMode === 'TAG' || scanMode === 'CARD') scanMode = null;
     }
-    function toggleScannerCamera() { _facingMode = _facingMode === 'environment' ? 'user' : 'environment'; _safeCleanupScanner().then(() => initScannerInstance()); }
+    function toggleScannerCamera() { _facingMode = _facingMode === 'environment' ? 'user' : 'environment'; _safeCleanupScanner(); initScannerInstance(); }
     function openPasteCode() { _safeCleanupScanner(); $('paste-input').value = ''; $('paste-modal').style.display = 'flex'; setTimeout(() => $('paste-input').focus(), 50); }
     function closePasteCode() { $('paste-modal').style.display = 'none'; if ($('scanner-modal').style.display === 'flex') initScannerInstance(); }
-    function submitPaste() {
+    async function submitPaste() {
         const v = $('paste-input').value.trim();
         if (!v) { showToast('Paste a code first'); return; }
         $('paste-modal').style.display = 'none';
-        if ($('scanner-modal').style.display === 'flex') initScannerInstance();
-        onScanSuccess(v);
+        // Act on the code first: it usually closes the scanner, and the camera only restarts if it is still open.
+        try { await onScanSuccess(v); } finally { if ($('scanner-modal').style.display === 'flex') initScannerInstance(); }
     }
     function _shouldDebounceScan(text) {
         const now = Date.now();
@@ -4400,11 +4460,14 @@
         $('ocr-modal').style.display = 'flex';
     }
     function closeOcrChoices() { $('ocr-modal').style.display = 'none'; }
+    // The reader files this phone would load (one of the two engine builds), for the "Ready offline" check.
+    function ocrFilesForThisPhone() { const core = wasmSimdSupported() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js'; return OCR_FILES.filter(f => !/tesseract-core-/.test(f) || f.endsWith('/' + core)); }
     async function downloadTextReader() {
         showToast('Storing the text reader on this phone…');
         try {
             for (const f of OCR_FILES) { const r = await fetch(f); if (!r.ok) throw new Error(f); await r.blob(); }
             showToast('Text reader stored. It now works without signal.', { long: true });
+            checkOfflineReady();
         } catch (e) { showToast('Could not download it all. Try again on Wi-Fi.', { long: true }); }
     }
 
@@ -5807,14 +5870,15 @@
         if (!('serviceWorker' in navigator) || !('caches' in window)) { setOfflineStatus('none', '⚠ No offline support'); return; }
         const c = navigator.serviceWorker.controller;
         if (!c) { setOfflineStatus('pending', '⏳ Saving for offline…'); return; }
-        c.postMessage({ type: 'OFFLINE_STATUS' });
+        c.postMessage({ type: 'OFFLINE_STATUS', ocrFiles: ocrFilesForThisPhone() });
     }
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.addEventListener('message', ev => {
             const m = ev.data || {};
             if (m.type !== 'OFFLINE_STATUS') return;
             clearTimeout(_offlineTimer);
-            if (m.ready) setOfflineStatus('ready', '✓ Ready offline');
+            if (m.ready && m.ocrReady === false) setOfflineStatus('ready', '✓ Ready offline (printed-number reader not stored)');
+            else if (m.ready) setOfflineStatus('ready', '✓ Ready offline');
             else { setOfflineStatus('pending', `⏳ Saving for offline (${m.missing.length} left)`); _offlineTimer = setTimeout(checkOfflineReady, 3000); }
         });
         navigator.serviceWorker.addEventListener('controllerchange', () => checkOfflineReady());
@@ -6321,18 +6385,26 @@
 
     // Two copies of the app open at once (two tabs, or the installed app plus a browser tab) would
     // overwrite each other's saves. Detect it and tell the user to close one.
+    // Training and real use keep separate storage, so only a copy in the same mode can clash. A closing copy says
+    // "bye" so the warning goes once it has gone.
     function watchForOtherCopies() {
         if (typeof BroadcastChannel === 'undefined') return;
         const me = MITTLib.makeUid();
+        const mode = TRAINING ? 'training' : 'live';
+        const others = new Set();
         const ch = new BroadcastChannel('mitt-instances');
-        const warn = () => setStorageBanner('Major Incident Triage is open in another tab or window on this phone. Close the other copy now — two copies can overwrite each other\'s patients.');
+        const show = () => setStorageBanner(others.size ? 'Major Incident Triage is open in another tab or window on this phone. Close the other copy now — two copies can overwrite each other\'s patients.' : '', 'other-copy');
         ch.onmessage = (ev) => {
             const m = ev.data || {};
-            if (m.from === me) return;
-            if (m.type === 'hello') { ch.postMessage({ type: 'here', from: me }); warn(); }
-            if (m.type === 'here') warn();
+            if (m.from === me || (m.mode || 'live') !== mode) return;
+            if (m.type === 'hello') { ch.postMessage({ type: 'here', from: me, mode }); others.add(m.from); show(); }
+            if (m.type === 'here') { others.add(m.from); show(); }
+            if (m.type === 'bye') { others.delete(m.from); show(); }
         };
-        ch.postMessage({ type: 'hello', from: me });
+        ch.postMessage({ type: 'hello', from: me, mode });
+        window.addEventListener('pagehide', () => { try { ch.postMessage({ type: 'bye', from: me, mode }); } catch (e) {} });
+        // Back from the browser's page cache: say hello again so both copies know about each other.
+        window.addEventListener('pageshow', (e) => { if (e.persisted) { try { ch.postMessage({ type: 'hello', from: me, mode }); } catch (x) {} } });
     }
 
     // index.html#start (the commander demo's "↩ Start page"): open on the start screen, leaving the demo if it is on.
@@ -6343,6 +6415,7 @@
     loadLocalSettings();
     openDatabase();
     watchForOtherCopies();
+    watchDialogFocus();
     setupIosInstallBanner();
     document.addEventListener('DOMContentLoaded', () => { setText('app-version-label', `v${APP_VERSION}`); });
     window.onload = function () {
