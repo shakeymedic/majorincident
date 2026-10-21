@@ -8,7 +8,7 @@ const firestore = require('../lib/firestore-store.js');
 
 let core = null, storeName = '';
 function getCore() {
-    if (!core) { const p = pickStore(firestore); storeName = p.name; console.log('[incident] store', storeName); core = createCore({ store: p.store, log: (...a) => console.log('[incident]', ...a) }); }
+    if (!core) { const p = pickStore(firestore); storeName = p.name; console.log('[incident] store', storeName); if (!process.env.RATE_LIMIT_SALT) console.warn('[incident] RATE_LIMIT_SALT is not set; rate-limit keys are unsalted'); core = createCore({ store: p.store, rateSalt: process.env.RATE_LIMIT_SALT || '', log: (...a) => console.log('[incident]', ...a) }); }
     return core;
 }
 

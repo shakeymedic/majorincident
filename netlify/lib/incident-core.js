@@ -64,6 +64,10 @@ function cleanMethane(m) {
     return out;
 }
 
+// Patient IDs and card numbers are shown on every screen, so only letters, digits, spaces and . _ / # - are kept.
+// Anything else (quotes, angle brackets, ampersands) is dropped rather than the record refused.
+function cleanTagText(v) { return String(v || '').replace(/[^\p{L}\p{N} ._\/#-]/gu, '').replace(/\s+/g, ' ').trim(); }
+
 function createCore(opts) {
     opts = opts || {};
     const store = opts.store;
@@ -74,7 +78,10 @@ function createCore(opts) {
     const keyMeta = (code) => `i/${code}/meta`;
     const keyRec = (code, uid) => `i/${code}/r/${uid}`;
     const keyDev = (code, id) => `i/${code}/d/${id}`;
-    const keyRate = (client) => `rl/${shortHash(client)}`;   // the client address itself is never stored
+    // The client address itself is never stored. The hash is salted with a server-only secret (RATE_LIMIT_SALT),
+    // so a stored key cannot be matched back to an address by hashing guesses.
+    const rateSalt = String(opts.rateSalt || '');
+    const keyRate = (client) => `rl/${shortHash(rateSalt ? rateSalt + ':' + client : client)}`;
 
     function reply(status, body, headers) { return { status, body, headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, headers || {}) }; }
     function error(status, code, message) { return reply(status, { error: code, message }); }
@@ -130,7 +137,8 @@ function createCore(opts) {
         const s = lib.sanitisePatientRecord(raw);
         if (!s || !s.uid || !/^[A-Za-z0-9_-]{1,64}$/.test(s.uid) || !s.id || !s.category) return null;
         const rec = lib.clonePatientRecord(s);
-        rec.uid = s.uid; rec.id = s.id;
+        rec.uid = s.uid; rec.id = cleanTagText(s.id) || 'UNNAMED-' + s.uid.slice(0, 6);
+        if (rec.cardNo) rec.cardNo = cleanTagText(rec.cardNo);
         rec.updatedAt = s.updatedAt || s.timestamp || now();
         return rec;
     }

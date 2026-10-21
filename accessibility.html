@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Accessibility statement — Major Incident Triage</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#F0F4F5; color:#1c232b; margin:0; padding:0; line-height:1.45; }
+    main { max-width: 720px; margin: 0 auto; padding: 1.2rem 1rem 3rem; }
+    h1 { font-size: 1.5rem; margin: 0.4rem 0 0.2rem; }
+    h2 { font-size: 1.1rem; margin: 1.3rem 0 0.4rem; color:#003087; }
+    .updated { color:#5a6b78; font-size:0.9rem; }
+    a { color:#005EB8; }
+    ul { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+<main>
+    <p><a href="index.html">← Back to the app</a></p>
+    <h1>Accessibility statement — Major Incident Triage</h1>
+    <p class="updated">Prepared 21 October 2026 for version 0.17.6. Review it whenever the screens change.</p>
+
+    <h2>Who this covers</h2>
+    <p>This statement covers the Major Incident Triage app (the phone screens), the incident commander screen (commander.html) and the quick reference card. It is published by West Midlands Evidence Based Emergency Medicine Ltd (trading as EM Evidence).</p>
+
+    <h2>The standard we aim for</h2>
+    <p>We aim to meet the Web Content Accessibility Guidelines (WCAG) version 2.2 at level AA. <strong>The app has not yet been fully audited against WCAG 2.2, so we do not claim that it meets it.</strong> Until an audit is done, treat it as partly meeting the standard, with the known problems listed below.</p>
+
+    <h2>What we have done</h2>
+    <ul>
+        <li>The triage answers (YES and NO) and the main actions are real buttons with text labels; categories are named in words as well as shown in colour.</li>
+        <li>Tappable rows, cards and the patient ID can also be used with a keyboard or switch control (Enter or Space).</li>
+        <li>When a dialog opens, focus moves into it, and it goes back to where it was when the dialog closes. Escape closes the top dialog.</li>
+        <li>Important changes (saved, errors, new alerts) are announced to screen readers through live regions.</li>
+        <li>The page can be zoomed. Settings has a night mode (dark screen) and a gloves mode (bigger buttons and stronger outlines).</li>
+    </ul>
+
+    <h2>Known problems</h2>
+    <ul>
+        <li>The app has not yet been tested end to end with a screen reader (VoiceOver on iPhone or TalkBack on Android).</li>
+        <li>The maps (on the phone and the commander screen) cannot be used without sight. The casualty list and the "where casualties are" summary give the same information as text.</li>
+        <li>Scanning a QR code or tag needs the camera and some sight. Codes can be typed or pasted instead, and patients can be handed over with a transfer file.</li>
+        <li>Marking injuries on the body map needs a tap or click on the picture; there is no keyboard way to place a mark yet. Injuries can be written in the notes instead.</li>
+        <li>The commander wall display is designed to be read from across a room and is not meant to be operated with a keyboard.</li>
+        <li>Colour contrast has been checked by eye but not measured on every screen.</li>
+    </ul>
+
+    <h2>Tell us about a problem</h2>
+    <p>If something in the app does not work for you, or you need information in another format, email <a href="mailto:emevidence999@gmail.com">emevidence999@gmail.com</a>. Say which screen you were on and what device you were using. We aim to reply within 10 working days.</p>
+
+    <h2>How this statement was prepared</h2>
+    <p>It was written from a review of the app's code and a manual check in a desktop browser on 21 October 2026. It has not been checked by an independent auditor.</p>
+</main>
+</body>
+</html>
