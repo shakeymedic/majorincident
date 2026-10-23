@@ -2124,7 +2124,12 @@
         const devices = DEMO_INCIDENT.phones.map((ph, i) => {
             const mine = records.filter(r => r.deviceId === ph.deviceId);
             const last = Math.max.apply(null, [start - 50 * min].concat(mine.map(r => r.updatedAt || 0)));
-            return { deviceId: ph.deviceId, triager: ph.triager, role: i === 2 ? 'creator' : 'member', records: mine.length, lastSeen: Math.max(last, now - (i + 1) * 40 * 1000), joinedAt: start - 45 * min };
+            const lastSeen = Math.max(last, now - (i + 1) * 40 * 1000);
+            // In the demo every phone shares its position: where its most recent casualty is, as of its last report.
+            const newest = mine.filter(r => (r.currentLocation || r.location) && (r.currentLocation || r.location).lat).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+            const l = newest ? (newest.currentLocation || newest.location) : null;
+            const position = l ? { lat: Number(l.lat), lng: Number(l.lng), acc: 9 + i * 4, timestamp: lastSeen, at: lastSeen } : undefined;
+            return { deviceId: ph.deviceId, triager: ph.triager, role: i === 2 ? 'creator' : 'member', records: mine.length, lastSeen, joinedAt: start - 45 * min, position };
         });
         const ccs = normaliseLocation({ lat: DEMO_INCIDENT.ccs.lat, lng: DEMO_INCIDENT.ccs.lng, accuracy: 5, timestamp: start - 40 * min, source: 'map-pin' });
         const incident = {

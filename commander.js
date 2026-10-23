@@ -16,6 +16,7 @@ let firstFit = true;
 let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
 let demoMarks = [];       // map markings placed during the demo (kept in the page only)
 let marksLayer = null, marking = false;
+let teamsLayer = null;      // triager positions (only phones that opted in) and calls for help
 let wallRequested = false;
 
 function loadCfg() {
@@ -232,8 +233,9 @@ function render(opts) {
     setText('counts-note', `Big number = on scene now (field + CCS); "in total" includes evacuated. CCS = casualty clearing station (set on the phone, or inferred from a "Casualty Clearing" sector on older phones). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
     // phones
     const devs = data.devices || [];
-    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
-    setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes`);
+    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
+    setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes${devs.some(d => d.position) ? ' • 📍 = shares its position (opt-in on the phone)' : ''}`);
+    renderSos(devs);
     // sectors
     const sectors = {};
     onScene.filter(r => stage(r) === 'field').forEach(r => { const s = r.sector || 'No sector'; sectors[s] = sectors[s] || { P1: 0, P1_HOLD: 0, P2: 0, P3: 0, NOT_BREATHING: 0, DEAD: 0, n: 0 }; sectors[s][r.category] = (sectors[s][r.category] || 0) + 1; sectors[s].n++; });
@@ -272,6 +274,7 @@ function render(opts) {
     if (openUid) renderPatient(byUid(openUid));
     renderLegend();
     if (!sameData || !map) renderMap(vis);
+    else renderTeams(devs, now);
     detectAlerts(all, devs, now);
     renderMethane();
     renderHospitals(all);
@@ -418,17 +421,83 @@ function detectAlerts(records, devices, now) {
     });
     (devices || []).forEach(d => {
         const low = typeof d.battery === 'number' && !d.charging && d.battery <= 10;
-        next.d[d.deviceId] = { stale: !!d.stale, low };
+        const help = sos(d) ? Number(d.duress.at) : 0;
+        next.d[d.deviceId] = { stale: !!d.stale, low, help };
         const prev = seen && seen.d[d.deviceId];
         if (prev && d.stale && !prev.stale) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)} not heard from for 5 minutes`, sub: `last report ${esc(age(d.lastSeen))}` });
         if (prev && low && !prev.low) fresh.push({ red: false, msg: `Phone ${esc(d.triager || d.deviceId)}: battery ${d.battery}%`, sub: 'ask them to plug in or hand their patients to a charged phone' });
+        // A call for help sounds even on the first load (the screen may have been opened because of it); the same call is not repeated.
+        if (help && !(prev && prev.help === help)) fresh.push({ red: true, sos: true, msg: `🆘 ${esc(d.triager || d.deviceId)} needs help`, sub: `${esc(posText(d.duress.position || d.position))} • called at ${hm(help)} • the red banner above stays until it is cleared` });
     });
     ALERTS.seen = next;
     if (!fresh.length) return;
     fresh.forEach(a => { a.id = ++ALERTS.id; a.at = now; ALERTS.list.unshift(a); });
     ALERTS.list = ALERTS.list.slice(0, 20);
     renderAlerts(fresh.map(a => a.id));
-    beep(fresh.some(a => a.red) ? 3 : 2);
+    beep(fresh.some(a => a.sos) ? 6 : fresh.some(a => a.red) ? 3 : 2);
+}
+// ---------- Triager positions (opt-in on each phone) and calls for help ----------
+const POS_STALE_MS = 5 * 60 * 1000;
+function sos(d) { return !!(d && d.duress && d.duress.at && !d.duress.clearedAt); }
+function posStale(p, now) { return !p || !p.timestamp || (now || Date.now()) - Number(p.timestamp) > POS_STALE_MS; }
+function posText(p) {
+    if (!p || !p.lat) return 'no position shared';
+    const grid = MITTLib.toOsGridRef(Number(p.lat), Number(p.lng));
+    return `${grid ? grid + ' • ' : ''}${MITTLib.formatCoords(Number(p.lat), Number(p.lng))}${p.acc ? ' ±' + Math.round(p.acc) + ' m' : ''} • ${age(p.timestamp)}`;
+}
+// Red banner that stays while any phone's call for help is live, with a Clear button for the commander.
+function renderSos(devs) {
+    const box = $('sos');
+    if (!box) return;
+    const live = (devs || []).filter(sos).sort((a, b) => Number(a.duress.at) - Number(b.duress.at));
+    if (!live.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.innerHTML = live.map(d => `<div class="sos-row"><span class="sos-icon">🆘</span><span class="msg"><b>${esc(d.triager || 'Unnamed')}</b> <span class="muted">${esc(d.deviceId)}</span> needs help<small>${esc(posText(d.duress.position || d.position))} • called at ${hm(d.duress.at)}${d.stale ? ' • <b>phone not heard from for 5 minutes</b>' : ''}</small></span>` +
+        `<span class="sos-btns">${(d.duress.position || d.position) ? `<button type="button" class="btn small sec" data-act="showTeamOnMap" data-dev="${esc(d.deviceId)}">Show on map</button>` : ''}${canMark() ? `<button type="button" class="btn small" data-act="clearDuress" data-dev="${esc(d.deviceId)}">Clear: help is on its way</button>` : ''}</span></div>`).join('');
+    box.classList.remove('hidden');
+}
+async function clearDuress(deviceId) {
+    if (!canMark() || !data) return;
+    const d = (data.devices || []).find(x => x.deviceId === deviceId);
+    if (!d || !sos(d)) return;
+    if (!confirm(`Clear the call for help from ${d.triager || deviceId}?\n\nOnly do this once someone is going to them. Their phone is told it was cleared; they can call again if they still need help.`)) return;
+    if (demo) { d.duress = Object.assign({}, d.duress, { clearedAt: Date.now(), clearedBy: 'commander' }); render(); return; }
+    try {
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/duress-clear`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify({ deviceId }), cache: 'no-store' });
+        const b = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(b.message || `Could not clear the call for help (server replied ${r.status}).`); return; }
+        d.duress = b.duress || Object.assign({}, d.duress, { clearedAt: Date.now(), clearedBy: 'commander' });
+        knownSeq = ''; etag = '';   // make sure the next poll brings the server's copy
+        render();
+        refreshNow();
+    } catch (e) { alert('Could not reach the server, so the call for help was not cleared. Try again.'); }
+}
+function teamIcon(d, now) {
+    const stale = posStale(d.position, now);
+    const label = d.triager || d.deviceId;
+    return L.divIcon({ html: `<div class="tm${stale ? ' tm-old' : ''}${sos(d) ? ' tm-sos' : ''}"><span class="tm-dot">${sos(d) ? '🆘' : '👤'}</span><span class="tm-name">${esc(label)}</span><span class="tm-age">${esc(age(d.position.timestamp))}</span></div>`, className: 'mk-wrap', iconSize: [0, 0], iconAnchor: [0, 0] });
+}
+function renderTeams(devs, now) {
+    if (!map) return;
+    if (!teamsLayer) teamsLayer = L.layerGroup().addTo(map);
+    teamsLayer.clearLayers();
+    (devs || []).forEach(d => {
+        const p = sos(d) && d.duress.position ? d.duress.position : d.position;
+        if (!p || !p.lat) return;
+        const ll = [Number(p.lat), Number(p.lng)];
+        const m = L.marker(ll, { icon: teamIcon(Object.assign({}, d, { position: p }), now), zIndexOffset: sos(d) ? 2000 : 1000 });
+        m._dev = d.deviceId;
+        m.bindPopup(`<div class="map-pop"><b>${sos(d) ? '🆘 ' : '👤 '}${esc(d.triager || 'Unnamed')}</b> <span class="muted">${esc(d.deviceId)}</span>${sos(d) ? ' <b style="color:#DA291C">NEEDS HELP</b>' : ''}<div class="map-pop-meta">${esc(posText(p))}${posStale(p, now) ? ' • <b>over 5 minutes old</b>' : ''}</div><div class="map-pop-meta">${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${esc(age(d.lastSeen))}</div>${sos(d) && canMark() ? `<button type="button" class="btn small" style="margin-top:6px" data-act="clearDuress" data-dev="${esc(d.deviceId)}">Clear: help is on its way</button>` : ''}</div>`);
+        teamsLayer.addLayer(m);
+        if (p.acc && p.acc > 15) teamsLayer.addLayer(L.circle(ll, { radius: Number(p.acc), color: sos(d) ? '#DA291C' : '#330072', weight: 1, opacity: 0.5, fillOpacity: 0.06, interactive: false }));
+    });
+}
+function showTeamOnMap(deviceId) {
+    if (!map || !teamsLayer) return;
+    const m = teamsLayer.getLayers().find(l => l._dev === deviceId);
+    if (!m) return;
+    try { $('map').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+    map.setView(m.getLatLng(), Math.max(map.getZoom(), 17));
+    m.openPopup();
 }
 function renderAlerts(newIds) {
     const box = $('alerts');
@@ -548,7 +617,7 @@ function renderLegend() {
     if (legendDone) return; legendDone = true;
     const sw = (c, extra) => `<span class="sw${extra ? ' ' + extra : ''}" style="background:${MITTLib.CATEGORY_INFO[c] ? MITTLib.CATEGORY_INFO[c].colour : '#4C6272'}"></span>`;
     $('legend').innerHTML = ['P1', 'P2', 'P3', 'P1_HOLD', 'NOT_BREATHING', 'DEAD'].map(c => `<span class="lg">${sw(c)}${esc(MITTLib.CATEGORY_INFO[c].short)} <span class="muted">${esc(MITTLib.CATEGORY_INFO[c].label.toLowerCase())}</span></span>`).join('') +
-        `<span class="lg opt"><span class="sw dash"></span>dashed = TST sieve</span><span class="lg opt"><span class="sw sq" style="background:#aaa"></span>square = at CCS</span><span class="lg opt"><span class="sw sq" style="background:#007F3B"></span>CCS</span><span class="spacer"></span><span class="lg opt">Big number = on scene now • small = including evacuated • W wall • F full screen</span>`;
+        `<span class="lg opt"><span class="sw dash"></span>dashed = TST sieve</span><span class="lg opt"><span class="sw sq" style="background:#aaa"></span>square = at CCS</span><span class="lg opt"><span class="sw sq" style="background:#007F3B"></span>CCS</span><span class="lg opt"><span class="sw sq" style="background:#330072"></span>👤 triager (opt-in; grey = over 5 min old, red = needs help)</span><span class="spacer"></span><span class="lg opt">Big number = on scene now • small = including evacuated • W wall • F full screen</span>`;
 }
 function markerIcon(r) {
     const info = MITTLib.CATEGORY_INFO[r.category] || { colour: '#005EB8', text: '#fff' };
@@ -587,14 +656,17 @@ function renderMap(records) {
         ccsMarker = L.marker([Number(data.ccs.lat), Number(data.ccs.lng)], { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty Clearing Station').addTo(map);
     }
     renderMarks();
-    setText('map-note', `${n} with a position${records.length - n ? `, ${records.length - n} without` : ''}`);
-    if (firstFit && (n || ccsMarker)) { firstFit = false; fitMap(); }
+    renderTeams(data.devices, Date.now());
+    const nt = (data.devices || []).filter(d => d.position || (sos(d) && d.duress.position)).length;
+    setText('map-note', `${n} with a position${records.length - n ? `, ${records.length - n} without` : ''}${nt ? ` • ${nt} triager${nt === 1 ? '' : 's'}` : ''}`);
+    if (firstFit && (n || ccsMarker || nt)) { firstFit = false; fitMap(); }
     setTimeout(() => map.invalidateSize(), 100);
 }
 function fitMap() {
     if (!map) return;
     const layers = cluster.getLayers().slice();
     if (ccsMarker) layers.push(ccsMarker);
+    if (teamsLayer) teamsLayer.getLayers().forEach(l => { if (l.getLatLng) layers.push(l); });
     if (!layers.length) return;
     const b = L.featureGroup(layers).getBounds();
     map.fitBounds(b.pad(0.2), { maxZoom: 18 });
@@ -693,6 +765,8 @@ const ACTIONS = {
     setStageFilter: (t) => setStageFilter(t.getAttribute('data-stage')),
     openPatient: (t) => openPatient(t.getAttribute('data-uid')),
     removeMark: (t) => removeMark(t.getAttribute('data-id')),
+    clearDuress: (t) => clearDuress(t.getAttribute('data-dev')),
+    showTeamOnMap: (t) => showTeamOnMap(t.getAttribute('data-dev')),
     dismissAlert: (t) => dismissAlert(t.hasAttribute('data-id') ? Number(t.getAttribute('data-id')) : undefined),
     toggleTimeline: () => { timelineAll = !timelineAll; renderTimeline((data && data.records) || []); },
 };

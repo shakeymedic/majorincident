@@ -203,6 +203,57 @@ function rec(uid, id, category, extra) {
         await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], battery: 'full' }), '1.1.1.1');
         assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].battery, 8, 'junk ignored, last value kept');
     });
+    await test('v0.18.0: a phone shares its position (opt-in), removes it with null, and junk is ignored', async () => {
+        const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], position: { lat: 52.4862123456, lng: -1.8904, acc: 12.4, timestamp: 1700000000000 } }), '1.1.1.1');
+        let g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.deepStrictEqual({ lat: g.body.devices[0].position.lat, lng: g.body.devices[0].position.lng, acc: g.body.devices[0].position.acc, timestamp: g.body.devices[0].position.timestamp }, { lat: 52.486212, lng: -1.8904, acc: 12, timestamp: 1700000000000 });
+        assert.ok(g.body.devices[0].position.at > 0);
+        const seq1 = g.headers['X-Incident-Seq'];
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], position: { lat: 'north', lng: -1.89 } }), '1.1.1.1');
+        g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.strictEqual(g.body.devices[0].position.lat, 52.486212, 'junk ignored, last position kept');
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], position: { lat: 95, lng: 0 } }), '1.1.1.1');
+        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].position.lat, 52.486212, 'out-of-range ignored');
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [] }), '1.1.1.1');
+        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].position.lat, 52.486212, 'a report without a position keeps the last one');
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], position: null }), '1.1.1.1');
+        g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.strictEqual(g.body.devices[0].position, undefined, 'null removes it');
+        assert.notStrictEqual(g.headers['X-Incident-Seq'], seq1, 'the commander screen sees the change');
+    });
+    await test('v0.18.0: duress is raised by the phone, acknowledged by the commander, and cleared by the phone', async () => {
+        const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA', triager: 'Medic A' }), '1.1.1.1')).body;
+        const r1 = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: { at: 1700000000000, position: { lat: 52.5, lng: -1.9, acc: 8 } } }), '1.1.1.1');
+        assert.strictEqual(r1.status, 200);
+        assert.strictEqual(r1.body.duress.at, 1700000000000);
+        assert.strictEqual(r1.body.duress.clearedAt, undefined);
+        let g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.strictEqual(g.body.devices[0].duress.position.lat, 52.5);
+        // A repeat of the same duress (every heartbeat) does not reset it
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: { at: 1700000000000 } }), '1.1.1.1');
+        const raisedAt = (await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].duress.raisedAt;
+        assert.strictEqual(raisedAt, g.body.devices[0].duress.raisedAt);
+        // View-only PIN cannot acknowledge
+        const viewOnly = await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.viewPin), JSON.stringify({ deviceId: 'DEVA' }), '3.3.3.3');
+        assert.strictEqual(viewOnly.status, 403);
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.pin), JSON.stringify({ deviceId: 'NOPE' }), '3.3.3.3')).status, 404);
+        const ack = await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.pin), JSON.stringify({ deviceId: 'DEVA' }), '3.3.3.3');
+        assert.strictEqual(ack.status, 200);
+        assert.ok(ack.body.duress.clearedAt > 0);
+        assert.strictEqual(ack.body.duress.clearedBy, 'commander');
+        // The phone's next heartbeat (still repeating the same duress) sees it cleared and does not re-raise it
+        const r2 = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: { at: 1700000000000 } }), '1.1.1.1');
+        assert.ok(r2.body.duress.clearedAt > 0, 'phone is told the commander cleared it');
+        // A new call for help after a cleared one is a fresh alert
+        const r3 = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: { at: 1700000500000 } }), '1.1.1.1');
+        assert.strictEqual(r3.body.duress.clearedAt, undefined);
+        assert.strictEqual(r3.body.duress.at, 1700000500000);
+        // The phone clears it
+        const r4 = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: null }), '1.1.1.1');
+        assert.strictEqual(r4.body.duress, null);
+        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].duress, undefined);
+    });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
         // A store where every operation takes a little time, so the two pushes interleave as they would on Netlify.
         const slow = makeStore({ jitter: 3 });

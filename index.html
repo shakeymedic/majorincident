@@ -912,6 +912,15 @@
     .gps-status.loc-coarse, .gps-status.loc-stale { color:#fff3a8; border-color:#fff3a8; }
     .gps-status.loc-searching { color:#dbe7ff; border-color:#dbe7ff; }
     .gps-status.loc-denied, .gps-status.loc-none { color:#ffcccc; border-color:#ffcccc; }
+    /* Hold-for-help button: the border fills over the 2-second hold; solid red while a call for help is live. */
+    #duress-btn { position:relative; overflow:hidden; color:#ffcccc; border-color:#ffcccc; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+    #duress-btn::before { content:''; position:absolute; left:0; top:0; bottom:0; width:0; background:rgba(218,41,28,0.55); z-index:0; }
+    #duress-btn.holding::before { animation: duress-fill 2s linear forwards; }
+    #duress-btn > span { position:relative; z-index:1; }
+    #duress-btn.live { background:var(--nhs-red, #da291c); color:#fff; border-color:#fff; animation: duress-blink 1.2s ease-in-out infinite; }
+    @keyframes duress-fill { from { width:0; } to { width:100%; } }
+    @keyframes duress-blink { 0%, 100% { opacity:1; } 50% { opacity:0.55; } }
+    @media (prefers-reduced-motion: reduce) { #duress-btn.live { animation:none; } }
     @media (max-width: 520px) { #header-device, #header-incident:empty { display:none; } .status-bar { padding:0.4rem 0.7rem; font-size:0.8rem; flex-wrap:wrap; row-gap:0.3rem; overflow-x:hidden; } .status-bar .status-item { margin-right:10px; } #gps-indicator, .status-pills { flex-shrink:0; } }
     @media (max-width: 420px) { #header-user { display:none; } }
     .home-row .home-map { background-color: var(--nhs-green); }
@@ -1403,6 +1412,8 @@
                         <button type="button" class="menu-item" onclick="cmdStop()"><b>Stop sharing from this phone</b><span>Records stay on this phone</span></button>
                     </div>
                 </div>
+                <label class="setting-row"><span><strong>Share my position with the commander</strong><small>Off unless you turn it on. Sends this phone's position (not the patients') with each report, about once a minute, so the commander can see where each triager is. Deleted with the incident.</small></span><input type="checkbox" id="set-share-pos" onchange="setPosShare(this.checked, 'Settings')"></label>
+                <div class="setting-row setting-block"><span><strong>Call for help</strong><small>Hold the red 🆘 button in the top bar for 2 seconds. The commander screen sounds an alarm and shows your name and, if you share it, your position. Tap the button again to cancel.</small></span></div>
                 <label class="setting-row"><span><strong>Training mode</strong><small>Practice patients, kept apart from real records</small></span><input type="checkbox" id="mode-training" onchange="toggleTrainingMode(this.checked)"></label>
                 <button class="menu-item" onclick="closeModesMenu(); startDemo();"><b>▶ Load the demo incident</b><span>Made-up casualties for showing the app</span></button>
             </div>
@@ -1685,6 +1696,7 @@
         <span class="status-pills" style="margin-left:auto; display:inline-flex; gap:6px; flex-shrink:0;">
             <button type="button" id="bat-pill" class="gps-status loc-stale" style="display:none;" onclick="showToast('Battery low. Plug in or hand over to a charged phone before it dies; records are saved on this phone and already sent to the commander are kept.', { long: true })" title="Battery">🔋</button>
             <button type="button" id="cmd-pill" class="gps-status loc-searching" style="display:none;" onclick="cmdShowDetails()" title="Live sharing with the incident commander">☁ Commander</button>
+            <button type="button" id="duress-btn" class="gps-status" style="display:none;" title="Hold for 2 seconds to call the commander for help" aria-label="Call the commander for help: hold for 2 seconds"><span>🆘 Hold for help</span></button>
             <button type="button" id="gps-indicator" class="gps-status loc-searching" onclick="openLocationHelp()" title="Tap for location help">📍 Finding location…</button>
         </span>
     </div>
@@ -2146,8 +2158,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.17.6';
-    const APP_BUILD = '2026-10-21-london';
+    const APP_VERSION = '0.18.0';
+    const APP_BUILD = '2026-10-23-positions';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -5960,6 +5972,7 @@
     function batteryPercent() { return BAT.level === null ? undefined : Math.round(BAT.level * 100); }
     function cmdInit() {
         batteryInit();
+        duressInit();
         CMD.cfg = lsJSON('mit_commander', null);
         if (!cmdActive()) { CMD.cfg = null; cmdRenderStatus(); return; }
         cmdQueueAll();
@@ -6006,9 +6019,11 @@
         uids.forEach(u => { if (indexByUid(u) === -1) CMD.dirty.delete(u); });
         CMD.inflight = true;
         try {
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging } });
+            const duressSent = CMD.cfg.duress ? Object.assign({}, CMD.cfg.duress) : null;
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
+                cmdHandleDuressReply(r.body.duress, duressSent);
                 if (Array.isArray(r.body.marks) && (r.body.marksAt || 0) !== (CMD.cfg.marksAt || 0)) {
                     const had = (CMD.cfg.marks || []).length;
                     CMD.cfg.marks = MITTLib.normaliseMapMarks(r.body.marks); CMD.cfg.marksAt = r.body.marksAt || 0;
@@ -6060,7 +6075,10 @@
         const off = $('cmd-off'), on = $('cmd-on');
         if (off) off.style.display = active ? 'none' : '';
         if (on) on.style.display = active ? '' : 'none';
-        const txt = !active ? 'Not sharing.' : `Sharing as ${CMD.cfg.role === 'creator' ? 'the phone that started' : 'a member of'} incident ${CMD.cfg.code}. ${CMD.lastError ? `Last attempt failed (${CMD.lastError}); ${CMD.dirty.size} change(s) waiting.` : CMD.dirty.size ? `${CMD.dirty.size} change(s) waiting to send.` : CMD.lastSentAt ? `Up to date, last sent ${fmtTime(CMD.lastSentAt)}.` : 'Nothing sent yet.'}`;
+        const posCb = $('set-share-pos');
+        if (posCb) posCb.checked = posShareOn();
+        duressRender();
+        const txt = !active ? 'Not sharing.' : `Sharing as ${CMD.cfg.role === 'creator' ? 'the phone that started' : 'a member of'} incident ${CMD.cfg.code}. ${CMD.lastError ? `Last attempt failed (${CMD.lastError}); ${CMD.dirty.size} change(s) waiting.` : CMD.dirty.size ? `${CMD.dirty.size} change(s) waiting to send.` : CMD.lastSentAt ? `Up to date, last sent ${fmtTime(CMD.lastSentAt)}.` : 'Nothing sent yet.'}${posShareOn() ? ' Your position goes with each report.' : ''}${duressActive() ? ' 🆘 Your call for help is live.' : ''}`;
         setText('cmd-status', txt);
         setText('cmd-detail-status', txt);
     }
@@ -6084,6 +6102,7 @@
             cmdRenderStatus();
             renderHomeAlerts();
             closeModesMenu();
+            if (!opts.quiet) await cmdAskPositionShare();
             cmdShowDetails();
         } catch (e) {
             showBlockingError(opts.commander ? 'Could not create the incident' : 'Could not start sharing', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Triage carries on as normal; try again later.`);
@@ -6110,6 +6129,7 @@
             closeCmdJoin(); closeCmdLink(); closeModesMenu();
             renderHomeAlerts();
             showToast(`Linked to incident ${code}. Everything you record is sent to the commander in the background.`);
+            await cmdAskPositionShare();
             return true;
         } catch (e) {
             showBlockingError('Could not join', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Check the signal and try again.`);
@@ -6176,6 +6196,120 @@
     }
     window.addEventListener('online', () => { if (cmdActive()) { CMD.lastError = ''; cmdSchedule(500); } });
     window.addEventListener('offline', () => { if (cmdActive()) cmdRenderStatus(); });
+
+    // ---------- Triager position (opt-in) and call for help (duress) ----------
+    // Position sharing is off until the triager says yes. Asked once, the first time this phone links to an
+    // incident; changeable any time in Settings. The position rides on each report to the commander (about
+    // once a minute); the server keeps only the latest one per phone and deletes it with the incident.
+    function posShareOn() { return ls('mit_share_pos') === '1'; }
+    function setPosShare(on, how) {
+        on = !!on;
+        const was = posShareOn();
+        ls('mit_share_pos', on ? '1' : '0');
+        ls('mit_share_pos_asked', '1');
+        if (was !== on) logAudit(on ? 'POSITION_SHARE_ON' : 'POSITION_SHARE_OFF', '-', `Sharing this phone's position with the commander turned ${on ? 'on' : 'off'}${how ? ' (' + how + ')' : ''}`, Date.now());
+        if (cmdActive() && was !== on) cmdSchedule(300);   // send the position now, or tell the server to drop it
+        cmdRenderStatus();
+    }
+    async function cmdAskPositionShare() {
+        if (ls('mit_share_pos_asked') === '1' || !cmdActive()) return;
+        const ok = await inAppConfirm({ title: 'Share your position with the commander?', message: `Your phone's position (not your patients') would go with each report, about once a minute, so the commander can see where each triager is on their map.\n\nOnly people with this incident's code and PIN can see it, and it is deleted with the incident. You can turn it on or off at any time in Settings → Share live.`, okLabel: 'Share my position', cancelLabel: 'Not now' });
+        setPosShare(!!ok, ok ? 'asked when linking' : 'declined when linking');
+    }
+    // The latest fix, whatever its age (the commander screen shows how old it is). null tells the server to forget it.
+    function cmdPositionPayload() {
+        if (!posShareOn()) return null;
+        if (!currentPosition || !currentPosition.lat) return undefined;   // nothing to send yet; the server keeps the last one
+        return { lat: Number(currentPosition.lat), lng: Number(currentPosition.lng), acc: Number(currentPosition.acc) || undefined, timestamp: currentPosition.timestamp || Date.now() };
+    }
+    // Duress: while live, every report repeats the same call (same 'at') so a missed report does not lose it.
+    // null asks the server to clear it (the phone cancelled); omitted means no change.
+    function duressActive() { return !!(cmdActive() && CMD.cfg.duress && !CMD.cfg.duress.cancelled); }
+    function cmdDuressPayload() {
+        if (!CMD.cfg || !CMD.cfg.duress) return undefined;
+        if (CMD.cfg.duress.cancelled) return null;
+        const p = currentPosition && currentPosition.lat ? { lat: Number(currentPosition.lat), lng: Number(currentPosition.lng), acc: Number(currentPosition.acc) || undefined, timestamp: currentPosition.timestamp || Date.now() } : undefined;
+        return { at: CMD.cfg.duress.at, position: p };
+    }
+    function cmdHandleDuressReply(remote, sent) {
+        if (!CMD.cfg || !sent || !CMD.cfg.duress) return;
+        if (sent.cancelled) { delete CMD.cfg.duress; cmdSaveCfg(); duressRender(); return; }   // the server has dropped it
+        if (remote && remote.clearedAt && remote.at === sent.at && !CMD.cfg.duress.cancelled) {
+            delete CMD.cfg.duress; cmdSaveCfg();
+            logAudit('DURESS_CLEARED', '-', `Call for help cleared by the commander screen (raised ${fmtTime(sent.at)})`, Date.now());
+            triggerHaptic('success');
+            showToast('The commander has seen your call for help and cleared it. Hold the 🆘 button again if you still need help.', { long: true });
+            duressRender();
+        }
+    }
+    async function cmdRaiseDuress(how) {
+        if (!cmdActive()) { showToast('Link to an incident commander first (Settings → Share live).', { alert: true }); return; }
+        if (duressActive()) return;
+        CMD.cfg.duress = { at: Date.now() }; cmdSaveCfg();
+        const pos = currentPosition && currentPosition.lat ? `${MITTLib.formatCoords(currentPosition.lat, currentPosition.lng)} (${MITTLib.formatLocationAge(currentPosition.timestamp)})` : 'no position';
+        logAudit('DURESS_RAISED', '-', `Call for help sent to commander ${CMD.cfg.code} (${how || 'held the button'}); position: ${pos}${posShareOn() ? '' : ' (position sharing off; the position is still sent with this call)'}`, Date.now());
+        triggerHaptic('alert');
+        announce('Call for help sent to the commander.', true);
+        duressRender();
+        const offline = typeof navigator.onLine === 'boolean' && !navigator.onLine;
+        showToast(offline ? '🆘 No signal: your call for help will be sent the moment signal returns. Use the radio.' : '🆘 Calling the commander for help. Tap the 🆘 button to cancel.', { alert: true, long: true });
+        cmdPush();
+    }
+    async function cmdCancelDuress() {
+        if (!duressActive()) return;
+        const ok = await inAppConfirm({ title: 'Cancel your call for help?', message: 'The commander screen will stop showing the alarm for you.', okLabel: 'Cancel the call', cancelLabel: 'Keep it live' });
+        if (!ok) return;
+        CMD.cfg.duress.cancelled = true; cmdSaveCfg();
+        logAudit('DURESS_CLEARED', '-', `Call for help cancelled on this phone (raised ${fmtTime(CMD.cfg.duress.at)})`, Date.now());
+        duressRender();
+        showToast('Call for help cancelled.');
+        cmdPush();
+    }
+    function duressRender() {
+        const b = $('duress-btn');
+        if (!b) return;
+        const active = cmdActive();
+        b.style.display = active ? '' : 'none';
+        if (!active) { b.classList.remove('holding', 'live'); return; }
+        const live = duressActive();
+        b.classList.toggle('live', live);
+        b.querySelector('span').textContent = live ? '🆘 HELP CALLED' : '🆘 Hold for help';
+        b.title = live ? 'Your call for help is live on the commander screen. Tap to cancel it.' : 'Hold for 2 seconds to call the commander for help';
+        b.setAttribute('aria-label', live ? 'Your call for help is live. Press to cancel it.' : 'Call the commander for help: hold for 2 seconds');
+        b.setAttribute('aria-pressed', live ? 'true' : 'false');
+    }
+    const DURESS_HOLD_MS = 2000;
+    const DURESS = { timer: null, fired: false };
+    function duressInit() {
+        const b = $('duress-btn');
+        if (!b) return;
+        const stop = () => { if (DURESS.timer) { clearTimeout(DURESS.timer); DURESS.timer = null; } b.classList.remove('holding'); };
+        b.addEventListener('pointerdown', e => {
+            if (e.button && e.button !== 0) return;
+            DURESS.fired = false;
+            if (duressActive()) return;   // a tap cancels (handled on click)
+            stop();
+            b.classList.add('holding');
+            try { b.setPointerCapture(e.pointerId); } catch (err) {}
+            DURESS.timer = setTimeout(() => { DURESS.timer = null; DURESS.fired = true; b.classList.remove('holding'); cmdRaiseDuress('held the button for 2 seconds'); }, DURESS_HOLD_MS);
+        });
+        ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture'].forEach(ev => b.addEventListener(ev, () => {
+            if (DURESS.timer && !DURESS.fired) { stop(); if (ev === 'pointerup') showToast('Hold the 🆘 button for 2 seconds to call for help.'); }
+            else stop();
+        }));
+        b.addEventListener('click', e => {
+            if (DURESS.fired) { DURESS.fired = false; e.preventDefault(); return; }   // the hold already fired
+            if (duressActive()) cmdCancelDuress();
+            // A short tap when nothing is live does nothing (the pointerup toast explains)
+        });
+        b.addEventListener('keydown', async e => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            if (duressActive()) { cmdCancelDuress(); return; }
+            const ok = await inAppConfirm({ title: 'Call the commander for help?', message: 'An alarm sounds on the commander screen with your name and, if known, your position.', okLabel: 'Call for help', danger: true });
+            if (ok) cmdRaiseDuress('keyboard');
+        });
+    }
 
     // ================= DEMO INCIDENT (training mode only) =================
     // A made-up incident (MITTLib.buildDemoScenario) for showing the app. It only ever loads in training mode,

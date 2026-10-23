@@ -63,7 +63,7 @@ async function test(name, fn) {
     async function setup(page, name, role) {
         await page.fill('#intro-triager', name);
         // Most tests are not about the commander link, so answer the start-screen link question with "not now".
-        await page.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); } catch (e) {} });
+        await page.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); } catch (e) {} });
         await page.evaluate(r => setUserRole(r), role || 'HCP');
     }
     // Resolve the next in-app dialog with OK (true) or Cancel (false), optionally typing text.
@@ -1201,6 +1201,106 @@ async function test(name, fn) {
         assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('.phone').length), 2);
         assert.strictEqual(await CC.evaluate(() => cluster.getLayers().length), 2);
     });
+    await test('v0.18.0: position sharing is off until the phone says yes; the question is asked once when linking; on = a triager marker on the commander map, off = removed', async () => {
+        // Nothing shared so far: no triager markers, no 📍 on the phones list
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.querySelectorAll('.phone').length === 2, null, { timeout: 8000 });
+        assert.strictEqual(await CC.evaluate(() => teamsLayer ? teamsLayer.getLayers().length : 0), 0);
+        assert.doesNotMatch(await CC.textContent('#phones'), /📍/);
+        assert.strictEqual(await CB.evaluate(() => posShareOn()), false);
+        // Bravo links again with the question not yet answered: asked once, says yes
+        await CB.evaluate(() => localStorage.removeItem('mit_share_pos_asked'));
+        await CB.evaluate(s => { window._join = cmdJoin(s.code, s.pin); }, share);
+        await answerDialog(CB, true);
+        assert.strictEqual(await CB.evaluate(() => window._join), true);
+        assert.strictEqual(await CB.evaluate(() => posShareOn()), true);
+        assert.strictEqual(await CB.evaluate(() => localStorage.getItem('mit_share_pos_asked')), '1');
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'POSITION_SHARE_ON')));
+        assert.strictEqual(await CB.evaluate(() => document.getElementById('set-share-pos').checked), true);
+        // Linking again does not ask again
+        assert.strictEqual(await CB.evaluate(s => cmdJoin(s.code, s.pin), share), true);
+        assert.strictEqual(await CB.evaluate(() => getComputedStyle(document.getElementById('confirm-modal')).display), 'none');
+        // The position rides the next report; the commander shows a triager marker and the age in the phones list
+        await CB.waitForFunction(() => currentPosition && currentPosition.lat, null, { timeout: 8000 });
+        await CB.evaluate(() => cmdPush(true));
+        await CB.waitForFunction(() => !CMD.inflight && CMD.lastSentAt > 0 && !CMD.lastError, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.getElementById('phones').textContent.indexOf('📍') > -1, null, { timeout: 8000 });
+        const team = await CC.evaluate(() => ({ n: teamsLayer.getLayers().filter(l => l._dev).length, dev: teamsLayer.getLayers().filter(l => l._dev).map(l => l._dev), html: document.querySelector('.tm') ? document.querySelector('.tm').textContent : '', note: document.getElementById('map-note').textContent, legend: document.getElementById('legend').textContent }));
+        assert.strictEqual(team.n, 1);
+        assert.deepStrictEqual(team.dev, [await CB.evaluate(() => deviceId)]);
+        assert.match(team.html, /Medic Bravo/);
+        assert.match(team.note, /1 triager/);
+        assert.match(team.legend, /triager/);
+        assert.strictEqual(await CC.evaluate(() => (data.devices.find(d => d.triager === 'Medic Bravo') || {}).position.lat), 53.4808);
+        assert.strictEqual(await CC.evaluate(() => (data.devices.find(d => d.triager === 'Medic Alpha') || {}).position), undefined, 'Alpha never opted in');
+        // Off again in Settings: the server forgets it and the marker goes
+        await CB.evaluate(() => setPosShare(false, 'Settings'));
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'POSITION_SHARE_OFF')));
+        await CB.waitForFunction(() => !CMD.inflight && CMD.dirty.size === 0, null, { timeout: 10000 });
+        await CB.evaluate(() => cmdPush(true));
+        await CB.waitForFunction(() => !CMD.inflight, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.getElementById('phones').textContent.indexOf('📍') === -1, null, { timeout: 8000 });
+        assert.strictEqual(await CC.evaluate(() => teamsLayer.getLayers().length), 0);
+    });
+    await test('v0.18.0: holding the 🆘 button for 2 seconds calls the commander for help; a short tap does not; the commander clears it and the phone is told', async () => {
+        const btn = CB.locator('#duress-btn');
+        await btn.waitFor({ state: 'visible', timeout: 5000 });
+        assert.match(await btn.textContent(), /Hold for help/);
+        // A short press does nothing
+        const box = await btn.boundingBox();
+        await CB.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await CB.mouse.down(); await CB.waitForTimeout(400); await CB.mouse.up();
+        await CB.waitForTimeout(300);
+        assert.strictEqual(await CB.evaluate(() => duressActive()), false);
+        // Held for over 2 seconds: the call goes at once with the position
+        await CB.mouse.down(); await CB.waitForTimeout(2400); await CB.mouse.up();
+        await CB.waitForFunction(() => duressActive(), null, { timeout: 5000 });
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'DURESS_RAISED')));
+        assert.match(await btn.textContent(), /HELP CALLED/);
+        assert.ok(await CB.evaluate(() => document.getElementById('duress-btn').classList.contains('live')));
+        await CB.waitForFunction(() => !CMD.inflight && !CMD.lastError && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        // Commander: red banner, red phone, red alert, red marker at the phone's position (sent with the call even though position sharing is off)
+        await CC.evaluate(() => { ALERTS.sound = false; refreshNow(); });
+        await CC.waitForFunction(() => !document.getElementById('sos').classList.contains('hidden'), null, { timeout: 8000 });
+        const c = await CC.evaluate(() => ({ sos: document.getElementById('sos').textContent, phones: document.querySelectorAll('.phone.sos').length, alerts: Array.from(document.querySelectorAll('#alerts .alert')).map(a => a.textContent), marker: document.querySelector('.tm.tm-sos') ? document.querySelector('.tm.tm-sos').textContent : '', clearBtn: !!document.querySelector('#sos [data-act="clearDuress"]') }));
+        assert.match(c.sos, /Medic Bravo/); assert.match(c.sos, /needs help/);
+        assert.strictEqual(c.phones, 1);
+        assert.ok(c.alerts.some(a => /Medic Bravo needs help/.test(a)), JSON.stringify(c.alerts));
+        assert.match(c.marker, /Medic Bravo/);
+        assert.ok(c.clearBtn, 'the full-PIN commander can clear it');
+        // The same call repeated by the next heartbeat is not announced again
+        await CC.evaluate(() => ALERTS.list.filter(a => a.sos).forEach(a => dismissAlert(a.id)));   // leave the earlier "New P1" alert for the next test
+        await CB.evaluate(() => cmdPush(true));
+        await CB.waitForFunction(() => !CMD.inflight, null, { timeout: 10000 });
+        await CC.evaluate(() => { knownSeq = ''; etag = ''; refreshNow(); });
+        await CC.waitForTimeout(1500);
+        assert.strictEqual(await CC.evaluate(() => ALERTS.list.filter(a => a.sos).length), 0);
+        // The commander clears it; the phone learns on its next report
+        CC.once('dialog', d => d.accept());
+        await CC.evaluate(() => clearDuress(data.devices.find(d => d.triager === 'Medic Bravo').deviceId));
+        await CC.waitForFunction(() => document.getElementById('sos').classList.contains('hidden'), null, { timeout: 8000 });
+        assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('.phone.sos').length), 0);
+        await CB.evaluate(() => cmdPush(true));
+        await CB.waitForFunction(() => !duressActive(), null, { timeout: 10000 });
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'DURESS_CLEARED' && /commander/.test(a.details || a.detail || ''))));
+        assert.match(await btn.textContent(), /Hold for help/);
+        // Raised again and cancelled on the phone: the commander banner goes
+        await CB.evaluate(() => cmdRaiseDuress('test'));
+        await CB.waitForFunction(() => !CMD.inflight && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => !document.getElementById('sos').classList.contains('hidden'), null, { timeout: 8000 });
+        await CB.evaluate(() => { window._cancel = cmdCancelDuress(); });
+        await answerDialog(CB, true);
+        await CB.evaluate(() => window._cancel);
+        assert.strictEqual(await CB.evaluate(() => duressActive()), false);
+        await CB.waitForFunction(() => !CMD.inflight && !CMD.cfg.duress, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.getElementById('sos').classList.contains('hidden'), null, { timeout: 8000 });
+        assert.strictEqual(await CB.evaluate(() => auditLog.filter(a => a.action === 'DURESS_CLEARED').length), 2);
+        await CC.evaluate(() => { ALERTS.list.filter(a => a.sos).forEach(a => dismissAlert(a.id)); ALERTS.sound = true; });
+    });
     await test('phone marks a casualty at the CCS and evacuates another to a hospital; the commander splits field / CCS / evacuated', async () => {
         // CB's MITT patient: handed to the CCS from the patient screen
         await CB.evaluate(() => { toggleCcs(); });
@@ -1315,8 +1415,11 @@ async function test(name, fn) {
         await page_visible(CG, '#cmd-join-modal');
         assert.ok(await CG.evaluate(() => document.getElementById('home-cmd-link') !== null), 'home alert while not linked');
         await CG.fill('#cmd-join-code', share.code); await CG.fill('#cmd-join-pin', share.pin);
-        await CG.evaluate(() => cmdJoin());
+        await CG.evaluate(() => { cmdJoin(); });
+        await answerDialog(CG, false);   // v0.18.0: a first link asks once about sharing the phone's position; "Not now"
         await CG.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        assert.strictEqual(await CG.evaluate(() => posShareOn()), false);
+        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_share_pos_asked')), '1');
         assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-join-modal')).display), 'none');
         assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link')), null, 'home alert gone once linked');
         await CG._ctx.close();
@@ -1495,7 +1598,9 @@ async function test(name, fn) {
         const F = await device('DemoHART');
         await F.evaluate(() => { demoChoose('p0'); });
         await F.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 7, null, { timeout: 10000 });
-        assert.strictEqual(await F.evaluate(s => cmdJoin(s.code, s.pin), share), true);
+        await F.evaluate(s => { window._join = cmdJoin(s.code, s.pin); }, share);
+        await answerDialog(F, true);   // share position: yes
+        assert.strictEqual(await F.evaluate(() => window._join), true);
         await F.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
         // A live-exercise CCZ phone: blank, asks for a name, then offers to scan the control room's code
         const C = await device('ExerciseCCZ');
@@ -1512,7 +1617,9 @@ async function test(name, fn) {
         assert.deepStrictEqual(await C.evaluate(() => [triagerName, userRole, currentSector, incidentLog.length, demoMode()]), ['Nurse CCZ', 'HCP', 'Casualty Clearing', 0, 'xc']);
         assert.match(await C.textContent('#training-banner-text'), /EXERCISE — CCZ/);
         assert.ok(await C.$('#home-exercise'));
-        assert.strictEqual(await C.evaluate(s => cmdJoin(s.code, s.pin), share), true);
+        await C.evaluate(s => { window._join = cmdJoin(s.code, s.pin); }, share);
+        await answerDialog(C, false);
+        assert.strictEqual(await C.evaluate(() => window._join), true);
         await triage(C, 'MITT', [true]);
         await C.waitForFunction(() => incidentLog.length === 1 && CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
         assert.ok(await C.evaluate(() => incidentLog[0].atCcs), 'a CCZ phone records its patients as at the CCS');
