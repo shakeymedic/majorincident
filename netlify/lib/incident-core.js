@@ -45,6 +45,16 @@ function safeEqual(a, b) {
 }
 function str(v, max) { return typeof v === 'string' ? v.slice(0, max) : (v === undefined || v === null ? '' : String(v).slice(0, max)); }
 function num(v) { const n = Number(v); return isFinite(n) ? n : null; }
+// A phone's own position as sent with a report: latitude, longitude, accuracy (m) and when the fix was taken.
+function cleanPosition(p, t) {
+    if (!p || typeof p !== 'object') return null;
+    const lat = num(p.lat), lng = num(p.lng);
+    if (lat === null || lng === null || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    const out = { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)), timestamp: num(p.timestamp) || t, at: t };
+    const acc = num(p.acc !== undefined ? p.acc : p.accuracy);
+    if (acc !== null && acc >= 0) out.acc = Math.round(acc);
+    return out;
+}
 function shortHash(s) { return crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 16); }
 // list() entries as { key, etag } whatever the store returned.
 function entries(list) { return (list || []).map(x => typeof x === 'string' ? { key: x, etag: '' } : { key: String(x.key || ''), etag: String(x.etag || '') }).filter(x => x.key); }
@@ -216,6 +226,19 @@ function createCore(opts) {
         dev.records = num(body.totalRecords) !== null ? Math.max(0, Math.floor(num(body.totalRecords))) : dev.records;
         dev.lastPush = incoming.length ? t : dev.lastPush || null;
         if (num(body.battery) !== null) { dev.battery = Math.max(0, Math.min(100, Math.round(num(body.battery)))); dev.charging = !!body.charging; }
+        // Triager position (opt-in on the phone): only the latest one is kept, and a phone that turns sharing off
+        // sends null to remove it. Same 24-hour expiry as everything else in the incident.
+        if (body.position === null) delete dev.position;
+        else { const p = cleanPosition(body.position, t); if (p) dev.position = p; }
+        // Duress: the phone raises it (object) or clears it (null); the commander can also mark it cleared (see clearDuress).
+        if (body.duress === null) delete dev.duress;
+        else if (body.duress && typeof body.duress === 'object') {
+            const at = num(body.duress.at) || t;
+            // The same duress (same 'at') repeated on every heartbeat is not a new alert, even once the commander has cleared it; a fresh 'at' is.
+            if (!dev.duress || Math.abs((dev.duress.at || 0) - at) > 1000) dev.duress = { at, raisedAt: t };
+            const p = cleanPosition(body.duress.position, t) || dev.position || null;
+            if (p) dev.duress.position = p;
+        }
         if (methane) {
             methane.device = deviceId;
             if (!methane.by) methane.by = dev.triager;
@@ -228,7 +251,7 @@ function createCore(opts) {
         meta.seq = (meta.seq || 0) + 1;
         await store.set(keyMeta(code), meta);
         // Map markings ride back on every push and heartbeat, so linked phones pick them up without another request.
-        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS, marks: meta.marks || [], marksAt: meta.marksAt || 0 });
+        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS, marks: meta.marks || [], marksAt: meta.marksAt || 0, duress: dev.duress || null });
     }
 
     // What the commander screen has is identified by a fingerprint of the stored blobs (every record and device
@@ -263,6 +286,27 @@ function createCore(opts) {
     }
 
     // Commander screen: replace the incident's map markings (cordons, RVP, loading point...). Full PIN only.
+    // The commander acknowledges a phone's call for help. The phone sees clearedAt in its next push reply.
+    async function clearDuress(code, pin, body, client) {
+        const a = await authed(code, pin, client);
+        if (a.status) return a;
+        const meta = a.meta;
+        const deviceId = str(body.deviceId, 16);
+        const dev = deviceId ? await store.get(keyDev(code, deviceId)) : null;
+        if (!dev) return error(404, 'not_found', 'No such phone in this incident.');
+        const t = now();
+        if (dev.duress && !dev.duress.clearedAt) {
+            dev.duress.clearedAt = t;
+            dev.duress.clearedBy = 'commander';
+            await store.set(keyDev(code, deviceId), dev);
+            meta.updatedAt = t;
+            meta.seq = (meta.seq || 0) + 1;
+            await store.set(keyMeta(code), meta);
+            log('duress-cleared', code, deviceId);
+        }
+        return reply(200, { ok: true, duress: dev.duress || null });
+    }
+
     async function setMarks(code, pin, body, client) {
         const a = await authed(code, pin, client);
         if (a.status) return a;
@@ -335,6 +379,7 @@ function createCore(opts) {
             if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client);
             if (method === 'POST' && action === 'close') return await close(code, pin, client);
             if (method === 'POST' && action === 'marks') return await setMarks(code, pin, body, client);
+            if (method === 'POST' && action === 'duress-clear') return await clearDuress(code, pin, body, client);
             if (method === 'POST' && action === 'lookup') return await lookup(code, pin, body, client);
             return error(404, 'not_found', 'Unknown endpoint.');
         } catch (e) {
@@ -343,7 +388,7 @@ function createCore(opts) {
         }
     }
 
-    return { handle, cleanup, create, join, push, read, close, setMarks, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_LENGTH, PIN_LENGTH, READ_BATCH } };
+    return { handle, cleanup, create, join, push, read, close, setMarks, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_LENGTH, PIN_LENGTH, READ_BATCH } };
 }
 
 // Simple in-memory store (tests and local development). opts.delay (ms) or opts.jitter (ms) make every operation

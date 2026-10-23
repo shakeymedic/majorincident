@@ -126,7 +126,7 @@ Use **one iPhone and one Android phone** for at least one full run, and do steps
 
 ## Live sharing with an incident commander (optional, needs signal)
 
-Off by default. When a phone starts or joins sharing, its triage records go over HTTPS to `/api/incident/<code>/records` on this site, protected by the incident code and PIN. The server keeps only the minimised record (the same fields as a QR handover: no names, no NHS numbers) for 24 hours after the last update, then deletes it. The phones remain the record of truth and keep the audit trail. The commander page is an aid for a live incident, not a clinical record system. The server functions run in Netlify's London region. The records are kept in Google Cloud Firestore in London (europe-west2) when the three `FIRESTORE_*` settings below are in place (the live site has used Firestore since 17 October 2026); without them they fall back to Netlify Blobs, whose region cannot be chosen. Each API response carries an `X-Incident-Store` header (`firestore` or `netlify-blobs`) saying which is in use. The app is for training and exercise use only.
+Off by default. When a phone starts or joins sharing, its triage records go over HTTPS to `/api/incident/<code>/records` on this site, protected by the incident code and PIN. The server keeps only the minimised record (the same fields as a QR handover: no names, no NHS numbers) for 24 hours after the last update, then deletes it. The phones remain the record of truth and keep the audit trail. The commander page is an aid for a live incident, not a clinical record system. From v0.18.0 a phone can also choose to share its own position (asked once when linking, off by default, changeable in Settings): the latest fix rides each report and the commander map shows a 👤 marker per triager, grey once it is over five minutes old. Holding the 🆘 button for two seconds sends a call for help at once (name, time and position, whatever the sharing setting); the commander screen sounds an alarm and shows a red banner until the commander or the phone clears it, and both ends write it to the phone's audit trail. The commander clears it with `POST /api/incident/<code>/duress-clear` (full PIN only). The server functions run in Netlify's London region. The records are kept in Google Cloud Firestore in London (europe-west2) when the three `FIRESTORE_*` settings below are in place (the live site has used Firestore since 17 October 2026); without them they fall back to Netlify Blobs, whose region cannot be chosen. Each API response carries an `X-Incident-Store` header (`firestore` or `netlify-blobs`) saying which is in use. The app is for training and exercise use only.
 
 ### UK hosting (Firestore, London)
 
@@ -163,6 +163,16 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.18.0 build 2026-10-23-positions — triager positions (opt-in) and a call-for-help button
+- Phones: a one-off question when linking to an incident, "Share your position with the commander?", off unless answered yes; a switch in Settings → Share live; the latest position (lat, lng, accuracy, time) goes with each report while on, and the server forgets it when turned off. Audit: `POSITION_SHARE_ON` / `POSITION_SHARE_OFF`.
+- Phones: a 🆘 "Hold for help" button in the top bar while linked. Hold for 2 seconds (keyboard: Enter or Space, then confirm) to send an immediate report with a duress flag and the current position. Tap again to cancel. Audit: `DURESS_RAISED`, `DURESS_CLEARED` (by the phone or by the commander).
+- Commander screen: a Teams layer on the map (👤 name and age per phone that shares, grey over 5 minutes old, red with 🆘 while calling for help), 📍 position age in the phones list, a red banner that stays until cleared with "Clear: help is on its way" (full PIN only; view-only cannot), a red alert with a longer alarm, and a "Show on map" button. The demo incident shows every phone's position.
+- Server: `position` and `duress` on `PUT /records` (stored per phone; `null` removes), `duress` echoed in the reply so a phone learns when the commander cleared it, and `POST /api/incident/<code>/duress-clear`. Clinical rules unchanged.
+- Privacy notice and accessibility statement updated. Service worker cache v36.
+
+### v0.17.6 build 2026-10-21-london — review items 1 to 8
+- Commander page script moved to `commander.js` with a strict content security policy; service worker, scanner, accessibility and server fixes from the review (PR #29).
 
 ### v0.17.5 build 2026-10-17-london — shared records now in London
 - Live sharing on majorincident.netlify.app now keeps its records in Google Cloud Firestore, London (europe-west2): the live server reports `X-Incident-Store: firestore` (checked 17 October 2026). The privacy notice says so instead of "we are moving". Triage rules unchanged.
