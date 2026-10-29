@@ -93,6 +93,8 @@ function createCore(opts) {
     const rateSalt = String(opts.rateSalt || '');
     const keyRate = (client) => `rl/${shortHash(rateSalt ? rateSalt + ':' + client : client)}`;
 
+    // Nothing personal goes to the server log (Netlify keeps it, and where it keeps it is not chosen here): incident
+    // codes, device codes and counts only. Client addresses are used for the wrong-PIN lock-out and never logged.
     function reply(status, body, headers) { return { status, body, headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, headers || {}) }; }
     function error(status, code, message) { return reply(status, { error: code, message }); }
 
@@ -167,7 +169,7 @@ function createCore(opts) {
         const meta = { code, salt, pinHash: hashPin(salt, pin), viewHash: hashPin(salt, viewPin), name: str(body.name, 80), incidentCode: lib.normaliseIncidentCode(body.incidentCode), training: !!body.training, createdAt: t, updatedAt: t, createdBy: { deviceId, triager: str(body.triager, 80) }, ccs: null, methane: null, seq: 1 };
         await store.set(keyMeta(code), meta);
         await store.set(keyDev(code, deviceId), { deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40) });
-        log('created', code, client);
+        log('created', code);
         return reply(201, { code, pin, viewPin, createdAt: t, expiresAt: t + TTL_MS, ttlMs: TTL_MS });
     }
 
@@ -225,6 +227,9 @@ function createCore(opts) {
         dev.app = str(body.app, 40) || dev.app || '';
         dev.records = num(body.totalRecords) !== null ? Math.max(0, Math.floor(num(body.totalRecords))) : dev.records;
         dev.lastPush = incoming.length ? t : dev.lastPush || null;
+        // Sector / zone and clinician or not: lets the commander send a prompt to one group of phones (e.g. only the casualty clearing station).
+        if (body.sector !== undefined) dev.sector = str(body.sector, 60).trim();
+        if (body.userRole === 'HCP' || body.userRole === 'NON_HCP') dev.userRole = body.userRole;
         if (num(body.battery) !== null) { dev.battery = Math.max(0, Math.min(100, Math.round(num(body.battery)))); dev.charging = !!body.charging; }
         // Triager position (opt-in on the phone): only the latest one is kept, and a phone that turns sharing off
         // sends null to remove it. Same 24-hour expiry as everything else in the incident.
@@ -251,14 +256,14 @@ function createCore(opts) {
         meta.seq = (meta.seq || 0) + 1;
         await store.set(keyMeta(code), meta);
         // Map markings ride back on every push and heartbeat, so linked phones pick them up without another request.
-        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS, marks: meta.marks || [], marksAt: meta.marksAt || 0, duress: dev.duress || null });
+        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS, marks: meta.marks || [], marksAt: meta.marksAt || 0, policy: meta.policy || {}, policyAt: meta.policyAt || 0, duress: dev.duress || null });
     }
 
     // What the commander screen has is identified by a fingerprint of the stored blobs (every record and device
     // etag plus the meta's own change counter), not by the counter alone. Two phones pushing at the same moment
     // can both write the same counter value; they cannot both leave the same set of etags behind.
     function fingerprint(meta, recs, devs) {
-        const parts = [String(meta.seq || 0), String(meta.updatedAt || 0), String((meta.ccs && meta.ccs.timestamp) || 0), String((meta.methane && meta.methane.timestamp) || 0), String(meta.marksAt || 0)]
+        const parts = [String(meta.seq || 0), String(meta.updatedAt || 0), String((meta.ccs && meta.ccs.timestamp) || 0), String((meta.methane && meta.methane.timestamp) || 0), String(meta.marksAt || 0), String(meta.policyAt || 0)]
             .concat(recs.map(e => e.key + '=' + e.etag), devs.map(e => e.key + '=' + e.etag));
         return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 20);
     }
@@ -281,8 +286,8 @@ function createCore(opts) {
         const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }));
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
-        log('read', code, client);
-        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: meta.marks || [], marksAt: meta.marksAt || 0, viewOnly: !!a.viewOnly, hasViewPin: !!meta.viewHash, devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
+        log('read', code);
+        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: meta.marks || [], marksAt: meta.marksAt || 0, policy: meta.policy || {}, policyAt: meta.policyAt || 0, viewOnly: !!a.viewOnly, hasViewPin: !!meta.viewHash, devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
     }
 
     // Commander screen: replace the incident's map markings (cordons, RVP, loading point...). Full PIN only.
@@ -321,6 +326,39 @@ function createCore(opts) {
         return reply(200, { ok: true, marks: meta.marks, marksAt: t });
     }
 
+    // Commander screen: incident-level clinical decisions. Full PIN only.
+    // body.p1Hold { on, by }: allow (or withdraw) P1 Hold on clinicians' phones, with the decision-maker's name.
+    // body.mitt { groups, by }: tell the chosen groups of phones that MITT is now in use. Each send gets a new id, so a
+    // phone shows it once; anyone can still switch tool on their own phone without it (Jake's decision, 29 Oct 2026).
+    async function setPolicy(code, pin, body, client) {
+        const a = await authed(code, pin, client);
+        if (a.status) return a;
+        const meta = a.meta;
+        const t = now();
+        const policy = lib.normalisePolicy(meta.policy || {});
+        let changed = false;
+        if (body.p1Hold && typeof body.p1Hold === 'object') {
+            const by = str(body.p1Hold.by, 80).trim();
+            if (body.p1Hold.on && !by) return error(400, 'bad_request', 'Say who made the P1 Hold decision.');
+            policy.p1Hold = { on: !!body.p1Hold.on, at: t, by };
+            changed = true;
+        }
+        if (body.mitt && typeof body.mitt === 'object') {
+            const groups = lib.normalisePolicyGroups(body.mitt.groups);
+            if (!groups.length) return error(400, 'bad_request', 'Choose who the MITT prompt goes to.');
+            policy.mitt = { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by: str(body.mitt.by, 80).trim(), groups };
+            changed = true;
+        }
+        if (!changed) return error(400, 'bad_request', 'Nothing to change.');
+        meta.policy = lib.normalisePolicy(policy);
+        meta.policyAt = t;
+        meta.updatedAt = t;
+        meta.seq = (meta.seq || 0) + 1;
+        await store.set(keyMeta(code), meta);
+        log('policy', code);
+        return reply(200, { ok: true, policy: meta.policy, policyAt: t });
+    }
+
     // A phone scanned a tag it does not know: has another phone in this incident recorded it? Full PIN only, and
     // only exact matches on the patient ID or triage card number, so it cannot be used to browse the incident.
     async function lookup(code, pin, body, client) {
@@ -339,7 +377,7 @@ function createCore(opts) {
         const a = await authed(code, pin, client);
         if (a.status) return a;
         const n = await deleteIncident(code);
-        log('closed', code, client);
+        log('closed', code);
         return reply(200, { ok: true, deleted: n });
     }
 
@@ -379,6 +417,7 @@ function createCore(opts) {
             if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client);
             if (method === 'POST' && action === 'close') return await close(code, pin, client);
             if (method === 'POST' && action === 'marks') return await setMarks(code, pin, body, client);
+            if (method === 'POST' && action === 'policy') return await setPolicy(code, pin, body, client);
             if (method === 'POST' && action === 'duress-clear') return await clearDuress(code, pin, body, client);
             if (method === 'POST' && action === 'lookup') return await lookup(code, pin, body, client);
             return error(404, 'not_found', 'Unknown endpoint.');
@@ -388,7 +427,7 @@ function createCore(opts) {
         }
     }
 
-    return { handle, cleanup, create, join, push, read, close, setMarks, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_LENGTH, PIN_LENGTH, READ_BATCH } };
+    return { handle, cleanup, create, join, push, read, close, setMarks, setPolicy, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_LENGTH, PIN_LENGTH, READ_BATCH } };
 }
 
 // Simple in-memory store (tests and local development). opts.delay (ms) or opts.jitter (ms) make every operation

@@ -1301,6 +1301,46 @@ async function test(name, fn) {
         assert.strictEqual(await CB.evaluate(() => auditLog.filter(a => a.action === 'DURESS_CLEARED').length), 2);
         await CC.evaluate(() => { ALERTS.list.filter(a => a.sos).forEach(a => dismissAlert(a.id)); ALERTS.sound = true; });
     });
+    await test('v0.19.0: P1 Hold is hidden until the commander allows it (with a name); a MITT prompt to clinicians lets a phone switch its main button to MITT', async () => {
+        const holdHidden = () => CB.evaluate(() => { applyP1HoldOption(); const o = document.querySelector('#p-cat-override option[value="P1_HOLD"]'); return o.hidden && o.disabled; });
+        assert.strictEqual(await holdHidden(), true, 'hidden by default');
+        await CB.evaluate(() => cmdPush(true));
+        await CB.waitForFunction(() => !CMD.inflight, null, { timeout: 10000 });
+        await CC.evaluate(() => { knownSeq = ''; etag = ''; refreshNow(); });
+        await CC.waitForFunction(() => /Clinician/.test(document.getElementById('phones').textContent), null, { timeout: 8000 });
+        assert.match(await CC.evaluate(() => document.getElementById('decisions').textContent), /Not in use \(default\)/);
+        // No name: refused on the commander page
+        CC.once('dialog', d => d.accept());
+        await CC.evaluate(() => setP1Hold(true));
+        assert.match(await CC.evaluate(() => document.getElementById('decisions').textContent), /Not in use/);
+        await CC.fill('#p1hold-by', 'Dr Medic, MERIT');
+        CC.once('dialog', d => d.accept());
+        await CC.click('[data-act="setP1Hold"][data-on="1"]');
+        await CC.waitForFunction(() => /ALLOWED since/.test(document.getElementById('decisions').textContent), null, { timeout: 8000 });
+        await CB.evaluate(() => cmdPush(true));
+        await CB.waitForFunction(() => p1HoldAllowedHere(), null, { timeout: 10000 });
+        assert.strictEqual(await holdHidden(), false, 'offered once allowed');
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'P1_HOLD_ALLOWED' && /Dr Medic, MERIT/.test(a.details || a.detail || ''))));
+        // MITT prompt to clinicians
+        await CC.check('.mitt-grp[value="hcp"]');
+        CC.once('dialog', d => d.accept());
+        await CC.click('[data-act="sendMittPrompt"]');
+        await CC.waitForFunction(() => /Prompt sent/.test(document.getElementById('decisions').textContent), null, { timeout: 8000 });
+        await CB.evaluate(() => { cmdPush(true); });
+        await CB.waitForFunction(() => !!CMD.cfg.mittPending, null, { timeout: 10000 });
+        await CB.evaluate(() => { closeModesMenu && closeModesMenu(); showScreen('home-screen'); renderHomeAlerts(); });
+        await page_visible(CB, '#home-mitt-prompt');
+        await CB.click('#home-mitt-prompt .btn-primary');
+        const m = await CB.evaluate(() => ({ mode: toolMode, main: document.getElementById('btn-start-triage').textContent, other: document.getElementById('btn-mitt').textContent, card: !!document.getElementById('home-mitt-prompt'), stored: ls('mit_tool_mode') }));
+        assert.deepStrictEqual({ mode: m.mode, card: m.card, stored: m.stored }, { mode: 'MITT', card: false, stored: 'MITT' }, JSON.stringify(m));
+        assert.match(m.main, /MITT/); assert.match(m.other, /TST/);
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'MITT_PROMPT_ANSWERED')));
+        // The same prompt is not shown again on the next report
+        await CB.evaluate(() => cmdPush(true));
+        await CB.waitForFunction(() => !CMD.inflight, null, { timeout: 10000 });
+        assert.strictEqual(await CB.evaluate(() => CMD.cfg.mittPending), null);
+        await CB.evaluate(() => setToolMode('TST', true));
+    });
     await test('phone marks a casualty at the CCS and evacuates another to a hospital; the commander splits field / CCS / evacuated', async () => {
         // CB's MITT patient: handed to the CCS from the patient screen
         await CB.evaluate(() => { toggleCcs(); });

@@ -184,7 +184,14 @@
     .debrief { width:100%; border-collapse:collapse; font-size:0.92rem; }
     .debrief td { padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
     .debrief td.t { white-space:nowrap; font-weight:700; }
-    body.wall .mark-tools, body.wall .mark-list, body.wall #debrief-card { display:none !important; }
+    body.wall .mark-tools, body.wall .mark-list, body.wall #debrief-card, body.wall #decisions-card { display:none !important; }
+    .dec { padding:8px 0; border-top:1px solid var(--line); }
+    .dec:first-child { border-top:0; padding-top:0; }
+    .dec h3 { margin:0 0 4px; font-size:1rem; }
+    .dec .state { font-weight:700; }
+    .dec .groups { display:flex; flex-wrap:wrap; gap:6px 14px; margin:6px 0; }
+    .dec .groups label { font-weight:normal; margin:0; display:inline-flex; align-items:center; gap:4px; min-height:34px; }
+    .dec input[type=text] { font-size:0.9rem; padding:6px; min-width:14em; }
     .map-pop-meta { font-size:0.82rem; color:#4C6272; margin-top:3px; }
 
     /* ---------- Attention list ---------- */
@@ -514,6 +521,10 @@
                         <span class="muted" id="mark-hint"></span>
                     </div>
                     <div class="mark-list" id="mark-list"></div>
+                </div>
+                <div class="card" id="decisions-card">
+                    <h2>Clinical decisions for this incident <small id="decisions-note"></small></h2>
+                    <div id="decisions"></div>
                 </div>
                 <div class="card" id="phones-card">
                     <h2>Phones reporting <small id="phones-note"></small></h2>

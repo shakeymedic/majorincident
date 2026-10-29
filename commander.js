@@ -15,6 +15,7 @@ let map = null, cluster = null, ccsMarker = null, circles = null;
 let firstFit = true;
 let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
 let demoMarks = [];       // map markings placed during the demo (kept in the page only)
+let demoPolicy = null;    // incident decisions made during the demo (kept in the page only)
 let marksLayer = null, marking = false;
 let teamsLayer = null;      // triager positions (only phones that opted in) and calls for help
 let wallRequested = false;
@@ -112,6 +113,8 @@ function startDemo() {
     cfg = null; etag = ''; knownSeq = ''; firstFit = true;
     try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
     demo = { startedAt: Date.now() };
+    // The demo has a P1 Hold casualty, so the demo starts with P1 Hold allowed.
+    demoPolicy = { p1Hold: { on: true, at: Date.now(), by: 'MERIT doctor (demo)' } };
     $('training-banner').textContent = 'DEMO — a made-up incident for showing the app. Not real patients; nothing is sent or received.';
     if (wallRequested) { wallRequested = false; setWall(true); }
     $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
@@ -128,7 +131,7 @@ function demoTick() {
     const order = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
     const records = d.records.map(r => Object.assign(MITTLib.sanitisePatientRecord(r), { reportedBy: r.deviceId, reportedAt: r.updatedAt }))
         .sort((x, y) => ((x.category in order ? order[x.category] : 99) - (y.category in order ? order[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
-    data = { marks: demoMarks, marksAt: 0, code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, methane: Object.assign({}, d.incident.methane, { timestamp: d.incident.createdAt + 7 * 60 * 1000, by: 'MERIT doctor', device: 'DEMODR' }), devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
+    data = { marks: demoMarks, marksAt: 0, policy: demoPolicy || {}, policyAt: 0, code: d.incident.code, name: d.incident.name, incidentCode: d.incident.incidentCode, training: true, demo: true, createdAt: d.incident.createdAt, updatedAt: now, expiresAt: now + 24 * 3600 * 1000, ccs: d.incident.ccs, methane: Object.assign({}, d.incident.methane, { timestamp: d.incident.createdAt + 7 * 60 * 1000, by: 'MERIT doctor', device: 'DEMODR' }), devices: d.devices.map(x => Object.assign({}, x, { stale: false })), records, serverTime: now };
     lastOkAt = now;
     setStatus('live', 'Demo');
     const next = d.incident.nextEventInMs;
@@ -233,7 +236,7 @@ function render(opts) {
     setText('counts-note', `Big number = on scene now (field + CCS); "in total" includes evacuated. CCS = casualty clearing station (set on the phone, or inferred from a "Casualty Clearing" sector on older phones). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
     // phones
     const devs = data.devices || [];
-    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
+    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
     setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes${devs.some(d => d.position) ? ' • 📍 = shares its position (opt-in on the phone)' : ''}`);
     renderSos(devs);
     // sectors
@@ -281,6 +284,7 @@ function render(opts) {
     renderTimeline(all);
     renderDebrief(all);
     renderMarkTools();
+    renderDecisions();
 }
 
 // ---------- Debrief timings (same figures as the phones, for every linked phone) ----------
@@ -346,6 +350,78 @@ function renderMarks() {
         // A cordon's label sits on its northern edge, so an inner and outer cordon round the same point both read.
         marksLayer.addLayer(L.marker([ty.circle ? m.lat + m.radius / 111320 : m.lat, m.lng], { icon: L.divIcon({ html: `<span class="mk-mark" style="background:${ty.colour}">${esc(m.label ? ty.short + ': ' + m.label : ty.short)}</span>`, className: 'mk-wrap', iconSize: [0, 0] }), zIndexOffset: 900 }).bindPopup(pop));
     });
+}
+
+// ---------- Clinical decisions for the incident (P1 Hold allowed; MITT now in use) ----------
+// P1 Hold is hidden on every phone until the commander allows it here, with the name of who decided (G2).
+// The MITT prompt tells the chosen groups of phones that MITT is in use; clinicians can also switch on their own (G6).
+const DEFAULT_PROMPT_SECTORS = ['Casualty Clearing'];
+function policyNow() { return MITTLib.normalisePolicy((data && data.policy) || {}); }
+function sectorGroups() {
+    const seen = {};
+    DEFAULT_PROMPT_SECTORS.concat((data.devices || []).map(d => d.sector), (data.records || []).filter(r => !r.evacuated).map(r => r.sector))
+        .forEach(x => { const t = String(x || '').trim(); if (t && !seen[t.toLowerCase()]) seen[t.toLowerCase()] = t; });
+    return Object.keys(seen).sort().map(k => seen[k]);
+}
+function phonesIn(group) { return (data.devices || []).filter(d => MITTLib.policyPromptApplies([group], { role: d.userRole, sector: d.sector })).length; }
+function renderDecisions() {
+    const box = $('decisions');
+    if (!box || !data) return;
+    const p = policyNow();
+    const can = canMark();
+    const hold = p.p1Hold && p.p1Hold.on ? p.p1Hold : null;
+    const holdHtml = `<div class="dec"><h3>P1 Hold</h3><div class="state">${hold ? `ALLOWED since ${hm(hold.at)} • decision by ${esc(hold.by || 'not recorded')}` : 'Not in use (default)'}${p.p1Hold && !hold && p.p1Hold.at ? ` <span class="muted">withdrawn ${hm(p.p1Hold.at)}</span>` : ''}</div>` +
+        `<p class="muted" style="margin:4px 0">Not nationally signed off. While off, clinicians' phones do not offer it. Allow it only on a senior clinical decision, and record who made it.</p>` +
+        (can ? (hold ? `<button type="button" class="btn small sec" data-act="setP1Hold" data-on="0">Withdraw P1 Hold</button>` : `<div class="row"><input type="text" id="p1hold-by" maxlength="80" placeholder="Decision by (name and role)" aria-label="P1 Hold decision by"><button type="button" class="btn small" data-act="setP1Hold" data-on="1">Allow P1 Hold</button></div>`) : '') + `</div>`;
+    const m = p.mitt;
+    const groups = sectorGroups();
+    const opt = (g, label) => `<label><input type="checkbox" class="mitt-grp" value="${esc(g)}"> ${esc(label)} <span class="muted">(${phonesIn(g)} phone${phonesIn(g) === 1 ? '' : 's'})</span></label>`;
+    const mittHtml = `<div class="dec"><h3>MITT now in use</h3><div class="state">${m ? `Prompt sent ${hm(m.at)} to ${esc(m.groups.map(MITTLib.policyGroupLabel).join(', '))}` : 'No prompt sent. Phones use TST unless a clinician switches.'}</div>` +
+        `<p class="muted" style="margin:4px 0">Sends a prompt to the phones you choose. Clinicians can switch their main button to MITT; non-clinical phones are told to carry on with TST. Anyone can also switch on their own phone without a prompt.</p>` +
+        (can ? `<div class="groups">${opt('hcp', 'All clinicians')}${groups.map(g => opt('sector:' + g, g)).join('')}${opt('all', 'Every phone')}</div><button type="button" class="btn small" data-act="sendMittPrompt">Send MITT prompt</button> <span class="muted" id="mitt-hint"></span>` : '') + `</div>`;
+    // Redrawn on every refresh, so keep what the commander has ticked or typed but not yet sent.
+    const ticked = Array.from(box.querySelectorAll('.mitt-grp:checked')).map(x => x.value);
+    const byEl = $('p1hold-by'), typed = byEl ? byEl.value : '', hadFocus = byEl && document.activeElement === byEl;
+    const html = holdHtml + mittHtml;
+    if (box._html === html) return;
+    box._html = html;
+    box.innerHTML = html;
+    setText('decisions-note', 'phones get changes with their next report (within a minute)');
+    box.querySelectorAll('.mitt-grp').forEach(x => { if (ticked.indexOf(x.value) > -1) x.checked = true; });
+    if ($('p1hold-by')) { $('p1hold-by').value = typed; if (hadFocus) $('p1hold-by').focus(); }
+}
+async function savePolicy(change) {
+    if (demo) {
+        const t = Date.now();
+        const p = policyNow();
+        if (change.p1Hold) p.p1Hold = { on: !!change.p1Hold.on, at: t, by: change.p1Hold.by || '' };
+        if (change.mitt) p.mitt = { id: 'demo' + t.toString(36), at: t, by: change.mitt.by || '', groups: MITTLib.normalisePolicyGroups(change.mitt.groups) };
+        demoPolicy = MITTLib.normalisePolicy(p); data.policy = demoPolicy; render(); return true;
+    }
+    try {
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/policy`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify(change), cache: 'no-store' });
+        const b = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(b.message || `Could not save the decision (server replied ${r.status}).`); return false; }
+        data.policy = b.policy || {}; data.policyAt = b.policyAt || Date.now();
+        knownSeq = ''; etag = '';
+        render();
+        return true;
+    } catch (e) { alert('Could not reach the server, so the decision was not saved. Try again.'); return false; }
+}
+function setP1Hold(on) {
+    if (!canMark()) return;
+    if (!on) { if (confirm('Withdraw P1 Hold?\n\nClinicians\' phones stop offering it. Casualties already in P1 Hold keep it until a clinician changes them.')) savePolicy({ p1Hold: { on: false } }); return; }
+    const by = (($('p1hold-by') || {}).value || '').trim();
+    if (!by) { alert('Type who made the P1 Hold decision (name and role) first.'); if ($('p1hold-by')) $('p1hold-by').focus(); return; }
+    if (confirm(`Allow P1 Hold for this incident?\n\nDecision by: ${by}\n\nClinicians' phones will offer P1 Hold from their next report.`)) savePolicy({ p1Hold: { on: true, by } });
+}
+function sendMittPrompt() {
+    if (!canMark()) return;
+    const groups = Array.from(document.querySelectorAll('.mitt-grp:checked')).map(x => x.value);
+    if (!groups.length) { setText('mitt-hint', 'Tick who the prompt goes to first.'); return; }
+    const n = (data.devices || []).filter(d => MITTLib.policyPromptApplies(groups, { role: d.userRole, sector: d.sector })).length;
+    if (!confirm(`Tell ${groups.map(MITTLib.policyGroupLabel).join(', ')} that MITT is now in use?\n\n${n} phone${n === 1 ? '' : 's'} reporting now match. Phones that join later or change sector see it too if they match.`)) return;
+    savePolicy({ mitt: { groups } }).then(ok => { if (ok) setText('mitt-hint', 'Sent. Phones see it with their next report.'); });
 }
 
 // ---------- Alerts: things the control room must not miss, with a sound ----------
@@ -766,6 +842,8 @@ const ACTIONS = {
     openPatient: (t) => openPatient(t.getAttribute('data-uid')),
     removeMark: (t) => removeMark(t.getAttribute('data-id')),
     clearDuress: (t) => clearDuress(t.getAttribute('data-dev')),
+    setP1Hold: (t) => setP1Hold(t.getAttribute('data-on') === '1'),
+    sendMittPrompt,
     showTeamOnMap: (t) => showTeamOnMap(t.getAttribute('data-dev')),
     dismissAlert: (t) => dismissAlert(t.hasAttribute('data-id') ? Number(t.getAttribute('data-id')) : undefined),
     toggleTimeline: () => { timelineAll = !timelineAll; renderTimeline((data && data.records) || []); },
