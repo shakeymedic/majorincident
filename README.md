@@ -51,7 +51,7 @@ tests/lib.test.js Node test suite for pure helpers
 
 - **TST:** Walking → P3; Severe bleeding → P1; Talking → penetrating injury to the torso (front or back)? P1 : P2; not talking → Breathing? P1 (recovery position) : **Not Breathing**.
 - **MITT:** Catastrophic bleeding → P1; Walking → P3; Breathing? no → **DEAD**; Responds to voice? no → P1; Aged over 2? no → P1; Breathing rate 12–23? no → P1; **Heart rate 100 or more?** yes → P1, no → P2.
-- Categories follow NHS England casualty labelling: P1, P2, P3, **Not Breathing (TST only, silver)**, **Dead (MITT only, black)**. **P1 Hold** is available to clinicians as a senior decision. "Expectant" is not used.
+- Categories follow NHS England casualty labelling: P1, P2, P3, **Not Breathing (TST only, silver)**, **Dead (MITT only, black)**. **P1 Hold** is hidden unless the incident commander allows it for the incident (from v0.19.0), and then only for clinicians, as a senior decision. "Expectant" is not used.
 - Not Breathing casualties are flagged for **healthcare reassessment as soon as possible** (NARU). Dead does not require a time of death at triage ("declare when resources allow", NHSE B0128).
 - TST labels/tags use a checked border; MITT uses solid colour (NHSE labelling guidance).
 - Care prompts are drawn from the NARU "clinical interventions in the CCP" list, not the in-hospital MPTT-24 page.
@@ -163,6 +163,13 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.19.0 build 2026-10-29-decisions — clinical decisions G2, G5 and G6 (Jake, 29 October 2026)
+- **P1 Hold (G2):** hidden on every phone by default (not nationally signed off). The commander screen's new "Clinical decisions for this incident" card can allow it for the incident, recording who made the decision, and withdraw it. Clinicians' phones offer it only while it is allowed; records already in P1 Hold still show it. Audit: `P1_HOLD_ALLOWED` / `P1_HOLD_WITHDRAWN`.
+- **TST reassessment (G5):** a casualty whose latest triage was TST (P1, P2 or P3) is due every 15 minutes (NARU TST supplementary information); MITT keeps P1 10, P2 30, P3 60 minutes. Settings → Reassessment timers has a TST row. Not Breathing is still due at once.
+- **Switch to MITT (G6):** the commander can send a "MITT now in use" prompt to all clinicians, chosen sectors (for example Casualty Clearing) or every phone. A clinician's phone shows a card to switch its main button to MITT; a non-clinical phone is told to carry on with TST. Clinicians can also switch at any time in Settings → You → Main triage button. MITT stays clinicians-only. Audit: `MITT_PROMPT`, `MITT_PROMPT_ANSWERED`, `TOOL_MODE`.
+- Server: phones send their sector and role with each report (shown in the commander's phones list); `POST /api/incident/<code>/policy` (full PIN only) with `{ p1Hold: { on, by } }` or `{ mitt: { groups } }`; `policy` and `policyAt` come back on every report and commander read. Client IP addresses are no longer written to the server log.
+- G1 (role stays self-declared) and G4 (no "Talking?" hint) unchanged by decision. G3 (under-2 in TST) waits on a question. Service worker cache v38. Web change only: the Android app (a Trusted Web Activity) needs no rebuild.
 
 ### v0.18.0 build 2026-10-23-positions — triager positions (opt-in) and a call-for-help button
 - Phones: a one-off question when linking to an incident, "Share your position with the commander?", off unless answered yes; a switch in Settings → Share live; the latest position (lat, lng, accuracy, time) goes with each report while on, and the server forgets it when turned off. Audit: `POSITION_SHARE_ON` / `POSITION_SHARE_OFF`.

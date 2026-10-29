@@ -578,10 +578,39 @@ group('location accuracy helpers', () => {
 });
 
 
+group('incident decisions from the commander (G2, G6)', () => {
+    test('normalisePolicy keeps only known fields and cleans text', () => {
+        const p = lib.normalisePolicy({ p1Hold: { on: 1, at: 5, by: 'Dr <b>X</b>' }, mitt: { id: 'abc', at: 6, groups: ['all', 'sector: Casualty Clearing', 'nonsense', 'hcp', 'hcp'] }, extra: 1 });
+        assert.deepStrictEqual(p, { p1Hold: { on: true, at: 5, by: 'Dr bX/b' }, mitt: { id: 'abc', at: 6, by: '', groups: ['all', 'sector:Casualty Clearing', 'hcp'] } });
+        assert.deepStrictEqual(lib.normalisePolicy({ mitt: { id: 'x', groups: [] } }), {}, 'a prompt with no groups is dropped');
+        assert.deepStrictEqual(lib.normalisePolicy(null), {});
+    });
+    test('a MITT prompt reaches the right phones', () => {
+        assert.strictEqual(lib.policyPromptApplies(['all'], { role: 'NON_HCP', sector: '' }), true);
+        assert.strictEqual(lib.policyPromptApplies(['hcp'], { role: 'HCP' }), true);
+        assert.strictEqual(lib.policyPromptApplies(['hcp'], { role: 'NON_HCP' }), false);
+        assert.strictEqual(lib.policyPromptApplies(['sector:Casualty Clearing'], { role: 'NON_HCP', sector: 'casualty  clearing ' }), true);
+        assert.strictEqual(lib.policyPromptApplies(['sector:Casualty Clearing'], { role: 'HCP', sector: 'Inner Cordon' }), false);
+        assert.strictEqual(lib.policyPromptApplies(['sector:Casualty Clearing'], { role: 'HCP', sector: '' }), false);
+    });
+    test('P1 Hold is offered only to clinicians, and only once the commander allows it', () => {
+        assert.strictEqual(lib.p1HoldAllowed({}, 'HCP'), false);
+        assert.strictEqual(lib.p1HoldAllowed({ p1Hold: { on: true } }, 'HCP'), true);
+        assert.strictEqual(lib.p1HoldAllowed({ p1Hold: { on: true } }, 'NON_HCP'), false);
+        assert.strictEqual(lib.p1HoldAllowed({ p1Hold: { on: false } }, 'HCP'), false);
+    });
+});
+
 group('reassessment', () => {
     test('P1 due in 10 minutes from triage', () => {
         const e = { id: 'A', category: 'P1', timestamp: 1000 };
         assert.strictEqual(lib.nextReassessmentDue(e), 1000 + 10*60*1000);
+    });
+    test('G5: a TST P1, P2 or P3 is due in 15 minutes (NARU TST guidance); MITT keeps the P1/P2/P3 intervals', () => {
+        ['P1', 'P2', 'P3'].forEach(c => assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'TST', category: c, timestamp: 1000 }), 1000 + 15*60*1000, c));
+        assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'MITT', category: 'P2', timestamp: 1000 }), 1000 + 30*60*1000);
+        assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'TST', category: 'P3', timestamp: 1000 }, 0, { TST: 20*60*1000 }), 1000 + 20*60*1000, 'the phone setting wins');
+        assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'TST', category: 'NOT_BREATHING', timestamp: 1000 }), 1000, 'Not Breathing still due at once');
     });
     test('DEAD has no reassessment', () => {
         assert.strictEqual(lib.nextReassessmentDue({ id: 'A', category: 'DEAD' }), null);

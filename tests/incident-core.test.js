@@ -254,6 +254,39 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(r4.body.duress, null);
         assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].duress, undefined);
     });
+    await test('v0.19.0: the commander allows P1 Hold and sends a MITT prompt; phones get both in their push reply', async () => {
+        const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        let r = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], sector: 'Casualty Clearing', userRole: 'HCP' }), '1.1.1.1');
+        assert.deepStrictEqual(r.body.policy, {});
+        assert.strictEqual(r.body.policyAt, 0);
+        let g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.strictEqual(g.body.devices[0].sector, 'Casualty Clearing');
+        assert.strictEqual(g.body.devices[0].userRole, 'HCP');
+        const seq1 = g.headers['X-Incident-Seq'];
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.viewPin), JSON.stringify({ p1Hold: { on: true, by: 'X' } }), '3.3.3.3')).status, 403, 'view-only PIN cannot');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: true } }), '3.3.3.3')).status, 400, 'a name is required');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ mitt: { groups: ['junk'] } }), '3.3.3.3')).status, 400, 'groups are required');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({}), '3.3.3.3')).status, 400);
+        const p1 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: true, by: 'Dr Medic, MERIT' } }), '3.3.3.3');
+        assert.strictEqual(p1.status, 200);
+        assert.strictEqual(p1.body.policy.p1Hold.on, true);
+        assert.strictEqual(p1.body.policy.p1Hold.by, 'Dr Medic, MERIT');
+        const p2 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ mitt: { groups: ['sector:Casualty Clearing'] } }), '3.3.3.3');
+        assert.strictEqual(p2.body.policy.p1Hold.on, true, 'the P1 Hold decision is kept');
+        assert.deepStrictEqual(p2.body.policy.mitt.groups, ['sector:Casualty Clearing']);
+        assert.ok(p2.body.policy.mitt.id);
+        r = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [] }), '1.1.1.1');
+        assert.strictEqual(r.body.policy.mitt.id, p2.body.policy.mitt.id);
+        assert.strictEqual(r.body.policyAt, p2.body.policyAt);
+        g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.notStrictEqual(g.headers['X-Incident-Seq'], seq1);
+        assert.strictEqual(g.body.policy.p1Hold.on, true);
+        assert.strictEqual(g.body.devices[0].sector, 'Casualty Clearing', 'a report without a sector keeps the last one');
+        const p3 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ mitt: { groups: ['hcp'] } }), '3.3.3.3');
+        assert.notStrictEqual(p3.body.policy.mitt.id, p2.body.policy.mitt.id, 'every prompt is new');
+        const off = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: false } }), '3.3.3.3');
+        assert.strictEqual(off.body.policy.p1Hold.on, false);
+    });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
         // A store where every operation takes a little time, so the two pushes interleave as they would on Netlify.
         const slow = makeStore({ jitter: 3 });

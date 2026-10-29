@@ -38,7 +38,7 @@
 
     <h2>Live sharing with a commander screen (optional)</h2>
     <ul>
-        <li>If you start or join live sharing, the device sends its records (triage category, timings, interventions, injuries, positions, the sector and place labels, free-text notes, your typed name, the device's random code, its battery level and whether it is charging, and the app version) and any METHANE report over HTTPS to a small server, so an incident commander can see them on one screen protected by an incident code and PIN.</li>
+        <li>If you start or join live sharing, the device sends its records (triage category, timings, interventions, injuries, positions, the sector and place labels, free-text notes, your typed name, whether you signed in as a clinician and the sector you chose, the device's random code, its battery level and whether it is charging, and the app version) and any METHANE report over HTTPS to a small server, so an incident commander can see them on one screen protected by an incident code and PIN.</li>
         <li>The server is run for us by <a href="https://www.netlify.com" rel="noopener">Netlify</a> (Netlify Functions), set to run in Netlify's London (UK) region. Netlify also processes standard web server data (such as IP address and browser type) to deliver the site.</li>
         <li>The shared records are kept in <a href="https://cloud.google.com/firestore" rel="noopener">Google Cloud Firestore</a> in London (europe-west2), in the UK. Netlify and Google are both based in the United States and provide safeguards for international transfers under UK data protection law.</li>
         <li>Wrong-PIN attempts are counted against a hashed form of the connecting address for 15 minutes, to stop guessing; the address itself is not stored.</li>

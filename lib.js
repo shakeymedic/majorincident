@@ -1375,11 +1375,15 @@
     // ---------- Reassessment scheduling ----------
     // Local defaults (not specified by NHSE B0128, which says "reassess regularly") — require clinical sign-off.
     // Not Breathing (TST) is due immediately: NARU — "must be re-assessed by a Healthcare responder as soon as possible".
-    const REASSESS_INTERVALS = { P1: 10*60*1000, P2: 30*60*1000, P3: 60*60*1000, P1_HOLD: 30*60*1000, NOT_BREATHING: 5*60*1000, DEAD: null };
+    // TST: NARU TST supplementary information (v1.0, April 2023) — re-triage "approximately every 15 minutes is a
+    // reasonable starting point". So a P1/P2/P3 whose latest triage was TST uses the TST interval whatever its colour;
+    // the P1/P2/P3 intervals apply once the casualty has had MITT.
+    const REASSESS_INTERVALS = { P1: 10*60*1000, P2: 30*60*1000, P3: 60*60*1000, P1_HOLD: 30*60*1000, NOT_BREATHING: 5*60*1000, DEAD: null, TST: 15*60*1000 };
     function nextReassessmentDue(entry, now, intervals) {
         if (!entry) return null;
         const table = Object.assign({}, REASSESS_INTERVALS, intervals || {});
-        const interval = table[entry.category];
+        const tstColour = entry.tool === 'TST' && (entry.category === 'P1' || entry.category === 'P2' || entry.category === 'P3');
+        const interval = tstColour && table.TST ? table.TST : table[entry.category];
         if (interval === null || interval === undefined) return null;
         if (entry.category === 'NOT_BREATHING' && entry.lastReassessed == null) {
             return (entry.timestamp != null) ? entry.timestamp : ((now != null) ? now : Date.now());
@@ -2221,6 +2225,47 @@
         return `Rough count, not yet triaged${when}: about ${w + l + d} (walking ${w}, lying ${l}, apparently dead ${d})`;
     }
 
+    // ---------- Incident decisions sent from the commander screen ----------
+    // p1Hold: P1 Hold is hidden on every phone unless the commander turns it on for the incident (G2: not signed off
+    // nationally; a senior clinical decision). mitt: a prompt that MITT is now in use, sent to chosen groups of phones (G6).
+    // Groups: 'all', 'hcp' (phones signed in as clinicians) or 'sector:<name>' (phones whose sector / zone matches).
+    const POLICY_GROUPS_MAX = 20;
+    function _policyText(v, max) { return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max); }
+    function normalisePolicyGroups(list) {
+        const out = [];
+        (Array.isArray(list) ? list : []).forEach(g => {
+            const t = _policyText(g, 80);
+            if (!t) return;
+            const k = t === 'all' || t === 'hcp' ? t : /^sector:./i.test(t) ? 'sector:' + t.slice(7).trim() : '';
+            if (k && k !== 'sector:' && out.indexOf(k) === -1 && out.length < POLICY_GROUPS_MAX) out.push(k);
+        });
+        return out;
+    }
+    function normalisePolicy(p) {
+        p = (p && typeof p === 'object') ? p : {};
+        const out = {};
+        if (p.p1Hold && typeof p.p1Hold === 'object') {
+            out.p1Hold = { on: !!p.p1Hold.on, at: Number(p.p1Hold.at) || 0, by: _policyText(p.p1Hold.by, 80) };
+        }
+        if (p.mitt && typeof p.mitt === 'object') {
+            const groups = normalisePolicyGroups(p.mitt.groups);
+            const id = _policyText(p.mitt.id, 24);
+            if (id && groups.length) out.mitt = { id, at: Number(p.mitt.at) || 0, by: _policyText(p.mitt.by, 80), groups };
+        }
+        return out;
+    }
+    function policyGroupLabel(g) { return g === 'all' ? 'all phones' : g === 'hcp' ? 'clinicians' : String(g).indexOf('sector:') === 0 ? String(g).slice(7) : String(g); }
+    // Does a commander prompt sent to these groups reach a phone with this role and sector? Sector names match
+    // without regard to case or spacing ("Casualty Clearing" = "casualty  clearing").
+    function policyPromptApplies(groups, phone) {
+        phone = phone || {};
+        const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const sector = norm(phone.sector);
+        return normalisePolicyGroups(groups).some(g => g === 'all' || (g === 'hcp' && phone.role === 'HCP') || (g.indexOf('sector:') === 0 && sector && norm(g.slice(7)) === sector));
+    }
+    // P1 Hold may be offered only to a clinician on a phone linked to an incident whose commander has turned it on.
+    function p1HoldAllowed(policy, role) { return role === 'HCP' && !!(policy && policy.p1Hold && policy.p1Hold.on); }
+
     const api = {
         QR_SCHEMA_VERSION, QR_DEFAULT_TTL_MS, QR_MAX_FUTURE_SKEW_MS,
         BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
@@ -2251,6 +2296,7 @@
         locationPoints, buildGpx, buildKml, buildGeoJson, classifyLocationFix, describeGeoError,
         buildDemoScenario, isDemoRecord, DEMO_INCIDENT,
         debriefTimings, evacTime, MAP_MARK_TYPES, MAP_MARKS_MAX, normaliseMapMarks, roughCountText,
+        POLICY_GROUPS_MAX, normalisePolicyGroups, normalisePolicy, policyGroupLabel, policyPromptApplies, p1HoldAllowed,
     };
 
     if (typeof module !== 'undefined' && module.exports) {

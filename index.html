@@ -800,6 +800,7 @@
     .intro-options { margin-top: 0.6rem; }
     .btn-start { background: var(--nhs-green); font-size: 2rem; letter-spacing: 1px; padding: 1.6rem 1rem; min-height: 130px; border: 4px solid #00592a; }
     .btn-start span { display: block; font-size: 1rem; font-weight: normal; letter-spacing: 0; margin-top: 4px; }
+    .btn-start.mitt-main { background: #A84F00; border-color: #6e3400; }
     body.gloved .btn-start { min-height: 160px; font-size: 2.3rem; }
     .home-row { display: flex; gap: 10px; margin-bottom: 1rem; }
     .home-row .btn { flex: 1 1 0; min-width: 0; margin-bottom: 0; font-size: 1.05rem; padding: 1.1rem 0.5rem; }
@@ -1377,6 +1378,7 @@
             <summary>You <span class="rs-sum" id="set-you-sum"></span></summary>
             <div class="menu-items">
                 <button class="menu-item" onclick="closeModesMenu(); resetApp();"><b>Change name or role</b><span>Goes back to the start screen. Patients stay on this phone.</span></button>
+                <div class="setting-row" id="set-tool-mode-row"><span><strong>Main triage button</strong><br><small>Clinicians: switch to MITT when it is in use at your location. The other tool stays one tap away.</small></span><select id="set-tool-mode" onchange="setToolMode(this.value)" aria-label="Main triage button"><option value="TST">TST</option><option value="MITT">MITT</option></select></div>
             </div>
         </details>
 
@@ -1420,12 +1422,13 @@
         </details>
 
         <details class="menu-list settings-sec">
-            <summary>Reassessment timers <span class="rs-sum">P1, P2, P3</span></summary>
+            <summary>Reassessment timers <span class="rs-sum">TST, MITT P1, P2, P3</span></summary>
             <div class="menu-items">
-                <p class="qr-meta" style="text-align:left;">Local defaults, not set by NHS England. Agree them with your clinical lead.</p>
-                <div class="setting-row"><span><strong>P1</strong></span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
-                <div class="setting-row"><span><strong>P2</strong></span><select id="interval-P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
-                <div class="setting-row"><span><strong>P3</strong></span><select id="interval-P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
+                <p class="qr-meta" style="text-align:left;">TST: every 15 minutes by default, from the national (NARU) TST guidance, whatever the colour. MITT P1, P2 and P3: local defaults, not set by NHS England. Agree them with your clinical lead.</p>
+                <div class="setting-row"><span><strong>TST</strong> (any colour)</span><select id="interval-TST" onchange="saveIntervalSettings()"><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
+                <div class="setting-row"><span><strong>MITT P1</strong></span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
+                <div class="setting-row"><span><strong>MITT P2</strong></span><select id="interval-P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+                <div class="setting-row"><span><strong>MITT P3</strong></span><select id="interval-P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
             </div>
         </details>
 
@@ -1789,7 +1792,7 @@
                 START TRIAGE<br><span>Ten Second Triage (TST)</span>
             </button>
             <button id="btn-mitt" class="btn btn-primary" onclick="initiateTriage('MITT')">
-                MITT triage<br><span style="font-size:0.9rem; font-weight:normal;">Clinicians at the CCP / CCS, when directed</span>
+                MITT triage<br><span style="font-size:0.9rem; font-weight:normal;">Clinicians, when directed</span>
             </button>
             <!-- Back to basics (v0.17.0): handing over and receiving are visible on the home screen; the rest is in a short "More" list. -->
             <div class="home-row home-pair">
@@ -2158,8 +2161,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.18.0';
-    const APP_BUILD = '2026-10-23-positions';
+    const APP_VERSION = '0.19.0';
+    const APP_BUILD = '2026-10-29-decisions';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2244,6 +2247,7 @@
     let lastTriagePath = null;       // { uid, tool, path } for "change last answer"
     let cachedCcsLocation = null;
     let reassessIntervals = {};
+    let toolMode = 'TST';
     let currentPosition = null;
     let gpsAccuracy = null;
     let gpsFixes = [];
@@ -3040,6 +3044,7 @@
         if (savedIdMode) setIdMode(savedIdMode);
         cachedCcsLocation = lsJSON('mit_ccs_location', null);
         reassessIntervals = lsJSON('mit_reassess_intervals', {}) || {};
+        toolMode = ls('mit_tool_mode') === 'MITT' ? 'MITT' : 'TST';
         const m = lsJSON('mit_methane', null);
         if (m) {
             $('m-decl').value = m.m || 'Standby'; $('m-loc').value = m.e || ''; $('m-type').value = m.t || '';
@@ -3058,10 +3063,10 @@
         roleEl.className = 'status-item role-pill ' + (role === 'HCP' ? 'role-hcp' : 'role-non');
         document.body.classList.toggle('role-nonhcp', role !== 'HCP');
         setText('header-sector', currentSector);
-        $('btn-mitt').style.display = (role === 'NON_HCP') ? 'none' : 'block';
+        if (role !== 'HCP') toolMode = 'TST';
+        renderToolButtons();
         $('risk-container').style.display = (role === 'HCP') ? 'block' : 'none';
-        const hold = document.querySelector('#p-cat-override option[value="P1_HOLD"]');
-        if (hold) hold.disabled = role !== 'HCP';
+        applyP1HoldOption();
         const dead = document.querySelector('#p-cat-override option[value="DEAD"]');
         if (dead) dead.disabled = role !== 'HCP';
         showScreen('home-screen');
@@ -3529,6 +3534,7 @@
         renderResultAlerts(entry);
         $('btn-change-answer').style.display = (lastTriagePath && lastTriagePath.uid === entry.uid && lastTriagePath.path.length) ? 'block' : 'none';
         refreshCurrentPatientLocationStatus();
+        applyP1HoldOption();
         $('p-cat-override').value = entry.category;
         $('p-demos').value = entry.demos || '';
         $('p-allergies').value = entry.allergies || '';
@@ -3706,6 +3712,7 @@
         const newCat = $('p-cat-override').value;
         const oldCat = entry.category;
         if (newCat === oldCat) return;
+        if (newCat === 'P1_HOLD' && userRole === 'HCP' && !p1HoldAllowedHere()) { showBlockingError('P1 Hold not in use', 'P1 Hold is not nationally signed off. It can only be used once the incident commander allows it for this incident on the commander screen.'); $('p-cat-override').value = oldCat; return; }
         if ((newCat === 'DEAD' || newCat === 'P1_HOLD') && userRole !== 'HCP') { showBlockingError('Clinician decision', `${catShort(newCat)} can only be set by a healthcare professional.`); $('p-cat-override').value = oldCat; return; }
         entry.category = newCat;
         entry.lastReassessed = Date.now(); entry.reassessOutcome = 'category changed';
@@ -5211,6 +5218,8 @@
         clearChildren(box);
         const rt = pendingReTriageUid ? indexByUid(pendingReTriageUid) : -1;
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));
+        const mp = mittPromptCard();
+        if (mp) box.appendChild(mp);
         const parts = alertSummary(patientAlerts(Date.now()));
         if (parts.length) box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
         if (TRAINING && exerciseRole()) box.appendChild(el('div', { className: 'alert-card info', id: 'home-exercise', style: 'border-left-color:#7B3F00;', onclick: showExerciseGuide }, [el('strong', { text: '🎯 Live exercise. ' }), `You are ${exerciseRole().label}. Tap for the facilitator guide.`]));
@@ -5805,7 +5814,9 @@
         $('mode-training').checked = TRAINING;
         $('btn-clear-training').style.display = TRAINING ? 'block' : 'none';
         $('set-incident-code').value = incidentCode;
-        ['P1', 'P2', 'P3'].forEach(c => { $('interval-' + c).value = String(Math.round((reassessIntervals[c] || MITTLib.REASSESS_INTERVALS[c]) / 60000)); });
+        ['TST', 'P1', 'P2', 'P3'].forEach(c => { $('interval-' + c).value = String(Math.round((reassessIntervals[c] || MITTLib.REASSESS_INTERVALS[c]) / 60000)); });
+        $('set-tool-mode').value = toolMode;
+        $('set-tool-mode-row').style.display = userRole === 'HCP' ? '' : 'none';
         setText('set-you-sum', `${triagerName || 'no name'} · ${userRole === 'HCP' ? 'Clinician' : userRole === 'NON_HCP' ? 'Non-clinical' : 'no role'}`);
         setText('device-info', `Device code ${deviceId} • ID prefix ${idPrefix()} • storage: ${storageMode} • app v${APP_VERSION} (${APP_BUILD})`);
         $('modes-modal').style.display = 'flex';
@@ -5842,8 +5853,8 @@
     function toggleWakeLockSetting() { const on = $('mode-wakelock').checked; ls('mit_wakelock', on); if (on) requestWakeLock(); else releaseWakeLock(); }
     function saveIntervalSettings() {
         const next = {};
-        ['P1', 'P2', 'P3'].forEach(c => { next[c] = parseInt($('interval-' + c).value, 10) * 60000; });
-        logAudit('SETTINGS_CHANGED', '-', `Reassessment intervals (min): P1 ${next.P1 / 60000}, P2 ${next.P2 / 60000}, P3 ${next.P3 / 60000}`, Date.now());
+        ['TST', 'P1', 'P2', 'P3'].forEach(c => { next[c] = parseInt($('interval-' + c).value, 10) * 60000; });
+        logAudit('SETTINGS_CHANGED', '-', `Reassessment intervals (min): TST ${next.TST / 60000}, MITT P1 ${next.P1 / 60000}, P2 ${next.P2 / 60000}, P3 ${next.P3 / 60000}`, Date.now());
         reassessIntervals = next;
         ls('mit_reassess_intervals', JSON.stringify(next));
         saveState();
@@ -6020,7 +6031,7 @@
         CMD.inflight = true;
         try {
             const duressSent = CMD.cfg.duress ? Object.assign({}, CMD.cfg.duress) : null;
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, sector: currentSector || '', userRole: userRole || undefined, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
                 cmdHandleDuressReply(r.body.duress, duressSent);
@@ -6032,6 +6043,7 @@
                     if (CMD.cfg.marks.length || had) showToast(CMD.cfg.marks.length ? 'The commander updated the map (cordons, RVP, loading point). Open the map to see them.' : 'The commander cleared the map markings.');
                     if (patientMap) renderSharedMarks();
                 }
+                if (r.body.policy && (r.body.policyAt || 0) !== (CMD.cfg.policyAt || 0)) cmdApplyPolicy(r.body.policy, r.body.policyAt || 0);
                 CMD.lastSentAt = Date.now();
                 CMD.sentTotal += r.body.accepted || 0;
                 if (CMD.failStreak) logAudit('COMMANDER_RECONNECTED', '-', `Sending to commander ${CMD.cfg.code} resumed after ${CMD.failStreak} failed attempt(s)`, Date.now());
@@ -6057,6 +6069,80 @@
             cmdRenderStatus();
         }
     }
+    // ---------- Incident decisions from the commander (P1 Hold allowed; MITT now in use) ----------
+    function cmdPolicy() { return (cmdActive() && CMD.cfg.policy) ? MITTLib.normalisePolicy(CMD.cfg.policy) : {}; }
+    function p1HoldAllowedHere() { return MITTLib.p1HoldAllowed(cmdPolicy(), userRole); }
+    function cmdApplyPolicy(raw, at) {
+        const before = cmdPolicy();
+        CMD.cfg.policy = MITTLib.normalisePolicy(raw); CMD.cfg.policyAt = at;
+        const now = cmdPolicy();
+        const wasOn = !!(before.p1Hold && before.p1Hold.on), isOn = !!(now.p1Hold && now.p1Hold.on);
+        if (wasOn !== isOn) {
+            logAudit(isOn ? 'P1_HOLD_ALLOWED' : 'P1_HOLD_WITHDRAWN', '-', isOn ? `The commander allowed P1 Hold for this incident (decision by ${now.p1Hold.by || 'not recorded'})` : 'The commander withdrew P1 Hold for this incident', Date.now());
+            if (userRole === 'HCP') showToast(isOn ? `P1 Hold is now allowed in this incident (decision by ${now.p1Hold.by || 'the commander'}).` : 'P1 Hold has been withdrawn in this incident.', { long: true, alert: true });
+        }
+        const m = now.mitt;
+        if (m && m.id !== CMD.cfg.mittSeen && m.id !== (before.mitt && before.mitt.id)) {
+            const mine = MITTLib.policyPromptApplies(m.groups, { role: userRole, sector: currentSector });
+            logAudit('MITT_PROMPT', '-', `The commander says MITT is now in use (sent to ${m.groups.map(MITTLib.policyGroupLabel).join(', ')})${mine ? '' : '; not addressed to this phone'}`, Date.now());
+            if (mine) {
+                CMD.cfg.mittPending = m.id;
+                showToast(userRole === 'HCP' ? 'The commander says MITT is now in use. See the home screen.' : 'The commander says clinicians are now using MITT. Keep using TST.', { long: true, alert: true });
+                try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+            }
+        }
+        cmdSaveCfg();
+        applyP1HoldOption();
+        renderHomeAlerts();
+    }
+    function mittPromptCard() {
+        if (!cmdActive() || !CMD.cfg.mittPending) return null;
+        const m = cmdPolicy().mitt;
+        if (!m || m.id !== CMD.cfg.mittPending) return null;
+        const done = (switchNow) => {
+            CMD.cfg.mittSeen = m.id; CMD.cfg.mittPending = null; cmdSaveCfg();
+            logAudit('MITT_PROMPT_ANSWERED', '-', switchNow ? 'Switched this phone to MITT after the commander\'s prompt' : (userRole === 'HCP' ? 'Kept TST for now after the commander\'s MITT prompt' : 'Read the commander\'s MITT prompt'), Date.now());
+            if (switchNow) setToolMode('MITT'); else renderHomeAlerts();
+        };
+        const when = fmtTime(m.at);
+        if (userRole !== 'HCP') return el('div', { className: 'alert-card info', id: 'home-mitt-prompt' }, [el('strong', { text: '📣 Commander: ' }), `clinicians are now using MITT (${when}). Carry on with TST and hand casualties over as directed.`, el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'OK', onclick: () => done(false) })]);
+        return el('div', { className: 'alert-card info', id: 'home-mitt-prompt', style: 'border-left-color:#E87722;' }, [el('strong', { text: '📣 Commander: MITT is now in use. ' }), `Sent ${when}${m.by ? ' by ' + m.by : ''}. Switch this phone's main button to MITT? You can switch back at any time.`,
+            el('div', { className: 'rs-row', style: 'margin-top:8px;' }, [el('button', { className: 'btn btn-primary', style: 'margin:0; padding:0.7rem;', text: 'Switch to MITT', onclick: () => done(true) }), el('button', { className: 'btn btn-secondary', style: 'margin:0; padding:0.7rem;', text: 'Not yet', onclick: () => done(false) })])]);
+    }
+    // P1 Hold is offered only when the commander has allowed it (and only to clinicians). A record that is already
+    // P1 Hold keeps showing it, so it can still be read and changed to something else.
+    function applyP1HoldOption() {
+        const hold = document.querySelector('#p-cat-override option[value="P1_HOLD"]');
+        if (!hold) return;
+        const entry = (typeof currentEntry === 'function') ? currentEntry() : null;
+        const allowed = p1HoldAllowedHere();
+        hold.hidden = !allowed && !(entry && entry.category === 'P1_HOLD');
+        hold.disabled = !allowed;
+    }
+    // Main triage tool on this phone (toolMode, declared with the other settings): TST unless a clinician switches,
+    // themselves or after the commander's prompt.
+    function setToolMode(mode, quiet) {
+        mode = (mode === 'MITT' && userRole === 'HCP') ? 'MITT' : 'TST';
+        const changed = mode !== toolMode;
+        toolMode = mode;
+        ls('mit_tool_mode', mode);
+        if (changed && !quiet) { logAudit('TOOL_MODE', '-', `Main triage button on this phone set to ${mode}`, Date.now()); showToast(mode === 'MITT' ? 'Main button is now MITT. TST is still below it.' : 'Main button is back to TST.'); }
+        renderToolButtons();
+        if ($('set-tool-mode')) $('set-tool-mode').value = toolMode;
+    }
+    function renderToolButtons() {
+        const main = $('btn-start-triage'), other = $('btn-mitt');
+        if (!main || !other) return;
+        const mitt = toolMode === 'MITT' && userRole === 'HCP';
+        clearChildren(main); clearChildren(other);
+        main.append('START TRIAGE', el('br'), el('span', { text: mitt ? 'MITT (major incident triage tool)' : 'Ten Second Triage (TST)' }));
+        main.onclick = () => initiateTriage(mitt ? 'MITT' : 'TST');
+        other.append(mitt ? 'TST triage' : 'MITT triage', el('br'), el('span', { style: 'font-size:0.9rem; font-weight:normal;', text: mitt ? 'Ten Second Triage, if needed' : 'Clinicians, when directed' }));
+        other.onclick = () => initiateTriage(mitt ? 'TST' : 'MITT');
+        other.style.display = userRole === 'HCP' ? 'block' : 'none';
+        main.classList.toggle('mitt-main', mitt);
+    }
+
     function cmdRenderStatus() {
         const pill = $('cmd-pill');
         const active = cmdActive();
