@@ -6102,7 +6102,8 @@
         const done = (switchNow) => {
             CMD.cfg.mittSeen = m.id; CMD.cfg.mittPending = null; cmdSaveCfg();
             logAudit('MITT_PROMPT_ANSWERED', '-', switchNow ? 'Switched this phone to MITT after the commander\'s prompt' : (userRole === 'HCP' ? 'Kept TST for now after the commander\'s MITT prompt' : 'Read the commander\'s MITT prompt'), Date.now());
-            if (switchNow) setToolMode('MITT'); else renderHomeAlerts();
+            if (switchNow) setToolMode('MITT');
+            renderHomeAlerts();
         };
         const when = fmtTime(m.at);
         if (userRole !== 'HCP') return el('div', { className: 'alert-card info', id: 'home-mitt-prompt' }, [el('strong', { text: '📣 Commander: ' }), `clinicians are now using MITT (${when}). Carry on with TST and hand casualties over as directed.`, el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'OK', onclick: () => done(false) })]);

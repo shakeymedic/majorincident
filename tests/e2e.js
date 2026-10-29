@@ -1332,7 +1332,7 @@ async function test(name, fn) {
         await page_visible(CB, '#home-mitt-prompt');
         await CB.click('#home-mitt-prompt .btn-primary');
         const m = await CB.evaluate(() => ({ mode: toolMode, main: document.getElementById('btn-start-triage').textContent, other: document.getElementById('btn-mitt').textContent, card: !!document.getElementById('home-mitt-prompt'), stored: ls('mit_tool_mode') }));
-        assert.deepStrictEqual({ mode: m.mode, card: m.card, stored: m.stored }, { mode: 'MITT', card: false, stored: 'MITT' });
+        assert.deepStrictEqual({ mode: m.mode, card: m.card, stored: m.stored }, { mode: 'MITT', card: false, stored: 'MITT' }, JSON.stringify(m));
         assert.match(m.main, /MITT/); assert.match(m.other, /TST/);
         assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'MITT_PROMPT_ANSWERED')));
         // The same prompt is not shown again on the next report
