@@ -230,10 +230,10 @@ function render(opts) {
     const ccsCats = order.filter(c => onScene.some(r => stage(r) === 'ccs' && r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${onScene.filter(r => stage(r) === 'ccs' && r.category === c).length}</b>`).join(' • ') || 'none yet';
     const hospSub = hosp.map(h => `${esc(h)} <b>${sc.hospitals[h]}</b>`).join(' • ') || 'none yet';
     $('stages').innerHTML = `<div class="stage"><div class="n">${sc.field}</div><div><div class="lbl">In the field</div><div class="sub">${fieldSub}</div></div></div>` +
-        `<div class="stage ccs"><div class="n">${sc.ccs}</div><div><div class="lbl">At CCS</div><div class="sub">${ccsCats}</div></div></div>` +
+        `<div class="stage ccs"><div class="n">${sc.ccs}</div><div><div class="lbl">At the casualty clearing station</div><div class="sub">${ccsCats}</div></div></div>` +
         `<div class="stage evac"><div class="n">${sc.evacuated}</div><div><div class="lbl">Evacuated</div><div class="sub">${hospSub}</div></div></div>` +
         (() => { const t = onScene.filter(r => !hadMitt(r)); const sub = order.filter(c => t.some(r => r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${t.filter(r => r.category === c).length}</b>`).join(' • '); return `<div class="stage tst"><div class="n">${t.length}</div><div><div class="lbl">TST only</div><div class="sub">${t.length ? 'no MITT sort yet: ' + sub : 'everyone on scene has had MITT'}</div></div></div>`; })();
-    setText('counts-note', `Big number = on scene now (field + CCS); "in total" includes evacuated. CCS = casualty clearing station (set on the phone, or inferred from a "Casualty Clearing" sector on older phones). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
+    setText('counts-note', `Big number = on scene now (field + casualty clearing station); "in total" includes evacuated. CCS on the small labels = casualty clearing station (set on the phone, or inferred from the sector name). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
     // phones
     const devs = data.devices || [];
     $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
@@ -246,7 +246,7 @@ function render(opts) {
     const sectorRows = Object.keys(sectors).sort().map(s => `<div class="sector-row"><span class="sname">${esc(s)}</span>${order.filter(c => sectors[s][c]).map(c => `${cat(c)} <b>${sectors[s][c]}</b>`).join(' ')}<span class="muted">${sectors[s].n}</span></div>`).join('') || '<p class="muted">Nobody left in the field.</p>';
     const ccsRow = ccsRecs.length ? `<div class="sector-row"><span class="sname">Casualty clearing station</span>${order.filter(c => ccsRecs.some(r => r.category === c)).map(c => `${cat(c)} <b>${ccsRecs.filter(r => r.category === c).length}</b>`).join(' ')}<span class="muted">${ccsRecs.length}</span></div>` : '<p class="muted">None at the CCS yet.</p>';
     const hospRows = hosp.map(h => { const rs = all.filter(r => r.evacuated && (String(r.evacDest || '').trim() || 'Destination not recorded') === h); return `<div class="hosp-row"><span class="hname">${esc(h)}</span>${order.filter(c => rs.some(r => r.category === c)).map(c => `${cat(c)} <b>${rs.filter(r => r.category === c).length}</b>`).join(' ')}<span class="hn">${rs.length}</span></div>`; }).join('') || '<p class="muted">Nobody evacuated yet.</p>';
-    $('sectors').innerHTML = `<div class="where-h">In the field, by sector (${sc.field})</div>${sectorRows}<div class="where-h">At CCS (${sc.ccs})</div>${ccsRow}<div class="where-h">Evacuated, by hospital (${sc.evacuated})</div>${hospRows}`;
+    $('sectors').innerHTML = `<div class="where-h">In the field, by sector (${sc.field})</div>${sectorRows}<div class="where-h">At the casualty clearing station (${sc.ccs})</div>${ccsRow}<div class="where-h">Evacuated, by hospital (${sc.evacuated})</div>${hospRows}`;
     setText('where-note', `${sc.field} field • ${sc.ccs} CCS • ${sc.evacuated} evacuated`);
     // attention
     const att = [];
@@ -355,7 +355,7 @@ function renderMarks() {
 // ---------- Clinical decisions for the incident (P1 Hold allowed; MITT now in use) ----------
 // P1 Hold is hidden on every phone until the commander allows it here, with the name of who decided (G2).
 // The MITT prompt tells the chosen groups of phones that MITT is in use; clinicians can also switch on their own (G6).
-const DEFAULT_PROMPT_SECTORS = ['Casualty Clearing'];
+const DEFAULT_PROMPT_SECTORS = ['Casualty clearing station'];
 function policyNow() { return MITTLib.normalisePolicy((data && data.policy) || {}); }
 function sectorGroups() {
     const seen = {};
@@ -641,7 +641,7 @@ function timelineEvents(all) {
         else if (r.timestamp) ev.push({ ts: r.timestamp, uid: r.uid, id, text: `Triaged ${esc(r.tool || '')} <b>${esc(MITTLib.categoryShort(r.category))}</b>`, sub: [r.reason, r.triager].filter(Boolean).join(' • ') });
         Object.keys(r.interventions || {}).forEach(k => { const t = r.interventions[k]; if (t && t.ts) ev.push({ ts: t.ts, uid: r.uid, id, text: esc(k), sub: t.by || '' }); });
         if (r.lastDeteriorationAt) ev.push({ ts: r.lastDeteriorationAt, uid: r.uid, id, text: '<b style="color:#DA291C">Deteriorated</b>', sub: '' });
-        if (r.ccsAt) ev.push({ ts: r.ccsAt, uid: r.uid, id, text: 'Arrived at CCS', sub: '' });
+        if (r.ccsAt) ev.push({ ts: r.ccsAt, uid: r.uid, id, text: 'Arrived at the casualty clearing station', sub: '' });
         if (r.handoverAt && r.handoverTo) ev.push({ ts: r.handoverAt, uid: r.uid, id, text: `Handed to ${esc(r.handoverTo)}`, sub: r.handoverState || '' });
         if (r.evacuated) { const t = r.evacAt || (r.handoverAt && r.handoverState === 'accepted' ? r.handoverAt : 0) || r.updatedAt; if (t) ev.push({ ts: t, uid: r.uid, id, text: `<b>Evacuated</b> to ${esc(r.evacDest || 'destination not recorded')}`, sub: r.evacVehicle || '' }); }
     });
@@ -665,10 +665,10 @@ function printSummary() {
     const m = data.methane;
     const when = new Date().toLocaleString('en-GB');
     const counts = `<table><thead><tr><th></th>${order.map(c => `<th>${esc(MITTLib.CATEGORY_INFO[c].short)}</th>`).join('')}<th>Total</th></tr></thead><tbody>` +
-        `<tr><td>On scene (field + CCS)</td>${order.map(c => `<td>${onScene.filter(r => r.category === c).length}</td>`).join('')}<td>${onScene.length}</td></tr>` +
+        `<tr><td>On scene (field + casualty clearing station)</td>${order.map(c => `<td>${onScene.filter(r => r.category === c).length}</td>`).join('')}<td>${onScene.length}</td></tr>` +
         `<tr><td>Evacuated</td>${order.map(c => `<td>${all.filter(r => r.evacuated && r.category === c).length}</td>`).join('')}<td>${sc.evacuated}</td></tr>` +
         `<tr><td><b>All casualties</b></td>${order.map(c => `<td><b>${all.filter(r => r.category === c).length}</b></td>`).join('')}<td><b>${all.length}</b></td></tr></tbody></table>` +
-        `<p>In the field ${sc.field} • at CCS ${sc.ccs} • evacuated ${sc.evacuated} • TST only (no MITT sort) ${onScene.filter(r => !hadMitt(r)).length}</p>`;
+        `<p>In the field ${sc.field} • at the casualty clearing station ${sc.ccs} • evacuated ${sc.evacuated} • TST only (no MITT sort) ${onScene.filter(r => !hadMitt(r)).length}</p>`;
     const hosp = Object.keys(sc.hospitals).sort().map(h => { const rs = all.filter(r => r.evacuated && (String(r.evacDest || '').trim() || 'Destination not recorded') === h); return `<tr><td>${esc(h)}</td>${order.map(c => `<td>${rs.filter(r => r.category === c).length || ''}</td>`).join('')}<td>${rs.length}</td><td>${esc(Array.from(new Set(rs.map(r => r.evacVehicle).filter(Boolean))).join(', '))}</td></tr>`; }).join('');
     const phones = (data.devices || []).map(d => `<tr><td>${esc(d.triager || 'Unnamed')}</td><td>${esc(d.deviceId)}</td><td>${d.records || 0}</td><td>${hm(d.joinedAt)}</td><td>${hm(d.lastSeen)}</td></tr>`).join('');
     const tl = timelineEvents(all).slice().reverse().map(e => `<tr><td>${hm(e.ts)}</td><td>${esc(e.id)}</td><td>${e.text}${e.sub ? ` <span class="muted">${esc(e.sub)}</span>` : ''}</td></tr>`).join('');
@@ -693,7 +693,7 @@ function renderLegend() {
     if (legendDone) return; legendDone = true;
     const sw = (c, extra) => `<span class="sw${extra ? ' ' + extra : ''}" style="background:${MITTLib.CATEGORY_INFO[c] ? MITTLib.CATEGORY_INFO[c].colour : '#4C6272'}"></span>`;
     $('legend').innerHTML = ['P1', 'P2', 'P3', 'P1_HOLD', 'NOT_BREATHING', 'DEAD'].map(c => `<span class="lg">${sw(c)}${esc(MITTLib.CATEGORY_INFO[c].short)} <span class="muted">${esc(MITTLib.CATEGORY_INFO[c].label.toLowerCase())}</span></span>`).join('') +
-        `<span class="lg opt"><span class="sw dash"></span>dashed = TST sieve</span><span class="lg opt"><span class="sw sq" style="background:#aaa"></span>square = at CCS</span><span class="lg opt"><span class="sw sq" style="background:#007F3B"></span>CCS</span><span class="lg opt"><span class="sw sq" style="background:#330072"></span>👤 triager (opt-in; grey = over 5 min old, red = needs help)</span><span class="spacer"></span><span class="lg opt">Big number = on scene now • small = including evacuated • W wall • F full screen</span>`;
+        `<span class="lg opt"><span class="sw dash"></span>dashed = TST sieve</span><span class="lg opt"><span class="sw sq" style="background:#aaa"></span>square = at the casualty clearing station</span><span class="lg opt"><span class="sw sq" style="background:#007F3B"></span>CCS</span><span class="lg opt"><span class="sw sq" style="background:#330072"></span>👤 triager (opt-in; grey = over 5 min old, red = needs help)</span><span class="spacer"></span><span class="lg opt">Big number = on scene now • small = including evacuated • W wall • F full screen</span>`;
 }
 function markerIcon(r) {
     const info = MITTLib.CATEGORY_INFO[r.category] || { colour: '#005EB8', text: '#fff' };
@@ -729,7 +729,7 @@ function renderMap(records) {
         if (l.acc && l.acc > 15) circles.addLayer(L.circle(ll, { radius: Number(l.acc), color: MITTLib.CATEGORY_INFO[r.category] ? MITTLib.CATEGORY_INFO[r.category].colour : '#005EB8', weight: 1, opacity: 0.6, fillOpacity: 0.08 }));
     });
     if (data.ccs && data.ccs.lat) {
-        ccsMarker = L.marker([Number(data.ccs.lat), Number(data.ccs.lng)], { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty Clearing Station').addTo(map);
+        ccsMarker = L.marker([Number(data.ccs.lat), Number(data.ccs.lng)], { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty clearing station').addTo(map);
     }
     renderMarks();
     renderTeams(data.devices, Date.now());
@@ -809,7 +809,7 @@ function renderPatient(r) {
         `<div class="pt-sec"><h4>Triage</h4>${triage}</div>` +
         `<div class="pt-sec"><h4>Reassessment</h4>${reass}<h4 style="margin-top:10px">Where</h4>${locHtml}</div>` +
         `<div class="pt-sec"><h4>Interventions</h4>${intsHtml}<h4 style="margin-top:10px">Injuries</h4>${injHtml}</div>` +
-        `<div class="pt-sec"><h4>CCS, evacuation and handover</h4>${chain}<h4 style="margin-top:10px">Recorded by</h4>${who}</div>` +
+        `<div class="pt-sec"><h4>Casualty clearing station, evacuation and handover</h4>${chain}<h4 style="margin-top:10px">Recorded by</h4>${who}</div>` +
         `<div class="pt-sec wide"><h4>Patient details and notes</h4>${kv([['Demographics', r.demos || ''], ['Allergies', r.allergies || '']])}${r.notes ? `<div class="pt-note">${esc(r.notes)}</div>` : '<span class="muted">No notes</span>'}</div>`;
 }
 function download(name, text, type) {

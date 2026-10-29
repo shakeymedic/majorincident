@@ -1361,8 +1361,8 @@ async function test(name, fn) {
         // CB's MITT patient: handed to the CCS from the patient screen
         await CB.evaluate(() => { toggleCcs(); });
         const b = await CB.evaluate(() => ({ atCcs: currentEntry().atCcs, sector: currentEntry().sector, btn: document.getElementById('btn-ccs').textContent, sum: document.getElementById('sum-transport').textContent }));
-        assert.strictEqual(b.atCcs, true); assert.strictEqual(b.sector, 'Casualty Clearing');
-        assert.match(b.btn, /At CCS/); assert.match(b.sum, /AT CCS/);
+        assert.strictEqual(b.atCcs, true); assert.strictEqual(b.sector, 'Casualty clearing station');
+        assert.match(b.btn, /At the casualty clearing station/); assert.match(b.sum, /AT CCS/);
         // CA's TST patient: evacuated; the hospital chooser opens because no destination was recorded
         await CA.evaluate(() => { currentLogIndex = 0; toggleEvac(); });
         await CA.waitForSelector('#hospital-modal', { state: 'visible', timeout: 5000 });
@@ -1376,7 +1376,7 @@ async function test(name, fn) {
         await CC.evaluate(() => refreshNow());
         await CC.waitForFunction(() => /Heartlands Hospital/.test(document.getElementById('stages').textContent), null, { timeout: 8000 });
         const st = await CC.evaluate(() => ({ stages: document.getElementById('stages').textContent, counts: document.getElementById('counts').textContent, where: document.getElementById('sectors').textContent, rows: document.querySelectorAll('#rows tr').length }));
-        assert.match(st.stages, /0\s*In the field/i); assert.match(st.stages, /1\s*At CCS/i); assert.match(st.stages, /1\s*Evacuated/i);
+        assert.match(st.stages, /0\s*In the field/i); assert.match(st.stages, /1\s*At the casualty clearing station/i); assert.match(st.stages, /1\s*Evacuated/i);
         assert.match(st.counts, /0 field • 1 CCS/);
         assert.match(st.where, /Heartlands Hospital/);
         assert.strictEqual(st.rows, 1, 'on scene by default');
@@ -1670,8 +1670,8 @@ async function test(name, fn) {
         await C.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady, null, { timeout: 10000 });
         await answerDialog(C, true, 'Nurse CCZ');
         await page_visible(C, '#cmd-link-modal');
-        assert.deepStrictEqual(await C.evaluate(() => [triagerName, userRole, currentSector, incidentLog.length, demoMode()]), ['Nurse CCZ', 'HCP', 'Casualty Clearing', 0, 'xc']);
-        assert.match(await C.textContent('#training-banner-text'), /EXERCISE — CCZ/);
+        assert.deepStrictEqual(await C.evaluate(() => [triagerName, userRole, currentSector, incidentLog.length, demoMode()]), ['Nurse CCZ', 'HCP', 'Casualty clearing station', 0, 'xc']);
+        assert.match(await C.textContent('#training-banner-text'), /EXERCISE — Casualty clearing station/);
         assert.ok(await C.$('#home-exercise'));
         await C.evaluate(s => { window._join = cmdJoin(s.code, s.pin); }, share);
         await answerDialog(C, false);
@@ -1894,7 +1894,7 @@ async function test(name, fn) {
         await CV.close();
         await CM._ctx.close(); await P._ctx.close(); await Q._ctx.close();
     });
-    await test('v0.16.0: the METHANE rough count tallies, undoes and fills N; voice notes ask once in real use and refuse offline', async () => {
+    await test('v0.16.0: the METHANE rough count tallies, undoes and fills N; voice notes are training-only and refuse offline', async () => {
         const R = await device('R16', { initScript: () => { window.SpeechRecognition = window.webkitSpeechRecognition = function () { this.start = () => { window._voiceStarted = (window._voiceStarted || 0) + 1; }; }; } });
         await setup(R, 'Medic Romeo');
         await R.evaluate(() => { showMethane(); toggleTally(true); });
@@ -1903,24 +1903,25 @@ async function test(name, fn) {
         await R.evaluate(() => tallyToMethane());
         assert.match(await R.inputValue('#m-num'), /^Rough count, not yet triaged at \d\d:\d\d: about 3 \(walking 2, lying 1, apparently dead 0\)$/);
         assert.ok(await R.evaluate(() => auditLog.some(a => a.action === 'ROUGH_COUNT')));
-        // Voice: real use asks first; "Type instead" does not start the microphone.
+        // Voice (G9): training only. Real use hides the button and refuses without starting the microphone.
         await triage(R, 'TST', [true]);
+        assert.strictEqual(await R.evaluate(() => getComputedStyle(document.querySelector('.voice-btn')).display), 'none');
         await R.evaluate(() => { startVoice('p-notes'); });
-        await page_visible(R, '#confirm-modal');
-        assert.match(await R.textContent('#confirm-title'), /Voice notes leave this phone/);
-        await R.click('#confirm-cancel');
         assert.strictEqual(await R.evaluate(() => window._voiceStarted || 0), 0);
-        await R.evaluate(() => { startVoice('p-notes'); });
-        await answerDialog(R, true);
-        await R.waitForFunction(() => window._voiceStarted === 1, null, { timeout: 3000 });
-        assert.ok(await R.evaluate(() => auditLog.some(a => a.action === 'VOICE_NOTICE_ACCEPTED')));
-        await R.evaluate(() => startVoice('p-notes'));   // asked only once
-        assert.strictEqual(await R.evaluate(() => window._voiceStarted), 2);
-        await R._ctx.setOffline(true);
-        await R.evaluate(() => startVoice('p-notes'));
-        assert.strictEqual(await R.evaluate(() => window._voiceStarted), 2, 'no voice without a connection');
-        await R._ctx.setOffline(false);
+        assert.strictEqual(await R.evaluate(() => getComputedStyle(document.getElementById('confirm-modal')).display), 'none', 'no question asked');
         await R._ctx.close();
+        // In training it starts at once, and still refuses offline
+        const RT = await device('R16T', { initScript: () => { try { localStorage.setItem('mit_training', '1'); } catch (e) {} window.SpeechRecognition = window.webkitSpeechRecognition = function () { this.start = () => { window._voiceStarted = (window._voiceStarted || 0) + 1; }; }; } });
+        await setup(RT, 'Medic Romeo');
+        await triage(RT, 'TST', [true]);
+        assert.notStrictEqual(await RT.evaluate(() => getComputedStyle(document.querySelector('.voice-btn')).display), 'none');
+        await RT.evaluate(() => startVoice('p-notes'));
+        await RT.waitForFunction(() => window._voiceStarted === 1, null, { timeout: 3000 });
+        await RT._ctx.setOffline(true);
+        await RT.evaluate(() => startVoice('p-notes'));
+        assert.strictEqual(await RT.evaluate(() => window._voiceStarted), 1, 'no voice without a connection');
+        await RT._ctx.setOffline(false);
+        await RT._ctx.close();
     });
 
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });

@@ -828,6 +828,7 @@
     body.demo .training-banner { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 10px; }
     .leave-demo { background: #000; color: #fff; border: 0; border-radius: 999px; padding: 8px 14px; font-weight: 800; font-size: 0.95rem; min-height: 40px; cursor: pointer; white-space: nowrap; }
     body.training header { background-color: #B35900; }
+    body:not(.training) .voice-btn { display: none !important; }
     /* Guided two-phone handover */
     .handover-steps { list-style: none; padding: 0; margin: 0 0 10px 0; width: 100%; }
     .handover-steps li { padding: 6px 10px; border-radius: 8px; margin-bottom: 4px; background: rgba(0,0,0,0.05); font-size: 0.98rem; }
@@ -1200,7 +1201,7 @@
         <div id="demo-phone-choices"></div>
         <button type="button" class="btn btn-secondary demo-choice" style="margin-top:6px;" onclick="demoChoose('all')">👀 Everything on this phone<br><span style="font-size:0.8rem; font-weight:normal;">All 24 casualties from all four phones, for showing the app on your own</span></button>
         <h4 style="margin:10px 0 6px;">Live exercise with real people</h4>
-        <button type="button" class="btn btn-primary demo-choice" id="btn-exercise" style="background:#7B3F00;" onclick="openExercise()">🎯 Run a live exercise<br><span style="font-size:0.8rem; font-weight:normal;">Control room, field triagers and the CCZ on their own phones, all feeding one commander screen. Needs internet.</span></button>
+        <button type="button" class="btn btn-primary demo-choice" id="btn-exercise" style="background:#7B3F00;" onclick="openExercise()">🎯 Run a live exercise<br><span style="font-size:0.8rem; font-weight:normal;">Control room, field triagers and the casualty clearing station on their own phones, all feeding one commander screen. Needs internet.</span></button>
         <button type="button" class="btn btn-secondary" onclick="closeDemoPicker()">Cancel</button>
     </div>
 </div>
@@ -1210,9 +1211,9 @@
         <p class="qr-meta" style="text-align:left;">Everyone is in training mode, so nothing real is touched. Every device needs internet. <strong>The control room sets up first</strong>; everyone else then picks a role and scans its code.</p>
         <button type="button" class="btn btn-primary demo-choice" style="background:var(--nhs-dark-blue);" onclick="exerciseChoose('cmd')">🎖 Control room: set up the exercise<br><span style="font-size:0.8rem; font-weight:normal;">Do this first, on the device that runs the commander screen. It shows a code for everyone else.</span></button>
         <h4 style="margin:10px 0 6px;">Then everyone else</h4>
-        <button type="button" class="btn btn-primary demo-choice" onclick="exerciseChoose('xf')">🩺 Field triager (clinician)<br><span style="font-size:0.8rem; font-weight:normal;">Triage the casualties you find with TST or MITT, then hand them over to the CCZ</span></button>
+        <button type="button" class="btn btn-primary demo-choice" onclick="exerciseChoose('xf')">🩺 Field triager (clinician)<br><span style="font-size:0.8rem; font-weight:normal;">Triage the casualties you find with TST or MITT, then hand them over to the casualty clearing station</span></button>
         <button type="button" class="btn btn-secondary demo-choice" onclick="exerciseChoose('xn')">🚒 Field triager (non-clinical)<br><span style="font-size:0.8rem; font-weight:normal;">Police, fire, first responder: TST only</span></button>
-        <button type="button" class="btn btn-primary demo-choice" style="background:#00703C;" onclick="exerciseChoose('xc')">🏥 Casualty clearing zone (CCZ)<br><span style="font-size:0.8rem; font-weight:normal;">Receive patients by QR handover, re-triage, treat and send them to hospital</span></button>
+        <button type="button" class="btn btn-primary demo-choice" style="background:#00703C;" onclick="exerciseChoose('xc')">🏥 Casualty clearing station<br><span style="font-size:0.8rem; font-weight:normal;">Receive patients by QR handover, re-triage, treat and send them to hospital</span></button>
         <button type="button" class="btn btn-secondary" onclick="showExerciseGuide()">📖 Facilitator guide</button>
         <button type="button" class="btn btn-secondary" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue);" onclick="closeExercise(); startDemo();">Back</button>
     </div>
@@ -1235,9 +1236,9 @@
         </ol>
         <h4>During the exercise</h4>
         <ul>
-            <li><strong>Field triagers</strong> triage each casualty, record bleeding control and position, then hand over to the CCZ: 📤 QR Handover on the patient, the CCZ phone scans it with 📷 Receive patient.</li>
-            <li><strong>CCZ</strong> accepts each patient (the commander screen then shows them as at the CCS), re-triages with MITT, records treatment, then marks them evacuated and picks the receiving hospital.</li>
-            <li><strong>Control room</strong> runs the incident from the commander screen alone: counts split into field, CCS and evacuated, the map, the needs-attention list, alerts with a sound (new P1, deterioration, tourniquet past an hour, phone gone quiet), the timeline, METHANE from the phones, the hospital board with each hospital's agreed capacity, phones, and every patient (tap any patient for their full details). Use the wall display on a TV. The view-only PIN lets an observer or a receiving hospital watch without being able to change anything.</li>
+            <li><strong>Field triagers</strong> triage each casualty, record bleeding control and position, then hand over to the casualty clearing station: 📤 QR Handover on the patient, the casualty clearing station's phone scans it with 📷 Receive patient.</li>
+            <li><strong>Casualty clearing station</strong> accepts each patient (the commander screen then shows them as at the casualty clearing station), re-triages with MITT, records treatment, then marks them evacuated and picks the receiving hospital.</li>
+            <li><strong>Control room</strong> runs the incident from the commander screen alone: counts split into field, casualty clearing station and evacuated, the map, the needs-attention list, alerts with a sound (new P1, deterioration, tourniquet past an hour, phone gone quiet), the timeline, METHANE from the phones, the hospital board with each hospital's agreed capacity, phones, and every patient (tap any patient for their full details). Use the wall display on a TV. The view-only PIN lets an observer or a receiving hospital watch without being able to change anything.</li>
             <li>Ideas for injects: a casualty deteriorates (tell the triager to re-triage), a new casualty appears late, a phone loses signal (aeroplane mode for 2 minutes, then it catches up), a tourniquet passes 1 hour.</li>
             <li><strong>If the commander screen says the server is unreachable</strong>, carry on: every phone keeps its own records and sends them when the link returns. For an urgent picture, a phone can use Home → More → <em>Send patients to another device</em> to show its patients as QR codes for the control room's phone to scan.</li>
         </ul>
@@ -1756,7 +1757,7 @@
                             <select id="intro-sector-select" onchange="updateSectorInput()">
                                 <option value="">Select or Type...</option>
                                 <option value="Inner Cordon">Inner Cordon</option>
-                                <option value="Casualty Clearing">Casualty Clearing</option>
+                                <option value="Casualty clearing station">Casualty clearing station</option>
                                 <option value="Loading Point">Loading Point</option>
                                 <option value="Triage Sieve">Triage Sieve</option>
                                 <option value="Decon">Decon</option>
@@ -1969,18 +1970,18 @@
                     </div>
                     <p class="location-mini">Indoors the phone's position is rough (Wi-Fi, ±30–150 m). Pin on map puts the patient exactly where you tap.</p>
                     <details class="rs-sec" id="sec-location-moves" style="margin:0.6rem 0;">
-                        <summary>Record a move <span class="rs-sum">found here, moved, at CCS, loaded</span></summary>
+                        <summary>Record a move <span class="rs-sum">found here, moved, at casualty clearing station, loaded</span></summary>
                         <div class="rs-body">
                             <div class="location-quick" style="margin-top:0.4rem;">
                                 <button class="btn btn-secondary" onclick="applyLocationQuickAction('Found at current location')">Found here</button>
                                 <button class="btn btn-secondary" onclick="applyLocationQuickAction('Moved to sector/area')">Moved to sector/area</button>
-                                <button class="btn btn-secondary" onclick="applyLocationQuickAction('At CCS/loading area')">At CCS/loading area</button>
+                                <button class="btn btn-secondary" onclick="applyLocationQuickAction('At CCS/loading area')">At casualty clearing station / loading area</button>
                                 <button class="btn btn-secondary" onclick="applyLocationQuickAction('Loaded/evacuated/destination')">Loaded / evacuated</button>
                             </div>
                         </div>
                     </details>
                     <div class="location-grid">
-                        <div class="input-group"><label for="p-sector">Sector / Zone</label><input type="text" id="p-sector" class="loc-field" placeholder="e.g. Warm Zone, CCS"></div>
+                        <div class="input-group"><label for="p-sector">Sector / Zone</label><input type="text" id="p-sector" class="loc-field" placeholder="e.g. Warm zone, Casualty clearing station"></div>
                         <div class="input-group"><label for="p-landmark">Treatment area / Landmark</label><input type="text" id="p-landmark" class="loc-field" placeholder="e.g. bus stop"></div>
                         <div class="input-group"><label for="p-floor">Floor / Level</label><input type="text" id="p-floor" class="loc-field" placeholder="e.g. -1, ground"></div>
                         <div class="input-group"><label for="p-area">Area / Bay / Room / Entrance</label><input type="text" id="p-area" class="loc-field" placeholder="e.g. Bay 4"></div>
@@ -2006,7 +2007,7 @@
             <details class="rs-sec" id="sec-transport">
                 <summary>Evacuation &amp; care <span class="rs-sum" id="sum-transport"></span></summary>
                 <div class="rs-body">
-                    <button id="btn-ccs" class="btn btn-secondary" style="margin-bottom:10px;" onclick="toggleCcs()">Mark as AT CCS (handed to casualty clearing)</button>
+                    <button id="btn-ccs" class="btn btn-secondary" style="margin-bottom:10px;" onclick="toggleCcs()">Mark as at the casualty clearing station</button>
                     <div class="input-group"><label for="p-evac-dest">Destination hospital</label>
                         <div style="display:flex; gap:5px;">
                             <input type="text" id="p-evac-dest" class="rec-field" list="hospital-list" placeholder="e.g. QEHB, Heartlands" style="flex:1; min-width:0;">
@@ -2064,7 +2065,7 @@
                 <div class="rs-body" id="map-list"></div>
             </details>
             <div class="rs-row" style="margin-top:0.4rem;">
-                <button class="btn btn-secondary" onclick="setCCSLocation()">＋ Set CCS</button>
+                <button class="btn btn-secondary" onclick="setCCSLocation()">＋ Set casualty clearing station</button>
                 <button class="btn btn-primary" onclick="resetToHome()">Home</button>
             </div>
         </div>
@@ -2986,7 +2987,7 @@
         const entry = currentEntry();
         if (!entry) return;
         if (action === 'At CCS/loading area') {
-            if (!$('p-sector').value) $('p-sector').value = 'Casualty Clearing';
+            if (!$('p-sector').value) $('p-sector').value = 'Casualty clearing station';
             if (!$('p-area').value) $('p-area').value = 'Loading area';
             markAtCcs(entry, 'move recorded');
             if ($('p-sector').value !== entry.sector) $('p-sector').value = entry.sector; // as toggleCcs does, or the form value wins below
@@ -3203,7 +3204,7 @@
     // Longest possible path through each flow (TST ends after penetrating OR breathing).
     const FLOW_MAX_QUESTIONS = { TST: 4, MITT: 7 };
     const OUTCOME_ACTIONS = {
-        'TST|Walking': 'P3 — walking. Direct to the casualty collection point as instructed.',
+        'TST|Walking': 'P3 — walking. Direct them where instructed (for example the casualty clearing station).',
         'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing.',
         'TST|Penetrating Injury': 'P1 — immediate priority.',
         'TST|Talking, No Penetrating Injury': 'P2 — urgent priority.',
@@ -3254,7 +3255,7 @@
     function initiateTriage(tool) {
         try { commitDirtyFields('Starting triage'); } catch (e) {}
         if (tool !== 'TST' && tool !== 'MITT') tool = 'TST';
-        if (tool === 'MITT' && userRole !== 'HCP') tool = 'TST'; // MITT is for clinicians at the CCP/CCS
+        if (tool === 'MITT' && userRole !== 'HCP') tool = 'TST'; // MITT is for clinicians at the casualty clearing station
         pendingCorrectionUid = null; // corrections start only from "Change last answer"
         currentTool = tool;
         lastTriageTool = tool;
@@ -3490,7 +3491,7 @@
         if (userRole !== 'HCP') { initiateTriage('TST'); return; }
         showScreen('home-screen'); // home shows "Re-triaging X — choose TST or MITT" with a cancel button
     }
-    // Clinician at the CCP/CCS: go straight from a TST result to MITT for the same patient (same record).
+    // Clinician at the casualty clearing station: go straight from a TST result to MITT for the same patient (same record).
     function mittThisPatient() {
         const entry = currentEntry();
         if (!entry || userRole !== 'HCP') return;
@@ -3533,7 +3534,7 @@
             promptBox.open = false; // the action line above says what to do now; the full prompts are one tap away
             promptBox.appendChild(el('summary', { text: `Care prompts: ${prompts[0]}${prompts.length > 1 ? ` (+${prompts.length - 1})` : ''}` }));
             promptBox.appendChild(el('ul', { style: 'margin-top:6px;' }, prompts.map(p => el('li', { text: p }))));
-            promptBox.appendChild(el('small', { text: 'NARU CCP interventions. Prompts only — not a substitute for clinical judgement.' }));
+            promptBox.appendChild(el('small', { text: 'NARU clinical interventions guidance. Prompts only — not a substitute for clinical judgement.' }));
         } else promptBox.style.display = 'none';
         setText('reassess-head', `${entry.tool || ''} • ${fmtTime(entry.createdAt || entry.timestamp)}`);
         renderResultAlerts(entry);
@@ -3561,7 +3562,7 @@
         $('p-card-no').value = entry.cardNo || '';
         $('time-offset').value = '0';
         const ccsBtn = $('btn-ccs');
-        ccsBtn.textContent = entry.atCcs ? 'At CCS ✓ (tap to undo)' : 'Mark as AT CCS (handed to casualty clearing)';
+        ccsBtn.textContent = entry.atCcs ? 'At the casualty clearing station ✓ (tap to undo)' : 'Mark as at the casualty clearing station';
         ccsBtn.style.backgroundColor = entry.atCcs ? 'var(--nhs-green)' : '';
         const evacBtn = $('btn-evac');
         evacBtn.textContent = entry.evacuated ? 'Mark as ON SCENE (undo evacuation)' : 'Mark as EVACUATED';
@@ -3840,13 +3841,13 @@
         renderResultScreen(entry, { keepDetailsOpen: true });
         if (entry.evacuated && !entry.evacDest) openHospitalChooser();
     }
-    // Handed over to the Casualty Clearing Station (CCS / casualty clearing zone): the commander screen splits
+    // Handed over to the Casualty Clearing Station (CCS): the commander screen splits
     // casualties into "in the field", "at CCS" and "evacuated". Set here, by the "At CCS" move button, when a
     // phone whose sector is the CCS receives a handover, and for every patient a CCS phone creates.
     function markAtCcs(entry, how) {
         if (!entry || entry.atCcs) return false;
         entry.atCcs = true; entry.ccsAt = Date.now();
-        if (!entry.sector || !MITTLib.isCcsLabel(entry.sector)) { entry.sector = 'Casualty Clearing'; touch(entry, ['sector']); }
+        if (!entry.sector || !MITTLib.isCcsLabel(entry.sector)) { entry.sector = 'Casualty clearing station'; touch(entry, ['sector']); }
         touch(entry, ['atCcs']);
         logAudit('CCS_ARRIVAL', entry.id, `Handed over to the casualty clearing station (${how})`, Date.now(), { uid: entry.uid });
         return true;
@@ -3970,17 +3971,13 @@
 
     // ---------- Voice notes ----------
     // Browsers turn speech into text with their maker's online service, so the recording can leave the phone.
-    // Real use asks once (and records the answer in the audit trail); training does not ask.
+    // Training only: the button is hidden in real use (body:not(.training)).
     async function startVoice(fieldId) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) { showToast('Voice not supported on this browser. Type instead.', { alert: true }); return; }
         if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showToast('Voice notes need a connection. Type instead.', { alert: true }); return; }
-        if (!TRAINING && ls('mit_voice_ok') !== '1') {
-            const ok = await inAppConfirm({ title: 'Voice notes leave this phone', message: 'To turn speech into text, your browser may send the recording to its maker\'s online speech service (for example Google for Chrome, Apple for Safari). Nothing else in this app does that.\n\nDo not say names or other details that identify the patient. Check with your information governance lead before using voice notes with real patients.', okLabel: 'I understand, use voice', cancelLabel: 'Type instead' });
-            if (!ok) return;
-            ls('mit_voice_ok', '1');
-            logAudit('VOICE_NOTICE_ACCEPTED', '-', 'User accepted that voice notes may be processed by the browser maker\'s online speech service', Date.now());
-        }
+        // G9 (Jake, 29 Oct 2026): no audio about real casualties leaves the phone, so voice notes work in training only.
+        if (!TRAINING) { showToast('Voice notes are for training only. Type the note instead.', { alert: true }); return; }
         const recognition = new SpeechRecognition();
         recognition.lang = 'en-GB'; recognition.continuous = false; recognition.interimResults = false;
         showToast('🎙 Listening… speak now');
@@ -4680,7 +4677,7 @@
             target = entry;
             logAudit('QR_ACCEPTED', entry.id, `Imported new record from ${sender} (rev ${meta.recordVersion}, hash ${wrapper && wrapper.h || '-'}${meta.expired ? ', OLDER THAN 8 H' : ''})`, Date.now(), { uid: entry.uid });
         }
-        if (MITTLib.isCcsLabel(currentSector) && !target.evacuated) markAtCcs(target, `received by ${triagerName || 'this phone'} at the CCS`);
+        if (MITTLib.isCcsLabel(currentSector) && !target.evacuated) markAtCcs(target, `received by ${triagerName || 'this phone'} at the casualty clearing station`);
         _pendingImport = null;
         $('preview-modal').style.display = 'none';
         saveState(); updateDashboard();
@@ -5573,7 +5570,7 @@
         });
         if (cachedCcsLocation && cachedCcsLocation.lat) {
             const ccsIcon = L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] });
-            ccsMarker = L.marker([parseFloat(cachedCcsLocation.lat), parseFloat(cachedCcsLocation.lng)], { icon: ccsIcon, zIndexOffset: 1000 }).addTo(patientMap).bindPopup('<b>Casualty Clearing Station (CCS)</b><div class="map-pop-btns"><button type="button" onclick="startMapPin(\'CCS\')">Move CCS</button></div>');
+            ccsMarker = L.marker([parseFloat(cachedCcsLocation.lat), parseFloat(cachedCcsLocation.lng)], { icon: ccsIcon, zIndexOffset: 1000 }).addTo(patientMap).bindPopup('<b>Casualty clearing station</b><div class="map-pop-btns"><button type="button" onclick="startMapPin(\'CCS\')">Move</button></div>');
         }
         renderSharedMarks();
         updateMapUserMarker();
@@ -5687,7 +5684,7 @@
         if (uid !== 'CCS' && indexByUid(uid) === -1) return;
         _mapPin = { uid };
         if (patientMap) patientMap.closePopup();
-        const id = uid === 'CCS' ? 'the Casualty Clearing Station' : `patient ${incidentLog[indexByUid(uid)].id}`;
+        const id = uid === 'CCS' ? 'the casualty clearing station' : `patient ${incidentLog[indexByUid(uid)].id}`;
         setMapPinBanner(`Tap the map exactly where ${id} is.`);
         $('patient-map').classList.add('pinning');
         if (!$('map-screen').classList.contains('active')) showMap();
@@ -5706,7 +5703,7 @@
         const pin = _mapPin;
         const ll = e.latlng;
         const grid = MITTLib.toOsGridRef(ll.lat, ll.lng);
-        const who = pin.uid === 'CCS' ? 'the CCS' : incidentLog[indexByUid(pin.uid)].id;
+        const who = pin.uid === 'CCS' ? 'the casualty clearing station' : incidentLog[indexByUid(pin.uid)].id;
         const ok = await inAppConfirm({ title: `Place ${who} here?`, message: `${grid ? grid + '\n' : ''}${MITTLib.formatCoords(ll.lat, ll.lng)}`, okLabel: 'Place here', cancelLabel: 'Tap again' });
         if (!ok) return;
         if (pin.uid === 'CCS') {
@@ -5716,14 +5713,14 @@
         } else if (!applyMapPin(pin.uid, ll)) return;
         cancelMapPin();
         renderMap();
-        showToast(pin.uid === 'CCS' ? 'CCS position saved.' : `${who} pinned on the map.`);
+        showToast(pin.uid === 'CCS' ? 'Casualty clearing station position saved.' : `${who} pinned on the map.`);
     }
     function setCCSLocation() {
         const pos = freshPosition();
         if (!pos) { startMapPin('CCS'); return; }
         cachedCcsLocation = MITTLib.normaliseLocation(pos);
         logAudit('CCS_SET', '-', `${cachedCcsLocation.lat}, ${cachedCcsLocation.lng} ±${cachedCcsLocation.acc}m`, Date.now());
-        saveState(); showToast('CCS set to your position. Tap "Move CCS" on its marker to adjust.'); renderMap(); fitMap();
+        saveState(); showToast('Casualty clearing station set to your position. Tap "Move" on its marker to adjust.'); renderMap(); fitMap();
     }
     // ---- Open elsewhere / export ----
     let _mapsChooserPoints = [];
@@ -6446,7 +6443,7 @@
         cmd: { label: 'Control room', role: 'HCP', sector: '' },
         xf: { label: 'Field triager', role: 'HCP', sector: 'Inner Cordon' },
         xn: { label: 'Field triager (non-clinical)', role: 'NON_HCP', sector: 'Inner Cordon' },
-        xc: { label: 'CCZ', role: 'HCP', sector: 'Casualty Clearing' }
+        xc: { label: 'Casualty clearing station', role: 'HCP', sector: 'Casualty clearing station' }
     };
     function exerciseRole(mode) { return EXERCISE_ROLES[mode || demoMode()] || null; }
     function openExercise() { closeDemoPicker(); $('exercise-modal').style.display = 'flex'; }
@@ -6492,7 +6489,7 @@
         currentLogIndex = -1; pendingReTriageUid = null; pendingCorrectionUid = null; lastTriagePath = null;
         // Training keeps its own name, role, sector and ID prefix (see TRAINING_INHERIT_KEYS), so none of this reaches real use.
         if (phone) { triagerName = phone.triager; devicePrefix = phone.prefix; currentSector = phone.sector; }
-        else { if (!triagerName) triagerName = 'Demo user'; currentSector = 'Casualty Clearing'; }
+        else { if (!triagerName) triagerName = 'Demo user'; currentSector = 'Casualty clearing station'; }
         $('intro-triager').value = triagerName; $('intro-device-prefix').value = devicePrefix; $('intro-sector').value = currentSector;
         patientCounter = 1;
         ls('mit_demo_mode', mode);

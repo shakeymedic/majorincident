@@ -1841,7 +1841,7 @@
         pts.forEach(p => {
             out += `<wpt lat="${p.lat.toFixed(7)}" lon="${p.lng.toFixed(7)}">${p.timestamp ? `<time>${new Date(p.timestamp).toISOString()}</time>` : ''}<name>${_xml(p.id)} ${_xml(categoryShort(p.category))}</name><desc>${_xml(_pointDesc(p))}</desc><type>${_xml(p.category)}</type></wpt>\n`;
         });
-        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) out += `<wpt lat="${Number(opts.ccs.lat).toFixed(7)}" lon="${Number(opts.ccs.lng).toFixed(7)}"><name>CCS</name><desc>Casualty Clearing Station</desc><type>CCS</type></wpt>\n`;
+        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) out += `<wpt lat="${Number(opts.ccs.lat).toFixed(7)}" lon="${Number(opts.ccs.lng).toFixed(7)}"><name>CCS</name><desc>Casualty clearing station</desc><type>CCS</type></wpt>\n`;
         return out + '</gpx>\n';
     }
     function buildKml(records, opts) {
@@ -1857,7 +1857,7 @@
         pts.forEach(p => {
             out += `<Placemark><name>${_xml(p.id)} ${_xml(categoryShort(p.category))}</name><description>${_xml(_pointDesc(p))}</description><styleUrl>#cat-${_xml(p.category)}</styleUrl>${p.timestamp ? `<TimeStamp><when>${new Date(p.timestamp).toISOString()}</when></TimeStamp>` : ''}<Point><coordinates>${p.lng.toFixed(7)},${p.lat.toFixed(7)},0</coordinates></Point></Placemark>\n`;
         });
-        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) out += `<Placemark><name>CCS</name><description>Casualty Clearing Station</description><Point><coordinates>${Number(opts.ccs.lng).toFixed(7)},${Number(opts.ccs.lat).toFixed(7)},0</coordinates></Point></Placemark>\n`;
+        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) out += `<Placemark><name>CCS</name><description>Casualty clearing station</description><Point><coordinates>${Number(opts.ccs.lng).toFixed(7)},${Number(opts.ccs.lat).toFixed(7)},0</coordinates></Point></Placemark>\n`;
         return out + '</Document>\n</kml>\n';
     }
     function buildGeoJson(records, opts) {
@@ -1867,7 +1867,7 @@
             geometry: { type: 'Point', coordinates: [Number(p.lng.toFixed(7)), Number(p.lat.toFixed(7))] },
             properties: { id: p.id, uid: p.uid, category: p.category, categoryShort: categoryShort(p.category), colour: (CATEGORY_INFO[p.category] || {}).colour || '#005EB8', place: p.place, accuracyM: p.acc, recordedAt: p.timestamp ? new Date(p.timestamp).toISOString() : null, evacuated: p.evacuated, highRisk: p.highRisk, confidence: p.confidence, osGridRef: toOsGridRef(p.lat, p.lng) },
         }));
-        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [Number(opts.ccs.lng), Number(opts.ccs.lat)] }, properties: { id: 'CCS', category: 'CCS', categoryShort: 'CCS', place: 'Casualty Clearing Station' } });
+        if (opts.ccs && _numOrNull(opts.ccs.lat) !== null) features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [Number(opts.ccs.lng), Number(opts.ccs.lat)] }, properties: { id: 'CCS', category: 'CCS', categoryShort: 'CCS', place: 'Casualty clearing station' } });
         return JSON.stringify({ type: 'FeatureCollection', name: opts.name || 'Major Incident Triage casualties', generated: new Date(opts.now || Date.now()).toISOString(), features }, null, 1);
     }
     // How to read a device fix: is it fresh, and did it probably come from satellites or from Wi-Fi / cell towers?
@@ -1975,14 +1975,14 @@
             e_svc: 'Ambulance (HART, MERIT), Fire and Rescue (USAR requested), Police; event medical team on scene',
         },
         phones: [
-            { deviceId: 'DEMOHT', triager: 'HART 1', role: 'HCP', prefix: 'DEMO-HT', sector: 'Casualty Clearing', desc: 'HART paramedic: MITT at the stand, then the casualty clearing station' },
+            { deviceId: 'DEMOHT', triager: 'HART 1', role: 'HCP', prefix: 'DEMO-HT', sector: 'Casualty clearing station', desc: 'HART paramedic: MITT at the stand, then the casualty clearing station' },
             { deviceId: 'DEMOMD', triager: 'Medic 2', role: 'HCP', prefix: 'DEMO-MD', sector: 'Loading Point', desc: 'Paramedic at the casualty clearing station and loading point' },
-            { deviceId: 'DEMODR', triager: 'MERIT doctor', role: 'HCP', prefix: 'DEMO-DR', sector: 'Casualty Clearing', desc: 'Doctor at the casualty clearing station (P1 Hold, confirming death)' },
+            { deviceId: 'DEMODR', triager: 'MERIT doctor', role: 'HCP', prefix: 'DEMO-DR', sector: 'Casualty clearing station', desc: 'Doctor at the casualty clearing station (P1 Hold, confirming death)' },
             { deviceId: 'DEMOFR', triager: 'Fire crew 3', role: 'NON_HCP', prefix: 'DEMO-FR', sector: 'Inner Cordon', desc: 'Firefighter in the inner cordon (TST only)' },
         ],
     };
     const DEMO_ACTIONS = {
-        'TST|Walking': 'P3 — walking. Direct to the casualty collection point as instructed.',
+        'TST|Walking': 'P3 — walking. Direct them where instructed (for example the casualty clearing station).',
         'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing.',
         'TST|Penetrating Injury': 'P1 — immediate priority.',
         'TST|Talking, No Penetrating Injury': 'P2 — urgent priority.',
@@ -2000,30 +2000,30 @@
     // t = minutes before "now" (negative t = seconds after the demo starts, see DEMO_EVENTS); at = [metres east, metres north] of a base point.
     // p = phone index; tri = [tool, category, reason, minutes ago, phone] for later triage steps.
     const DEMO_CASUALTIES = [
-        { n: 1, p: 3, tool: 'TST', cat: 'P3', why: 'Walking', t: 42, base: 'site', at: [-20, 35], sector: 'Inner Cordon', landmark: 'North grandstand, east steps', demos: 'Adult F, about 20', notes: 'Lacerations left forearm. Walked to CCS.', moved: { to: 'ccs', at: [10, -6], t: 36, sector: 'Casualty Clearing' }, tri: [['MITT', 'P3', 'Walking', 30, 2]], ints: { 'Pressure Dressing': 30 }, inj: [[38, 170, 'Laceration', 'minor', 30]] },
+        { n: 1, p: 3, tool: 'TST', cat: 'P3', why: 'Walking', t: 42, base: 'site', at: [-20, 35], sector: 'Inner Cordon', landmark: 'North grandstand, east steps', demos: 'Adult F, about 20', notes: 'Lacerations left forearm. Walked to the casualty clearing station.', moved: { to: 'ccs', at: [10, -6], t: 36, sector: 'Casualty clearing station' }, tri: [['MITT', 'P3', 'Walking', 30, 2]], ints: { 'Pressure Dressing': 30 }, inj: [[38, 170, 'Laceration', 'minor', 30]] },
         { n: 2, p: 3, tool: 'TST', cat: 'P1', why: 'Severe Bleeding', t: 41, base: 'site', at: [5, 20], sector: 'Inner Cordon', landmark: 'Under the collapsed stand, north end', demos: 'Adult M, about 30', notes: 'Trapped right leg, freed by Fire 38 min ago.', moved: { to: 'loading', at: [0, 0], t: 15, sector: 'Loading Point' }, tri: [['MITT', 'P1', 'Catastrophic Bleeding', 25, 2]], ints: { 'Tourniquet': 40, 'TXA': 24, 'IO Access': 24 }, inj: [[120, 290, 'Crush / open fracture', 'severe', 39]], evac: { dest: 'Queen Elizabeth Hospital Birmingham (MTC)', vehicle: 'Ambulance 1', t: 12 }, ho: { state: 'accepted', to: 'Ambulance 1 crew', t: 13 } },
         { n: 3, p: 3, tool: 'TST', cat: 'NOT_BREATHING', why: 'Not Breathing', t: 40, base: 'site', at: [-10, 15], sector: 'Inner Cordon', landmark: 'Under the collapsed stand, centre', demos: 'Adult M', tri: [['MITT', 'DEAD', 'Not Breathing', 20, 2]], tod: 20 },
         { n: 4, p: 3, tool: 'TST', cat: 'NOT_BREATHING', why: 'Not Breathing', t: 6, base: 'site', at: [-30, 5], sector: 'Inner Cordon', landmark: 'West end of the stand', demos: 'Adult F', notes: 'Found under debris after the stand was made safe. Needs a clinician.' },
-        { n: 5, p: 3, tool: 'TST', cat: 'P2', why: 'Talking, No Penetrating Injury', t: 38, base: 'site', at: [25, 30], sector: 'Inner Cordon', landmark: 'Front of the stage barrier', demos: 'Child M, about 10', notes: 'Parent with him. Deformed left wrist.', moved: { to: 'ccs', at: [-8, 4], t: 33, sector: 'Casualty Clearing' }, ints: { 'Splintage': 31 }, inj: [[40, 190, 'Fracture', 'moderate', 31]] },
-        { n: 6, p: 3, tool: 'TST', cat: 'P1', why: 'Penetrating Injury', t: 35, base: 'site', at: [15, 10], sector: 'Inner Cordon', landmark: 'Stand framework, south side', demos: 'Adult M, about 50', notes: 'Metal rail wound to right flank. Not removed.', highRisk: true, moved: { to: 'ccs', at: [6, 10], t: 30, sector: 'Casualty Clearing' }, tri: [['MITT', 'P1', 'Heart Rate 100 or More', 28, 2]], ints: { 'Chest Seal': 33, 'Oxygen': 28, 'IO Access': 27 }, inj: [[130, 150, 'Penetrating', 'severe', 33]], re: { t: 18, outcome: 'unchanged' } },
-        { n: 7, p: 0, tool: 'MITT', cat: 'P1', why: 'Catastrophic Bleeding', t: 37, base: 'site', at: [-5, 40], sector: 'Inner Cordon', landmark: 'North grandstand, centre steps', demos: 'Adult F, about 40', allergies: 'Penicillin', moved: { to: 'ccs', at: [-4, -10], t: 32, sector: 'Casualty Clearing' }, ints: { 'Tourniquet': 37, 'Wound Packing': 36, 'TXA': 30 }, inj: [[20, 140, 'Amputation, left forearm', 'severe', 37]], re: { t: 6, outcome: 'unchanged' } },
+        { n: 5, p: 3, tool: 'TST', cat: 'P2', why: 'Talking, No Penetrating Injury', t: 38, base: 'site', at: [25, 30], sector: 'Inner Cordon', landmark: 'Front of the stage barrier', demos: 'Child M, about 10', notes: 'Parent with him. Deformed left wrist.', moved: { to: 'ccs', at: [-8, 4], t: 33, sector: 'Casualty clearing station' }, ints: { 'Splintage': 31 }, inj: [[40, 190, 'Fracture', 'moderate', 31]] },
+        { n: 6, p: 3, tool: 'TST', cat: 'P1', why: 'Penetrating Injury', t: 35, base: 'site', at: [15, 10], sector: 'Inner Cordon', landmark: 'Stand framework, south side', demos: 'Adult M, about 50', notes: 'Metal rail wound to right flank. Not removed.', highRisk: true, moved: { to: 'ccs', at: [6, 10], t: 30, sector: 'Casualty clearing station' }, tri: [['MITT', 'P1', 'Heart Rate 100 or More', 28, 2]], ints: { 'Chest Seal': 33, 'Oxygen': 28, 'IO Access': 27 }, inj: [[130, 150, 'Penetrating', 'severe', 33]], re: { t: 18, outcome: 'unchanged' } },
+        { n: 7, p: 0, tool: 'MITT', cat: 'P1', why: 'Catastrophic Bleeding', t: 37, base: 'site', at: [-5, 40], sector: 'Inner Cordon', landmark: 'North grandstand, centre steps', demos: 'Adult F, about 40', allergies: 'Penicillin', moved: { to: 'ccs', at: [-4, -10], t: 32, sector: 'Casualty clearing station' }, ints: { 'Tourniquet': 37, 'Wound Packing': 36, 'TXA': 30 }, inj: [[20, 140, 'Amputation, left forearm', 'severe', 37]], re: { t: 6, outcome: 'unchanged' } },
         { n: 8, p: 0, tool: 'MITT', cat: 'P1', why: 'Does Not Respond to Voice', t: 33, base: 'site', at: [0, 25], sector: 'Inner Cordon', landmark: 'Collapsed stand, north end', demos: 'Adult M, about 60', notes: 'Head injury, GCS about 8. Vomited once.', moved: { to: 'loading', at: [4, 3], t: 9, sector: 'Loading Point' }, ints: { 'Airway Open': 33, 'Recovery Pos': 33, 'Oxygen': 30 }, inj: [[100, 30, 'Scalp wound, boggy', 'severe', 33]], evac: { dest: 'Queen Elizabeth Hospital Birmingham (MTC)', vehicle: 'Ambulance 3', t: 5 }, ho: { state: 'accepted', to: 'Ambulance 3 crew', t: 6 } },
-        { n: 9, p: 0, tool: 'MITT', cat: 'P1', why: 'Breathing Rate Outside 12-23', t: 30, base: 'ccs', at: [12, 2], sector: 'Casualty Clearing', landmark: 'P1 area, bay 1', demos: 'Adult M, about 35', notes: 'RR 32. Paradoxical movement right chest.', ints: { 'Oxygen': 30, 'Needle Decomp': 22 }, inj: [[140, 120, 'Flail segment', 'severe', 30]], re: { t: 4, outcome: 'unchanged' } },
-        { n: 10, p: 0, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 29, base: 'ccs', at: [-14, -2], sector: 'Casualty Clearing', landmark: 'P2 area', demos: 'Adult F, about 25', notes: 'Open tib/fib fracture, right.', ints: { 'Splintage': 27, 'Pressure Dressing': 27 }, inj: [[115, 330, 'Open fracture', 'moderate', 28]] },
-        { n: 11, p: 2, tool: 'MITT', cat: 'P1_HOLD', why: 'P1 Hold', t: 27, base: 'ccs', at: [18, 8], sector: 'Casualty Clearing', landmark: 'P1 area, screened bay', demos: 'Adult M, about 80', notes: 'Senior clinical decision (MERIT doctor). Severe crush to chest and abdomen. Comfort care, review when resources allow.', ints: { 'Oxygen': 26 }, inj: [[100, 140, 'Crush', 'severe', 27]] },
-        { n: 12, p: 0, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 26, base: 'ccs', at: [-10, 6], sector: 'Casualty Clearing', landmark: 'P2 area', demos: 'Adult M, about 45', notes: 'Pelvic pain, fell about 3 m from the stand.', highRisk: true, ints: { 'Pelvic Binder': 25 }, inj: [[100, 200, 'Pelvis', 'severe', 25]], re: { t: 1, outcome: 'unchanged' } },
-        { n: 13, p: 0, tool: 'MITT', cat: 'P3', why: 'Walking', t: 25, base: 'ccs', at: [-20, -12], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult F, about 30' },
-        { n: 14, p: 0, tool: 'MITT', cat: 'P3', why: 'Walking', t: 24, base: 'ccs', at: [-24, -10], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult M, about 20', notes: 'Twisted ankle.' },
-        { n: 15, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 22, base: 'ccs', at: [-12, 0], sector: 'Casualty Clearing', landmark: 'P2 area', demos: 'Adult F, about 55', notes: 'Fractured neck of femur, left.', moved: { to: 'loading', at: [-3, 2], t: 10, sector: 'Loading Point' }, ints: { 'Splintage': 20 }, evac: { dest: 'Heartlands Hospital', vehicle: 'Ambulance 2', t: 8 }, ho: { state: 'handed-over', to: 'Ambulance 2 crew', t: 9 } },
-        { n: 16, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 21, base: 'ccs', at: [-22, -15], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult M, about 30', notes: 'Small scalp laceration, no loss of consciousness.' },
+        { n: 9, p: 0, tool: 'MITT', cat: 'P1', why: 'Breathing Rate Outside 12-23', t: 30, base: 'ccs', at: [12, 2], sector: 'Casualty clearing station', landmark: 'P1 area, bay 1', demos: 'Adult M, about 35', notes: 'RR 32. Paradoxical movement right chest.', ints: { 'Oxygen': 30, 'Needle Decomp': 22 }, inj: [[140, 120, 'Flail segment', 'severe', 30]], re: { t: 4, outcome: 'unchanged' } },
+        { n: 10, p: 0, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 29, base: 'ccs', at: [-14, -2], sector: 'Casualty clearing station', landmark: 'P2 area', demos: 'Adult F, about 25', notes: 'Open tib/fib fracture, right.', ints: { 'Splintage': 27, 'Pressure Dressing': 27 }, inj: [[115, 330, 'Open fracture', 'moderate', 28]] },
+        { n: 11, p: 2, tool: 'MITT', cat: 'P1_HOLD', why: 'P1 Hold', t: 27, base: 'ccs', at: [18, 8], sector: 'Casualty clearing station', landmark: 'P1 area, screened bay', demos: 'Adult M, about 80', notes: 'Senior clinical decision (MERIT doctor). Severe crush to chest and abdomen. Comfort care, review when resources allow.', ints: { 'Oxygen': 26 }, inj: [[100, 140, 'Crush', 'severe', 27]] },
+        { n: 12, p: 0, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 26, base: 'ccs', at: [-10, 6], sector: 'Casualty clearing station', landmark: 'P2 area', demos: 'Adult M, about 45', notes: 'Pelvic pain, fell about 3 m from the stand.', highRisk: true, ints: { 'Pelvic Binder': 25 }, inj: [[100, 200, 'Pelvis', 'severe', 25]], re: { t: 1, outcome: 'unchanged' } },
+        { n: 13, p: 0, tool: 'MITT', cat: 'P3', why: 'Walking', t: 25, base: 'ccs', at: [-20, -12], sector: 'Casualty clearing station', landmark: 'P3 area (marquee)', demos: 'Adult F, about 30' },
+        { n: 14, p: 0, tool: 'MITT', cat: 'P3', why: 'Walking', t: 24, base: 'ccs', at: [-24, -10], sector: 'Casualty clearing station', landmark: 'P3 area (marquee)', demos: 'Adult M, about 20', notes: 'Twisted ankle.' },
+        { n: 15, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 22, base: 'ccs', at: [-12, 0], sector: 'Casualty clearing station', landmark: 'P2 area', demos: 'Adult F, about 55', notes: 'Fractured neck of femur, left.', moved: { to: 'loading', at: [-3, 2], t: 10, sector: 'Loading Point' }, ints: { 'Splintage': 20 }, evac: { dest: 'Heartlands Hospital', vehicle: 'Ambulance 2', t: 8 }, ho: { state: 'handed-over', to: 'Ambulance 2 crew', t: 9 } },
+        { n: 16, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 21, base: 'ccs', at: [-22, -15], sector: 'Casualty clearing station', landmark: 'P3 area (marquee)', demos: 'Adult M, about 30', notes: 'Small scalp laceration, no loss of consciousness.' },
         { n: 17, p: 1, tool: 'MITT', cat: 'P1', why: 'Aged 2 or Under', t: 20, base: 'loading', at: [6, -4], sector: 'Loading Point', landmark: 'Waiting for a paediatric-capable crew', demos: 'Child F, about 18 months', notes: 'With her mother (DEMO-MD-MITT-004). Bruising to the forehead, alert.', ints: { 'Oxygen': 19 }, inj: [[95, 25, 'Bruise', 'minor', 19]], ho: { state: 'pending', to: '', t: 3 } },
         { n: 18, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 20, base: 'loading', at: [8, -2], sector: 'Loading Point', landmark: 'With her child (DEMO-MD-MITT-003)', demos: 'Adult F, about 30' },
-        { n: 19, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 15, base: 'ccs', at: [-6, 12], sector: 'Casualty Clearing', landmark: 'P2 area, moved to P1 area', demos: 'Adult M, about 70', notes: 'Chest wall pain. Became pale and clammy.', tri: [['MITT', 'P1', 'Heart Rate 100 or More', 8, 1]], ints: { 'Oxygen': 8, 'IO Access': 7 }, inj: [[70, 120, 'Chest wall bruising', 'moderate', 15]] },
+        { n: 19, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 15, base: 'ccs', at: [-6, 12], sector: 'Casualty clearing station', landmark: 'P2 area, moved to P1 area', demos: 'Adult M, about 70', notes: 'Chest wall pain. Became pale and clammy.', tri: [['MITT', 'P1', 'Heart Rate 100 or More', 8, 1]], ints: { 'Oxygen': 8, 'IO Access': 7 }, inj: [[70, 120, 'Chest wall bruising', 'moderate', 15]] },
         { n: 20, p: 3, tool: 'TST', cat: 'P2', why: 'Talking, No Penetrating Injury', t: 12, base: 'site', at: [30, 18], sector: 'Inner Cordon', landmark: 'Beside the sound desk', demos: 'Adult M, about 40', notes: 'Back pain, cannot walk. Waiting for a clinician.' },
-        { n: 21, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 10, base: 'ccs', at: [-26, -8], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult F, about 65', notes: 'Wrist pain. Lives alone, needs a welfare check.' },
+        { n: 21, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 10, base: 'ccs', at: [-26, -8], sector: 'Casualty clearing station', landmark: 'P3 area (marquee)', demos: 'Adult F, about 65', notes: 'Wrist pain. Lives alone, needs a welfare check.' },
         { n: 22, p: 2, tool: 'MITT', cat: 'DEAD', why: 'Not Breathing', t: 34, base: 'site', at: [-15, 22], sector: 'Inner Cordon', landmark: 'Under the collapsed stand, centre', demos: 'Adult M', tod: 34, notes: 'Left in place for the police.' },
         { n: 23, p: 3, tool: 'TST', cat: 'P3', why: 'Walking', t: 4, base: 'site', at: [40, 40], sector: 'Inner Cordon', landmark: 'Stage left', demos: 'Adult F, about 20' },
-        { n: 24, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 2, base: null, sector: 'Casualty Clearing', landmark: 'Came in by herself; no position yet', demos: 'Adult F, about 35', notes: 'Crush injury, right foot.' },
+        { n: 24, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 2, base: null, sector: 'Casualty clearing station', landmark: 'Came in by herself; no position yet', demos: 'Adult F, about 35', notes: 'Crush injury, right foot.' },
     ];
     // Things that happen after the demo starts (seconds), for the commander screen's self-updating demo.
     const DEMO_EVENTS = [
@@ -2032,7 +2032,7 @@
         { s: 90, tri: 20, step: ['MITT', 'P1', 'Heart Rate 100 or More', 2], note: 'Deteriorated: pale, HR 124.' },
         { s: 120, tri: 4, step: ['MITT', 'P1', 'Does Not Respond to Voice', 2], note: 'Breathing after airway opened by the MERIT doctor.' },
         { s: 150, evac: 17, dest: 'Birmingham Children\'s Hospital (MTC)', vehicle: 'Ambulance 5' },
-        { s: 180, add: { n: 26, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', base: 'ccs', at: [-28, -14], sector: 'Casualty Clearing', landmark: 'P3 area (marquee)', demos: 'Adult M, about 50' } },
+        { s: 180, add: { n: 26, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', base: 'ccs', at: [-28, -14], sector: 'Casualty clearing station', landmark: 'P3 area (marquee)', demos: 'Adult M, about 50' } },
         { s: 210, evac: 7, dest: 'Queen Elizabeth Hospital Birmingham (MTC)', vehicle: 'Ambulance 6' },
     ];
     function demoOffset(base, at) {
@@ -2184,7 +2184,7 @@
         const pending = sortable.length - sorted.length;
         row('mittAll', 'Everyone sorted with MITT', pending ? null : maxOf(sorted.map(firstMittAt).filter(Boolean)), pending ? `${pending} casualt${pending === 1 ? 'y has' : 'ies have'} had TST only` : `${sorted.length} sorted`);
         const ccs = recs.map(r => r.ccsAt).filter(Boolean);
-        row('firstCcs', 'First casualty at the CCS', minOf(ccs), ccs.length ? `${ccs.length} reached the CCS` : '');
+        row('firstCcs', 'First casualty at the casualty clearing station', minOf(ccs), ccs.length ? `${ccs.length} reached the casualty clearing station` : '');
         const evac = recs.map(evacTime).filter(Boolean);
         row('firstEvac', 'First casualty left the scene', minOf(evac));
         const onScene = recs.filter(r => !r.evacuated && r.category !== 'DEAD').length;
@@ -2261,7 +2261,7 @@
     }
     function policyGroupLabel(g) { return g === 'all' ? 'all phones' : g === 'hcp' ? 'clinicians' : String(g).indexOf('sector:') === 0 ? String(g).slice(7) : String(g); }
     // Does a commander prompt sent to these groups reach a phone with this role and sector? Sector names match
-    // without regard to case or spacing ("Casualty Clearing" = "casualty  clearing").
+    // without regard to case or spacing ("Casualty clearing station" = "casualty  clearing station").
     function policyPromptApplies(groups, phone) {
         phone = phone || {};
         const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
