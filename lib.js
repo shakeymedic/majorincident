@@ -1498,7 +1498,12 @@
 
     // Triage flow logic (TST + MITT) — pure decision functions, matching the NHS England
     // TST and NHS MITT flowcharts (April 2023). The app's question text mirrors the cards.
+    // G3 (Jake, 29 Oct 2026): NARU TST supplementary information v1.0 (April 2023): "any child under 2 should be
+    // automatically triaged as a P1". The TST card does not print it, so the app offers it as a one-tap answer on
+    // the first question (answer 'under2'), which catches a toddler who walks (P3) or babbles (P2) under the card.
+    const TST_UNDER2 = 'under2';
     function tstNext(stepId, answer) {
+        if (answer === TST_UNDER2) return stepId === 'walking' ? { type: 'result', category: 'P1', reason: 'Child Under 2' } : null;
         const flow = {
             walking: { yes: { type: 'result', category: 'P3', reason: 'Walking' }, no: { type: 'next', step: 'bleeding' } },
             bleeding: { yes: { type: 'result', category: 'P1', reason: 'Severe Bleeding' }, no: { type: 'next', step: 'talking' } },
@@ -2271,7 +2276,7 @@
         BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
         escapeHTML, fnv1a, canonicalJSON, buildPatientPayload, decompressData,
         validatePatientWrapper, mergePatientRecords, buildAckPayload,
-        tstNext, mittNext,
+        tstNext, mittNext, TST_UNDER2,
         classifyBodymapPoint, buildInjuryMark, injuriesToText, sanitiseInjuries,
         buildBulkPayload, validateBulkWrapper, bulkPayloadFits,
         clonePatientRecord, buildAllPatientsPayload, validateAllPatientsWrapper,

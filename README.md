@@ -164,6 +164,9 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.1 build 2026-10-29-under2 — any child under 2 is P1 in TST (G3, Jake, 29 October 2026)
+- The first TST question (Walking?) has a "👶 Child under 2? Tap for P1" button. It gives P1 with the reason "Child Under 2", following the NARU TST supplementary information ("any child under 2 should be automatically triaged as a P1"), which the printed TST card does not show. MITT already gives P1 to anyone aged 2 or under. Quick reference updated. Service worker cache v39.
+
 ### v0.19.0 build 2026-10-29-decisions — clinical decisions G2, G5 and G6 (Jake, 29 October 2026)
 - **P1 Hold (G2):** hidden on every phone by default (not nationally signed off). The commander screen's new "Clinical decisions for this incident" card can allow it for the incident, recording who made the decision, and withdraw it. Clinicians' phones offer it only while it is allowed; records already in P1 Hold still show it. Audit: `P1_HOLD_ALLOWED` / `P1_HOLD_WITHDRAWN`.
 - **TST reassessment (G5):** a casualty whose latest triage was TST (P1, P2 or P3) is due every 15 minutes (NARU TST supplementary information); MITT keeps P1 10, P2 30, P3 60 minutes. Settings → Reassessment timers has a TST row. Not Breathing is still due at once.

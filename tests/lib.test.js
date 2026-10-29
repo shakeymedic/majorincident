@@ -606,6 +606,11 @@ group('reassessment', () => {
         const e = { id: 'A', category: 'P1', timestamp: 1000 };
         assert.strictEqual(lib.nextReassessmentDue(e), 1000 + 10*60*1000);
     });
+    test('G3: a child under 2 is P1 in TST from the first question; the answer means nothing elsewhere', () => {
+        assert.deepStrictEqual(lib.tstNext('walking', lib.TST_UNDER2), { type: 'result', category: 'P1', reason: 'Child Under 2' });
+        assert.strictEqual(lib.tstNext('talking', lib.TST_UNDER2), null);
+        assert.deepStrictEqual(lib.tstNext('walking', true), { type: 'result', category: 'P3', reason: 'Walking' }, 'card answers unchanged');
+    });
     test('G5: a TST P1, P2 or P3 is due in 15 minutes (NARU TST guidance); MITT keeps the P1/P2/P3 intervals', () => {
         ['P1', 'P2', 'P3'].forEach(c => assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'TST', category: c, timestamp: 1000 }), 1000 + 15*60*1000, c));
         assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'MITT', category: 'P2', timestamp: 1000 }), 1000 + 30*60*1000);

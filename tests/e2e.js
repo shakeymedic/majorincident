@@ -145,6 +145,22 @@ async function test(name, fn) {
         assert.strictEqual(await A.evaluate(() => getComputedStyle(document.getElementById('tod-modal')).display), 'none');
         assert.match(await A.textContent('#result-alerts'), /healthcare reassessment/i);
     });
+    await test('v0.19.1: TST offers "Child under 2" on the first question only; it gives P1', async () => {
+        await A.evaluate(() => initiateTriage('TST'));
+        assert.strictEqual(await A.isVisible('#btn-under2'), true);
+        await A.evaluate(() => handleAnswer(false));
+        assert.strictEqual(await A.isVisible('#btn-under2'), false, 'only on Walking?');
+        await A.evaluate(() => stepBack());
+        assert.strictEqual(await A.isVisible('#btn-under2'), true);
+        await A.click('#btn-under2');
+        const e = await A.evaluate(() => incidentLog[incidentLog.length - 1]);
+        assert.strictEqual(e.category, 'P1');
+        assert.strictEqual(e.reason, 'Child Under 2');
+        assert.strictEqual(e.tool, 'TST');
+        await A.evaluate(() => { resetToHome(); initiateTriage('MITT'); });
+        assert.strictEqual(await A.isVisible('#btn-under2'), false, 'not in MITT');
+        await A.evaluate(() => resetToHome());
+    });
     await test('MITT wording and outcomes match the NHS card; Dead needs no time of death', async () => {
         await A.evaluate(() => { initiateTriage('MITT'); ['cat_bleed', 'walking', 'breathing', 'voice', 'age', 'rr'].forEach((s, i) => handleAnswer(i >= 2)); });
         assert.strictEqual(await A.textContent('#question-text'), 'Heart rate 100 or more?');
