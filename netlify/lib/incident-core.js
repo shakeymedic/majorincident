@@ -58,13 +58,22 @@ function cleanPosition(p, t) {
 function shortHash(s) { return crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 16); }
 // list() entries as { key, etag } whatever the store returned.
 function entries(list) { return (list || []).map(x => typeof x === 'string' ? { key: x, etag: '' } : { key: String(x.key || ''), etag: String(x.etag || '') }).filter(x => x.key); }
-async function getMany(store, keys) {
+// Values for these keys, in the same order (null where missing). Uses the store's own bulk read when it has one
+// (Firestore: one request per few hundred documents), otherwise READ_BATCH single reads at a time.
+async function getEach(store, keys) {
+    if (typeof store.getMany === 'function') return store.getMany(keys);
     const out = [];
-    for (let i = 0; i < keys.length; i += READ_BATCH) {
-        const got = await Promise.all(keys.slice(i, i + READ_BATCH).map(k => store.get(k)));
-        got.forEach(v => { if (v) out.push(v); });
-    }
+    for (let i = 0; i < keys.length; i += READ_BATCH) out.push(...await Promise.all(keys.slice(i, i + READ_BATCH).map(k => store.get(k))));
     return out;
+}
+async function getMany(store, keys) { return (await getEach(store, keys)).filter(Boolean); }
+async function setEach(store, entries) {
+    if (typeof store.setMany === 'function') return store.setMany(entries);
+    for (let i = 0; i < entries.length; i += READ_BATCH) await Promise.all(entries.slice(i, i + READ_BATCH).map(([k, v]) => store.set(k, v)));
+}
+async function deleteEach(store, keys) {
+    if (typeof store.deleteMany === 'function') return store.deleteMany(keys);
+    for (let i = 0; i < keys.length; i += READ_BATCH) await Promise.all(keys.slice(i, i + READ_BATCH).map(k => store.delete(k)));
 }
 // METHANE as the phones store it: seven short texts plus who saved it and when.
 function cleanMethane(m) {
@@ -120,7 +129,10 @@ function createCore(opts) {
 
     async function deleteIncident(code) {
         const keys = entries(await store.list(`i/${code}/`)).map(e => e.key);
-        for (const k of keys) await store.delete(k);
+        // The meta goes last, so an interrupted delete still leaves the incident findable (and the sweep finishes it).
+        const meta = keyMeta(code);
+        await deleteEach(store, keys.filter(k => k !== meta));
+        if (keys.indexOf(meta) > -1) await store.delete(meta);
         return keys.length;
     }
     async function loadMeta(code) {
@@ -201,21 +213,41 @@ function createCore(opts) {
         let accepted = 0, kept = 0;
         const rejected = [];
         let known = null;
+        // Clean every record, read what the server already has for them in one go, then write the batch together.
+        const cleaned = [];
+        const seenUid = new Set();
         for (const raw of incoming) {
             const rec = cleanRecord(raw);
             if (!rec) { rejected.push(raw && raw.uid ? String(raw.uid).slice(0, 64) : '?'); continue; }
-            const cur = await store.get(keyRec(code, rec.uid));
-            if (cur && (cur.updatedAt || 0) > (rec.updatedAt || 0)) { kept++; continue; } // an older copy never overwrites a newer one
+            if (seenUid.has(rec.uid)) { const i = cleaned.findIndex(x => x.uid === rec.uid); if ((rec.updatedAt || 0) >= (cleaned[i].updatedAt || 0)) cleaned[i] = rec; continue; }
+            seenUid.add(rec.uid);
+            cleaned.push(rec);
+        }
+        const current = cleaned.length ? await getEach(store, cleaned.map(r => keyRec(code, r.uid))) : [];
+        const writes = [];
+        cleaned.forEach((rec, i) => {
+            const cur = current[i];
+            if (cur && (cur.updatedAt || 0) > (rec.updatedAt || 0)) { kept++; return; } // an older copy never overwrites a newer one
             if (!cur) {
-                if (known === null) known = entries(await store.list(`i/${code}/r/`)).length;
+                if (known === null) known = -1; // counted below, once
+                rec._new = true;
+            }
+            writes.push(rec);
+        });
+        if (writes.some(r => r._new)) known = entries(await store.list(`i/${code}/r/`)).length;
+        const toWrite = [];
+        for (const rec of writes) {
+            if (rec._new) {
+                delete rec._new;
                 if (known >= MAX_RECORDS_PER_INCIDENT) { rejected.push(rec.uid); continue; }
                 known++;
             }
             rec.reportedBy = deviceId;
             rec.reportedAt = t;
-            await store.set(keyRec(code, rec.uid), rec);
-            accepted++;
+            toWrite.push([keyRec(code, rec.uid), rec]);
         }
+        await setEach(store, toWrite);
+        accepted = toWrite.length;
         if (body.ccs && num(body.ccs.lat) !== null && num(body.ccs.lng) !== null) {
             const ccs = lib.normaliseLocation(body.ccs);
             if (ccs && (!meta.ccs || (num(ccs.timestamp) || t) >= (num(meta.ccs.timestamp) || 0))) meta.ccs = Object.assign({}, ccs, { setBy: deviceId, timestamp: num(ccs.timestamp) || t });

@@ -164,6 +164,14 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.2 build 2026-10-30-walkthrough — simpler first run for first responders, faster big incidents (Jake, 30 October 2026)
+- Start screen in plain words with numbered steps: "1. Your name or call sign", "2. Who are you?" with **🚒 Police, fire or first aider** first, then **🩺 Doctor, nurse or paramedic**. Starting as incident commander is a smaller dashed button ("Running the incident?"). "Options" is now "Extra settings — most people can skip this".
+- After the role, one sheet asks two quick questions: **Where are you working?** (Inner cordon, Casualty clearing station, Loading point, Not sure yet; optional, one tap, audit `SECTOR_SET`) and **Has someone set up a commander screen?** ("Yes: scan their code", "Yes: type their code and PIN", "No, or not sure: start triage").
+- The first time the home screen opens on a device, a "How to use this" card says: tap START TRIAGE, answer YES or NO, put the matching colour tag on (the app does not replace the paper tag). Tap it to hide it for good (not shown on the commander's phone).
+- The offline pill just says "✓ Ready offline".
+- Server: pushes read and write all records in one bulk Firestore call each (getAll / batched writes), repeated IDs in one push keep the newer copy, and closing an incident deletes in batches with the incident's main record last. Found by a live load test (25 phones, 1,000 casualties): reads took 6–8 s and closing took about 22 s.
+- Service worker cache v40.
+
 ### v0.19.1 build 2026-10-29-under2 — under-2 rule in TST (G3), one name for the casualty clearing station (G7), voice notes training-only (G9) (Jake, 29 October 2026)
 - The first TST question (Walking?) has a "👶 Child under 2? Tap for P1" button. It gives P1 with the reason "Child Under 2", following the NARU TST supplementary information ("any child under 2 should be automatically triaged as a P1"), which the printed TST card does not show. MITT already gives P1 to anyone aged 2 or under. Quick reference updated.
 - G7: "casualty clearing station" is spelled out on every screen; "CCS" is kept only on small labels (map marker, filter buttons, summary chips). CCZ and CCP are gone from the app text. The sector preset and the demo/exercise phones use "Casualty clearing station"; older labels such as "Casualty Clearing", "CCS", "CCP" or "casualty clearing zone" are still recognised.

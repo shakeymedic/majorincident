@@ -287,6 +287,19 @@ function rec(uid, id, category, extra) {
         const off = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: false } }), '3.3.3.3');
         assert.strictEqual(off.body.policy.p1Hold.on, false);
     });
+    await test('a push of 250 records lands in one go; a uid sent twice in one push keeps the newer copy', async () => {
+        const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
+        const recs = Array.from({ length: 249 }, (_, i) => ({ uid: 'b' + i, id: 'B-' + i, category: 'P3', updatedAt: 1000 + i }));
+        recs.push({ uid: 'b0', id: 'B-0', category: 'P1', updatedAt: 5000 });
+        const r = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: recs }), '1.1.1.1');
+        assert.strictEqual(r.status, 200);
+        assert.strictEqual(r.body.accepted, 249);
+        const g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.strictEqual(g.body.records.length, 249);
+        assert.strictEqual(g.body.records.find(x => x.uid === 'b0').category, 'P1');
+        const closed = await core.handle('POST', `/api/incident/${c.code}/close`, H(c.pin), '{}', '1.1.1.1');
+        assert.strictEqual(closed.body.deleted, 251);
+    });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
         // A store where every operation takes a little time, so the two pushes interleave as they would on Netlify.
         const slow = makeStore({ jitter: 3 });
