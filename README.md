@@ -164,6 +164,12 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.1 build 2026-10-29-under2 — under-2 rule in TST (G3), one name for the casualty clearing station (G7), voice notes training-only (G9) (Jake, 29 October 2026)
+- The first TST question (Walking?) has a "👶 Child under 2? Tap for P1" button. It gives P1 with the reason "Child Under 2", following the NARU TST supplementary information ("any child under 2 should be automatically triaged as a P1"), which the printed TST card does not show. MITT already gives P1 to anyone aged 2 or under. Quick reference updated.
+- G7: "casualty clearing station" is spelled out on every screen; "CCS" is kept only on small labels (map marker, filter buttons, summary chips). CCZ and CCP are gone from the app text. The sector preset and the demo/exercise phones use "Casualty clearing station"; older labels such as "Casualty Clearing", "CCS", "CCP" or "casualty clearing zone" are still recognised.
+- G9: voice notes work in training mode only. In real use the 🎙 button is hidden and dictation is refused, so no recording about a real casualty goes to a browser maker's speech service. Privacy notice updated.
+- Service worker cache v39.
+
 ### v0.19.0 build 2026-10-29-decisions — clinical decisions G2, G5 and G6 (Jake, 29 October 2026)
 - **P1 Hold (G2):** hidden on every phone by default (not nationally signed off). The commander screen's new "Clinical decisions for this incident" card can allow it for the incident, recording who made the decision, and withdraw it. Clinicians' phones offer it only while it is allowed; records already in P1 Hold still show it. Audit: `P1_HOLD_ALLOWED` / `P1_HOLD_WITHDRAWN`.
 - **TST reassessment (G5):** a casualty whose latest triage was TST (P1, P2 or P3) is due every 15 minutes (NARU TST supplementary information); MITT keeps P1 10, P2 30, P3 60 minutes. Settings → Reassessment timers has a TST row. Not Breathing is still due at once.
