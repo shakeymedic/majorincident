@@ -32,20 +32,6 @@ function firestoreStore(db, opts) {
             await col.doc(docId(key)).set({ k: String(key), v: text, e: etagOf(text) });
         },
         async delete(key) { await col.doc(docId(key)).delete(); },
-        // Read, change and write one document in a transaction (Firestore retries it if another write gets in first),
-        // so two commander decisions at the same moment are both kept. change(current) returns the new value or
-        // undefined for no write.
-        async update(key, change) {
-            const ref = col.doc(docId(key));
-            return db.runTransaction(async (tx) => {
-                const snap = await tx.get(ref);
-                let cur = null;
-                if (snap.exists) { try { const v = snap.get('v'); cur = typeof v === 'string' ? JSON.parse(v) : null; } catch (e) { cur = null; } }
-                const next = change(cur);
-                if (next !== undefined) { const text = JSON.stringify(next); tx.set(ref, { k: String(key), v: text, e: etagOf(text) }); }
-                return next;
-            });
-        },
         // Many keys in one round trip each way (a commander read of 1,000 records took 6-8 s one document at a time).
         async getMany(keys) {
             const out = [];

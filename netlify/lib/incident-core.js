@@ -110,7 +110,10 @@ function createCore(opts) {
     const keyMeta = (code) => `i/${code}/meta`;
     const keyRec = (code, uid) => `i/${code}/r/${uid}`;
     const keyDev = (code, id) => `i/${code}/d/${id}`;
-    const keyPolicy = (code) => `i/${code}/policy`;
+    const keyPolicy = (code) => `i/${code}/policy`;            // pre-v0.19.8 incidents: one document for both decisions and the log
+    const keyPol = (code, what) => `i/${code}/pol/${what}`;    // v0.19.8: one small document per decision field (p1hold, mitt)
+    const keyDec = (code, id) => `i/${code}/dec/${id}`;        // v0.19.8: one document per decision-log entry, append only
+    const DECISIONS_MAX = 200;
     const keyMarks = (code) => `i/${code}/marks`;
     const keyClear = (code, id) => `i/${code}/dc/${id}`;
     const keyTomb = (code) => `t/${code}`;
@@ -234,9 +237,27 @@ function createCore(opts) {
         if (need === 'commander' && level !== 'commander') return error(403, 'not_commander', 'That PIN lets phones send casualties but not change incident decisions. Use the commander PIN.');
         return { meta, level };
     }
-    // The decisions and markings, kept apart from the meta (older incidents kept them in it).
-    async function loadPolicy(code, meta) {
-        return policyDoc(await store.get(keyPolicy(code)), meta);
+    // The decisions and markings, kept apart from the meta (older incidents kept them in it). From v0.19.8 each
+    // decision field and each log entry is its own document, so two commander actions at the same moment never
+    // read-and-rewrite the same document (v0.19.7 stress test: 1 of 12 simultaneous changes was lost, and the
+    // transaction retries tried first took longer than a function is allowed). Older incidents' single document is
+    // still read underneath.
+    async function loadPolicyFields(code, meta) {
+        const [legacy, p1, mitt] = await getEach(store, [keyPolicy(code), keyPol(code, 'p1hold'), keyPol(code, 'mitt')]);
+        const base = legacy ? { policy: legacy.policy || {}, policyAt: legacy.policyAt || 0, decisions: legacy.decisions || [] } : { policy: meta.policy || {}, policyAt: meta.policyAt || 0, decisions: [] };
+        const policy = Object.assign({}, base.policy);
+        let policyAt = base.policyAt;
+        if (p1 && (p1.at || 0) >= ((policy.p1Hold && policy.p1Hold.at) || 0)) { policy.p1Hold = p1; policyAt = Math.max(policyAt, p1.at || 0); }
+        if (mitt && (mitt.at || 0) >= ((policy.mitt && policy.mitt.at) || 0)) { policy.mitt = mitt; policyAt = Math.max(policyAt, mitt.at || 0); }
+        return { policy, policyAt, legacyDecisions: base.decisions };
+    }
+    // The decision log: the older single document's entries plus one document per entry since, newest last.
+    async function loadPolicy(code, meta, decKeys) {
+        const f = await loadPolicyFields(code, meta);
+        const keys = decKeys || entries(await store.list(`i/${code}/dec/`)).map(e => e.key);
+        const extra = keys.length ? await getMany(store, keys) : [];
+        const decisions = f.legacyDecisions.concat(extra).sort((a, b) => (a.at || 0) - (b.at || 0)).slice(-DECISIONS_MAX);
+        return { policy: f.policy, policyAt: f.policyAt, decisions };
     }
     async function loadMarks(code, meta) {
         const d = await store.get(keyMarks(code));
@@ -251,15 +272,6 @@ function createCore(opts) {
         fresh.seq = (fresh.seq || 0) + 1;
         await store.set(keyMeta(code), fresh);
         return fresh;
-    }
-    // Read, change and write one document as a single step where the store can (Firestore transaction), so two
-    // commander actions at the same moment cannot overwrite each other (v0.19.7 stress test). change(current) returns
-    // the new value, or undefined to leave it as it is.
-    async function updateDoc(key, change) {
-        if (typeof store.update === 'function') return store.update(key, change);
-        const next = change(await store.get(key));
-        if (next !== undefined) await store.set(key, next);
-        return next;
     }
     // A phone's call for help with the commander's "cleared" (kept in its own document) laid over it.
     function withClear(duress, clr) {
@@ -448,7 +460,7 @@ function createCore(opts) {
                 if (newMethane && (!fresh.methane || newMethane.timestamp >= (fresh.methane.timestamp || 0))) fresh.methane = newMethane;
             })) || meta;
         }
-        const [pol, mk, clr] = await Promise.all([loadPolicy(code, m), loadMarks(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
+        const [pol, mk, clr] = await Promise.all([loadPolicyFields(code, m), loadMarks(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
         // Map markings ride back on every push and heartbeat, so linked phones pick them up without another request.
         return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: m.updatedAt + TTL_MS, marks: mk.marks, marksAt: mk.marksAt, policy: pol.policy, policyAt: pol.policyAt, duress: withClear(dev.duress, clr) || null, clockSkewMs: Math.round(skew) });
     }
@@ -468,7 +480,7 @@ function createCore(opts) {
         const all = entries(await store.list(`i/${code}/`));
         const recEntries = all.filter(e => e.key.startsWith(`i/${code}/r/`));
         const devEntries = all.filter(e => e.key.startsWith(`i/${code}/d/`));
-        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`));
+        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`) || e.key.startsWith(`i/${code}/pol/`) || e.key.startsWith(`i/${code}/dec/`));
         const seq = fingerprint(meta, recEntries, devEntries, extra) + (a.level === 'commander' ? 'c' : 'v');
         const etag = `"${seq}"`;
         // Netlify's edge rewrites the ETag it serves when it compresses the body ("2" becomes "2-df") and then drops an
@@ -482,7 +494,7 @@ function createCore(opts) {
         const clears = {};
         (await getMany(store, extra.filter(e => e.key.indexOf('/dc/') > -1).map(e => e.key))).forEach(c => { if (c && c.deviceId) clears[c.deviceId] = c; });
         const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return o; });
-        const [pol, mk] = await Promise.all([loadPolicy(code, meta), loadMarks(code, meta)]);
+        const [pol, mk] = await Promise.all([loadPolicy(code, meta, extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key)), loadMarks(code, meta)]);
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         log('read', code);
@@ -507,8 +519,7 @@ function createCore(opts) {
         let clr = await store.get(keyClear(code, deviceId));
         if (dev.duress && !withClear(dev.duress, clr).clearedAt) {
             clr = { deviceId, at: dev.duress.at, clearedAt: t, clearedBy: by };
-            const prev = clr;
-            clr = await updateDoc(keyClear(code, deviceId), (cur) => (cur && withClear(dev.duress, cur).clearedAt) ? undefined : prev) || (await store.get(keyClear(code, deviceId))) || prev;
+            await store.set(keyClear(code, deviceId), clr);
             await addDecision(code, a.meta, { what: 'duress-cleared', device: deviceId, triager: dev.triager || '', by });
             await touchMeta(code);
             log('duress-cleared', code, deviceId);
@@ -516,12 +527,9 @@ function createCore(opts) {
         return reply(200, { ok: true, duress: withClear(dev.duress, clr) || null });
     }
     // Every commander decision is kept with who made it and when (shown on the commander screen).
-    function policyDoc(d, meta) { return d ? { policy: d.policy || {}, policyAt: d.policyAt || 0, decisions: d.decisions || [] } : { policy: meta.policy || {}, policyAt: meta.policyAt || 0, decisions: [] }; }
     async function addDecision(code, meta, d) {
-        await updateDoc(keyPolicy(code), (raw) => {
-            const cur = policyDoc(raw, meta);
-            return { policy: cur.policy, policyAt: cur.policyAt, decisions: cur.decisions.concat([Object.assign({ at: now() }, d)]).slice(-200) };
-        });
+        const at = now();
+        await store.set(keyDec(code, at.toString(36) + '-' + crypto.randomBytes(3).toString('hex')), Object.assign({ at }, d));
     }
 
     async function setMarks(code, pin, body, client, key) {
@@ -558,19 +566,18 @@ function createCore(opts) {
             if (!mittBy) return error(400, 'bad_request', 'Say who is sending the MITT prompt.');
         }
         if (!p1By && !mittBy) return error(400, 'bad_request', 'Nothing to change.');
-        const mittId = t.toString(36) + crypto.randomBytes(3).toString('hex');
-        let out = null;
-        // One read-change-write, so a P1 Hold change, a MITT prompt and a decision log entry sent at the same moment
-        // are all kept (v0.19.7 stress test: 1 of 12 simultaneous changes was lost).
-        await updateDoc(keyPolicy(code), (raw) => {
-            const cur = policyDoc(raw, a.meta);
-            const policy = lib.normalisePolicy(cur.policy || {});
-            const decisions = cur.decisions.slice();
-            if (p1By) { policy.p1Hold = { on: !!body.p1Hold.on, at: t, by: p1By }; decisions.push({ at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by: p1By }); }
-            if (mittBy) { policy.mitt = { id: mittId, at: t, by: mittBy, groups }; decisions.push({ at: t, what: 'mitt', groups, by: mittBy }); }
-            out = lib.normalisePolicy(policy);
-            return { policy: out, policyAt: Math.max(t, cur.policyAt || 0), decisions: decisions.slice(-200) };
-        });
+        // Each field is its own document and each log entry its own document: nothing here reads and rewrites.
+        const writes = [];
+        if (p1By) {
+            writes.push([keyPol(code, 'p1hold'), { on: !!body.p1Hold.on, at: t, by: p1By }]);
+            writes.push([keyDec(code, t.toString(36) + '-' + crypto.randomBytes(3).toString('hex')), { at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by: p1By }]);
+        }
+        if (mittBy) {
+            writes.push([keyPol(code, 'mitt'), { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by: mittBy, groups }]);
+            writes.push([keyDec(code, t.toString(36) + '-' + crypto.randomBytes(3).toString('hex')), { at: t, what: 'mitt', groups, by: mittBy }]);
+        }
+        await setEach(store, writes);
+        const out = lib.normalisePolicy((await loadPolicyFields(code, a.meta)).policy);
         await touchMeta(code);
         log('policy', code);
         return reply(200, { ok: true, policy: out, policyAt: t });
@@ -674,7 +681,6 @@ function createCore(opts) {
 function memoryStore(opts) {
     opts = opts || {};
     const m = new Map();
-    const locks = new Map();
     let ops = 0;
     const wait = () => { ops++; const ms = (opts.delay || 0) + (opts.jitter ? Math.random() * opts.jitter : 0); return ms ? new Promise(r => setTimeout(r, ms)) : Promise.resolve(); };
     return {
@@ -682,18 +688,6 @@ function memoryStore(opts) {
         async set(k, v) { await wait(); m.set(k, JSON.stringify(v)); },
         async delete(k) { await wait(); m.delete(k); },
         async list(prefix) { await wait(); return Array.from(m.keys()).filter(k => k.startsWith(prefix)).sort().map(k => ({ key: k, etag: crypto.createHash('sha1').update(m.get(k)).digest('hex').slice(0, 12) })); },
-        // Read-change-write as one step, as a Firestore transaction does: changes to one key queue behind each other.
-        update(k, change) {
-            const run = (locks.get(k) || Promise.resolve()).then(async () => {
-                await wait();
-                const next = change(m.has(k) ? JSON.parse(m.get(k)) : null);
-                await wait();
-                if (next !== undefined) m.set(k, JSON.stringify(next));
-                return next;
-            });
-            locks.set(k, run.catch(() => {}));
-            return run;
-        },
         size() { return m.size; },
         ops() { return ops; },
     };
