@@ -625,7 +625,7 @@ async function test(name, fn) {
         const F = await device('First use', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
         assert.strictEqual(await F.evaluate(() => document.getElementById('intro-options').open), false);
         await F.fill('#intro-triager', 'Medic F');
-        await F.click('text=I\'m non-clinical / first aid');
+        await F.click('#btn-role-responder');
         assert.ok(await F.evaluate(() => document.getElementById('home-screen').classList.contains('active')));
         assert.strictEqual(await F.evaluate(() => userRole), 'NON_HCP');
         await F._ctx.close();
@@ -1489,6 +1489,27 @@ async function test(name, fn) {
         assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
         assert.strictEqual(await CH.evaluate(() => document.getElementById('home-cmd-link')), null, 'dismissed for this session');
         await CH._ctx.close();
+    });
+    await test('v0.19.2 walk-through: plain role buttons, one-tap "where are you" on the link sheet, then a one-time how-to card', async () => {
+        const W = await device('Walk', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+        assert.match(await W.textContent('#btn-role-responder'), /Police, fire or first aider/);
+        assert.match(await W.textContent('#btn-role-clinician'), /Doctor, nurse or paramedic/);
+        await W.fill('#intro-triager', 'PC Whiskey');
+        await W.click('#btn-role-responder');
+        await page_visible(W, '#cmd-link-modal');
+        await W.click('#setup-sector-chips [data-sector="Casualty clearing station"]');
+        assert.strictEqual(await W.evaluate(() => currentSector), 'Casualty clearing station');
+        assert.ok(await W.evaluate(() => document.querySelector('#setup-sector-chips [data-sector="Casualty clearing station"]').classList.contains('on')));
+        await W.click('#cmd-link-skip');
+        assert.strictEqual(await W.evaluate(() => userRole), 'NON_HCP');
+        assert.ok(await W.isVisible('#home-coach'), 'how-to card on first use');
+        assert.match(await W.textContent('#home-coach'), /does not replace the paper tag/);
+        assert.match(await W.textContent('#header-sector'), /Casualty clearing station/);
+        await W.click('#home-coach');
+        assert.strictEqual(await W.evaluate(() => document.getElementById('home-coach')), null);
+        await W.evaluate(() => renderHomeAlerts());
+        assert.strictEqual(await W.evaluate(() => document.getElementById('home-coach')), null, 'stays hidden once dismissed');
+        await W._ctx.close();
     });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
         const CI = await device('Cmd I');
