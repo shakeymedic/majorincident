@@ -43,7 +43,7 @@ function rec(uid, id, category, t) {
     t0 = Date.now();
     for (let round = 0; round < 2; round++) {
         clock += 1000;
-        const pushes = Array.from({ length: PHONES }, (_, i) => core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'LOAD' + String(i).padStart(2, '0'), triager: 'Phone ' + i, totalRecords: RECORDS, records: Array.from({ length: RECORDS }, (_, k) => rec(`u${i}_${k}`, `P${i}-TST-${k}`, ['P1', 'P2', 'P3'][k % 3], clock + k)) }), '10.0.0.' + i));
+        const pushes = Array.from({ length: PHONES }, (_, i) => core.handle('PUT', `/api/incident/${c.code}/records`, Object.assign(H(c.pin), { 'x-device-key': joins[i].body.deviceKey }), JSON.stringify({ deviceId: 'LOAD' + String(i).padStart(2, '0'), triager: 'Phone ' + i, totalRecords: RECORDS, records: Array.from({ length: RECORDS }, (_, k) => rec(`u${i}_${k}`, `P${i}-TST-${k}`, ['P1', 'P2', 'P3'][k % 3], clock + k)) }), '10.0.0.' + i));
         const polling = (async () => { while (true) { await new Promise(r => setTimeout(r, 15)); await poll(); if (pushes.every(p => p.settled)) break; } })();
         pushes.forEach(p => p.then(() => { p.settled = true; }));
         const results = await Promise.all(pushes);

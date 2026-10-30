@@ -2,7 +2,10 @@
 // The store is any object with get(key) -> value | null, set(key, value), delete(key), list(prefix) -> [entries].
 // list() returns either plain keys or { key, etag } objects (Netlify Blobs gives an etag per blob; the in-memory
 // store derives one from the content). The etags are what tell a commander screen whether anything changed.
-// Every value is a plain JSON object. Keys: i/<CODE>/meta, i/<CODE>/r/<uid>, i/<CODE>/d/<deviceId>, rl/<client>.
+// Every value is a plain JSON object. Keys: i/<CODE>/meta, i/<CODE>/r/<uid>, i/<CODE>/d/<deviceId>,
+// i/<CODE>/policy and i/<CODE>/marks (commander decisions, kept apart from the meta so a phone's report can never
+// write an older copy back over them), i/<CODE>/dc/<deviceId> (a call for help cleared by the commander),
+// t/<CODE> (an ended incident's tombstone), rl/<client>, rc/<client> (incidents created), rk/<CODE> (wrong PINs per incident).
 'use strict';
 const crypto = require('crypto');
 const lib = require('../../lib.js');
@@ -16,9 +19,17 @@ const MAX_RECORDS_PER_PUSH = 250;
 const MAX_RECORDS_PER_INCIDENT = 3000;
 const MAX_DEVICES_PER_INCIDENT = 200;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
-// Ended incidents are deleted, so "never existed" and "ended" cannot be told apart: one message covers both.
-const NOT_FOUND_MSG = 'No incident with that code. It may have ended, or the code may be mistyped.';
+// A wrong code and a wrong PIN get the same reply, so the reply does not say whether an incident exists.
+// An incident that has ended leaves a tombstone for two days, so its phones and screens are told "ended".
+const BAD_ACCESS_MSG = 'That code and PIN do not open a running incident. Check both and try again.';
+const ENDED_MSG = 'This incident has ended. Its shared data has been deleted.';
+const EXPIRED_MSG = 'This incident has expired (24 hours with no new information) and its shared data has been deleted.';
+const TOMBSTONE_MS = 48 * 60 * 60 * 1000;
 const RATE_MAX_FAILURES = 25;                 // wrong PINs per client per window
+const CODE_MAX_FAILURES = 100;                // wrong PINs per incident per window, from anyone without that incident's key
+const CREATE_WINDOW_MS = 60 * 60 * 1000;
+const CREATE_MAX = 10;                        // incidents created per client per hour
+const CLOCK_SKEW_MS = 60 * 1000;              // phone clocks further out than this are corrected
 const STALE_DEVICE_MS = 5 * 60 * 1000;
 const READ_BATCH = 25;                        // blobs fetched at once when the commander screen reads
 const METHANE_FIELD_MAX = 600;
@@ -99,6 +110,16 @@ function createCore(opts) {
     const keyMeta = (code) => `i/${code}/meta`;
     const keyRec = (code, uid) => `i/${code}/r/${uid}`;
     const keyDev = (code, id) => `i/${code}/d/${id}`;
+    const keyPolicy = (code) => `i/${code}/policy`;
+    const keyMarks = (code) => `i/${code}/marks`;
+    const keyClear = (code, id) => `i/${code}/dc/${id}`;
+    const keyTomb = (code) => `t/${code}`;
+    const keyCodeFail = (code) => `rk/${code}`;
+    // A key only the server can make, given to a phone or screen once it has shown a right PIN. Presenting it lets
+    // that phone or screen through the incident-wide wrong-PIN lock-out (which strangers' guesses can trigger).
+    // The device key ties a phone's reports to its device code, so another phone cannot send under that code.
+    const accessKey = (meta) => meta.keySecret ? shortHash(meta.keySecret + ':access:' + meta.code) + shortHash(meta.code + ':' + meta.keySecret) : '';
+    const deviceKey = (meta, id) => meta.keySecret ? shortHash(meta.keySecret + ':device:' + id) + shortHash(id + ':' + meta.keySecret) : '';
     // The client address itself is never stored. The hash is salted with a server-only secret (RATE_LIMIT_SALT),
     // so a stored key cannot be matched back to an address by hashing guesses.
     const rateSalt = String(opts.rateSalt || '');
@@ -118,18 +139,29 @@ function createCore(opts) {
         if (f && now() - f.since > RATE_WINDOW_MS) f = null;
         return f;
     }
-    async function tooManyFailures(client) {
-        const f = await readFailures(client);
-        return !!f && f.count >= RATE_MAX_FAILURES;
+    // The count goes up in memory before anything is awaited, so guesses sent in parallel are all counted.
+    function noteFailureNow(map, id) {
+        const cur = map.get(id);
+        const f = cur && now() - cur.since <= RATE_WINDOW_MS ? { count: cur.count + 1, since: cur.since } : { count: 1, since: now() };
+        map.set(id, f);
+        return f;
     }
     async function noteFailure(client) {
-        const cur = await readFailures(client);
-        const f = cur ? { count: cur.count + 1, since: cur.since } : { count: 1, since: now() };
-        failures.set(client, f);
+        const f = noteFailureNow(failures, client);
         try { await store.set(keyRate(client), f); } catch (e) {}
     }
+    const codeFailures = new Map(); // incident code -> { count, since }
+    async function readCodeFailures(code) {
+        let f = codeFailures.get(code) || null;
+        try { const s = await store.get(keyCodeFail(code)); if (s && (!f || (s.count || 0) > f.count)) f = { count: s.count || 0, since: s.since || 0 }; } catch (e) {}
+        if (f && now() - f.since > RATE_WINDOW_MS) f = null;
+        if (f) codeFailures.set(code, f); else codeFailures.delete(code);
+        return f;
+    }
 
-    async function deleteIncident(code) {
+    async function deleteIncident(code, why) {
+        // The tombstone first, so phones and screens are told the incident ended even if the delete is interrupted.
+        if (why) await store.set(keyTomb(code), { code, why, at: now() });
         const keys = entries(await store.list(`i/${code}/`)).map(e => e.key);
         // The meta goes last, so an interrupted delete still leaves the incident findable (and the sweep finishes it).
         const meta = keyMeta(code);
@@ -140,23 +172,76 @@ function createCore(opts) {
     async function loadMeta(code) {
         const meta = await store.get(keyMeta(code));
         if (!meta) return null;
-        if (now() - meta.updatedAt > TTL_MS) { await deleteIncident(code); log('expired', code); return 'expired'; }
+        if (now() - meta.updatedAt > TTL_MS) { await deleteIncident(code, 'expired'); log('expired', code); return 'expired'; }
         return meta;
     }
-    // Returns {meta, viewOnly} or an error reply. The view-only PIN (if the incident has one) can only read.
-    async function authed(code, pin, client, allowViewOnly) {
-        if (!code) return error(404, 'not_found', NOT_FOUND_MSG);
-        if (await tooManyFailures(client)) return error(429, 'rate_limited', 'Too many wrong PINs. Try again in 15 minutes.');
+    // Returns {meta, level} or an error reply. need: 'read' (any PIN; the triagers' and view-only PINs read as view
+    // only), 'member' (triagers' or commander PIN: join, send, look up) or 'commander' (commander PIN only).
+    // Incidents made before v0.19.6 have no commander PIN: their one PIN keeps its old full access until they expire.
+    async function authed(code, pin, client, need, key) {
+        need = need || 'member';
+        const refused = () => error(401, 'bad_access', BAD_ACCESS_MSG);
+        if (!code) return refused();
+        await readFailures(client).then(f => { if (f) failures.set(client, f); });
+        const mine = failures.get(client);
+        if (mine && now() - mine.since <= RATE_WINDOW_MS && mine.count >= RATE_MAX_FAILURES) return error(429, 'rate_limited', 'Too many wrong codes or PINs from here. Try again in 15 minutes.');
         const meta = await loadMeta(code);
-        if (meta === 'expired') return error(410, 'expired', 'This incident has expired and its data has been deleted.');
-        if (!meta) { await noteFailure(client); return error(404, 'not_found', NOT_FOUND_MSG); }
-        if (pin && safeEqual(hashPin(meta.salt, pin), meta.pinHash)) return { meta, viewOnly: false };
-        if (pin && meta.viewHash && safeEqual(hashPin(meta.salt, pin), meta.viewHash)) {
-            if (allowViewOnly) return { meta, viewOnly: true };
-            return error(403, 'view_only', 'That is the view-only PIN. It can open the commander screen but not send or change anything.');
+        if (meta === 'expired') return error(410, 'expired', EXPIRED_MSG);
+        if (!meta) {
+            const tomb = await store.get(keyTomb(code));
+            if (tomb && now() - (tomb.at || 0) <= TOMBSTONE_MS) return error(410, tomb.why === 'expired' ? 'expired' : 'ended', tomb.why === 'expired' ? EXPIRED_MSG : ENDED_MSG);
+            await noteFailure(client);
+            return refused();
         }
-        await noteFailure(client);
-        return error(401, 'bad_pin', 'Wrong PIN.');
+        const keyOk = !!key && !!meta.keySecret && safeEqual(String(key), accessKey(meta));
+        if (!keyOk) {
+            await readCodeFailures(code);
+            const cf = codeFailures.get(code);
+            if (cf && cf.count >= CODE_MAX_FAILURES) return error(429, 'rate_limited', 'Too many wrong PINs have been tried for this incident. Phones already linked carry on; others can try again in 15 minutes.');
+        }
+        // From here to the verdict nothing is awaited, so parallel guesses cannot all slip past the counts above.
+        const mineNow = failures.get(client);
+        if (mineNow && now() - mineNow.since <= RATE_WINDOW_MS && mineNow.count >= RATE_MAX_FAILURES) return error(429, 'rate_limited', 'Too many wrong codes or PINs from here. Try again in 15 minutes.');
+        const h = pin ? hashPin(meta.salt, pin) : '';
+        let level = '';
+        if (h && meta.cmdHash && safeEqual(h, meta.cmdHash)) level = 'commander';
+        else if (h && safeEqual(h, meta.pinHash)) level = meta.cmdHash ? 'member' : 'commander';
+        else if (h && meta.viewHash && safeEqual(h, meta.viewHash)) level = 'view';
+        if (!level) {
+            noteFailureNow(failures, client);
+            const cf = keyOk ? null : noteFailureNow(codeFailures, code);
+            try { await store.set(keyRate(client), failures.get(client)); if (cf) await store.set(keyCodeFail(code), cf); } catch (e) {}
+            return refused();
+        }
+        if (need === 'read') return { meta, level };
+        if (level === 'view') return error(403, 'view_only', 'That is the view-only PIN. It can open the commander screen but not send or change anything.');
+        if (need === 'commander' && level !== 'commander') return error(403, 'not_commander', 'That PIN lets phones send casualties but not change incident decisions. Use the commander PIN.');
+        return { meta, level };
+    }
+    // The decisions and markings, kept apart from the meta (older incidents kept them in it).
+    async function loadPolicy(code, meta) {
+        const d = await store.get(keyPolicy(code));
+        return d ? { policy: d.policy || {}, policyAt: d.policyAt || 0, decisions: d.decisions || [] } : { policy: meta.policy || {}, policyAt: meta.policyAt || 0, decisions: [] };
+    }
+    async function loadMarks(code, meta) {
+        const d = await store.get(keyMarks(code));
+        return d ? { marks: d.marks || [], marksAt: d.marksAt || 0, by: d.by || '' } : { marks: meta.marks || [], marksAt: meta.marksAt || 0, by: '' };
+    }
+    // Meta changes are written onto a fresh copy, so two requests at once lose as little as possible.
+    async function touchMeta(code, change) {
+        const fresh = (await store.get(keyMeta(code))) || null;
+        if (!fresh) return null;
+        if (change) change(fresh);
+        fresh.updatedAt = now();
+        fresh.seq = (fresh.seq || 0) + 1;
+        await store.set(keyMeta(code), fresh);
+        return fresh;
+    }
+    // A phone's call for help with the commander's "cleared" (kept in its own document) laid over it.
+    function withClear(duress, clr) {
+        if (!duress) return null;
+        if (clr && Math.abs((clr.at || 0) - (duress.at || 0)) <= 1000) return Object.assign({}, duress, { clearedAt: clr.clearedAt, clearedBy: clr.clearedBy || 'commander' });
+        return duress;
     }
 
     function cleanRecord(raw) {
@@ -172,23 +257,32 @@ function createCore(opts) {
     async function create(body, client) {
         const deviceId = str(body.deviceId, 16);
         if (!deviceId) return error(400, 'bad_request', 'deviceId is required.');
+        // Anyone can start an incident (no account), so each client may create only a few an hour.
+        const ck = `rc/${shortHash(rateSalt ? rateSalt + ':' + client : client)}`;
+        let made = null;
+        try { made = await store.get(ck); } catch (e) {}
+        if (made && now() - (made.since || 0) > CREATE_WINDOW_MS) made = null;
+        if (made && made.count >= CREATE_MAX) return error(429, 'rate_limited', 'Too many incidents started from here in the last hour. Try again later.');
+        try { await store.set(ck, made ? { count: made.count + 1, since: made.since } : { count: 1, since: now() }); } catch (e) {}
         let code = '';
-        for (let i = 0; i < 5; i++) { code = randomCode(rng); if (!(await store.get(keyMeta(code)))) break; code = ''; }
+        for (let i = 0; i < 5; i++) { code = randomCode(rng); if (!(await store.get(keyMeta(code))) && !(await store.get(keyTomb(code)))) break; code = ''; }
         if (!code) return error(503, 'no_code', 'Could not allocate an incident code. Try again.');
-        const pin = randomPin(rng);
-        let viewPin = randomPin(rng);
-        if (viewPin === pin) viewPin = String((Number(pin) + 1) % 1000000).padStart(PIN_LENGTH, '0');
+        // Three different PINs: the triagers' PIN (join and send casualties), the commander PIN (also change
+        // decisions, markings and calls for help, and end the incident) and the view-only PIN (watch only).
+        const pins = [];
+        while (pins.length < 3) { const p = randomPin(rng); if (pins.indexOf(p) === -1) pins.push(p); else pins.push(String((Number(p) + pins.length + 1) % 1000000).padStart(PIN_LENGTH, '0')); }
+        const [pin, commanderPin, viewPin] = pins;
         const salt = crypto.randomBytes(8).toString('hex');
         const t = now();
-        const meta = { code, salt, pinHash: hashPin(salt, pin), viewHash: hashPin(salt, viewPin), name: str(body.name, 80), incidentCode: lib.normaliseIncidentCode(body.incidentCode), training: !!body.training, createdAt: t, updatedAt: t, createdBy: { deviceId, triager: str(body.triager, 80) }, ccs: null, methane: null, seq: 1 };
+        const meta = { code, salt, keySecret: crypto.randomBytes(16).toString('hex'), pinHash: hashPin(salt, pin), cmdHash: hashPin(salt, commanderPin), viewHash: hashPin(salt, viewPin), name: str(body.name, 80), incidentCode: lib.normaliseIncidentCode(body.incidentCode), training: !!body.training, createdAt: t, updatedAt: t, createdBy: { deviceId, triager: str(body.triager, 80) }, ccs: null, methane: null, seq: 1 };
         await store.set(keyMeta(code), meta);
-        await store.set(keyDev(code, deviceId), { deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40) });
+        await store.set(keyDev(code, deviceId), { deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40), keyed: true });
         log('created', code);
-        return reply(201, { code, pin, viewPin, createdAt: t, expiresAt: t + TTL_MS, ttlMs: TTL_MS });
+        return reply(201, { code, pin, commanderPin, viewPin, deviceKey: deviceKey(meta, deviceId), accessKey: accessKey(meta), createdAt: t, expiresAt: t + TTL_MS, ttlMs: TTL_MS });
     }
 
-    async function join(code, pin, body, client) {
-        const a = await authed(code, pin, client);
+    async function join(code, pin, body, client, key) {
+        const a = await authed(code, pin, client, 'member', key);
         if (a.status) return a;
         const deviceId = str(body.deviceId, 16);
         if (!deviceId) return error(400, 'bad_request', 'deviceId is required.');
@@ -198,17 +292,25 @@ function createCore(opts) {
             if (devs.length >= MAX_DEVICES_PER_INCIDENT) return error(409, 'too_many_devices', 'This incident already has the maximum number of phones.');
         }
         const t = now();
-        await store.set(keyDev(code, deviceId), Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40) }));
+        // A device code already used by a phone that holds its device key cannot be taken over by another phone.
+        if (existing && existing.keyed && !(body.deviceKey && safeEqual(String(body.deviceKey), deviceKey(a.meta, deviceId)))) return error(409, 'device_taken', 'Another phone in this incident already uses this device code. Change the device code on this phone (⚙ Settings) and join again.');
+        await store.set(keyDev(code, deviceId), Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40) }, a.meta.keySecret ? { keyed: true } : {}));
         log('joined', code, deviceId);
-        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS });
+        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, deviceKey: deviceKey(a.meta, deviceId), accessKey: accessKey(a.meta) });
     }
 
-    async function push(code, pin, body, client) {
-        const a = await authed(code, pin, client);
+    async function push(code, pin, body, client, key, devKey) {
+        const a = await authed(code, pin, client, 'member', key);
         if (a.status) return a;
         const meta = a.meta;
         const deviceId = str(body.deviceId, 16);
         if (!deviceId) return error(400, 'bad_request', 'deviceId is required.');
+        const devBefore = await store.get(keyDev(code, deviceId));
+        if (devBefore && devBefore.keyed && !(devKey && safeEqual(String(devKey), deviceKey(meta, deviceId)))) return error(403, 'device_key', 'This phone\'s link to the incident is out of date. Join the incident again.');
+        // Phone clocks can be wrong. updatedAt decides which copy of a record wins, so it is moved onto the
+        // server's clock (by how far the phone's clock is out) and never allowed into the future.
+        const skew = num(body.clientNow) !== null ? now() - num(body.clientNow) : 0;
+        const fixTime = (v) => { let x = num(v) || 0; if (Math.abs(skew) > CLOCK_SKEW_MS) x += skew; return Math.min(x, now()); };
         const incoming = Array.isArray(body.records) ? body.records : [];
         if (incoming.length > MAX_RECORDS_PER_PUSH) return error(413, 'too_many_records', `Send at most ${MAX_RECORDS_PER_PUSH} records per request.`);
         const t = now();
@@ -221,6 +323,8 @@ function createCore(opts) {
         for (const raw of incoming) {
             const rec = cleanRecord(raw);
             if (!rec) { rejected.push(raw && raw.uid ? String(raw.uid).slice(0, 64) : '?'); continue; }
+            rec.updatedAt = fixTime(rec.updatedAt);
+            if (Math.abs(skew) > CLOCK_SKEW_MS) rec.clockSkewMs = Math.round(skew);
             if (seenUid.has(rec.uid)) { const i = cleaned.findIndex(x => x.uid === rec.uid); if ((rec.updatedAt || 0) >= (cleaned[i].updatedAt || 0)) cleaned[i] = rec; continue; }
             seenUid.add(rec.uid);
             cleaned.push(rec);
@@ -250,12 +354,14 @@ function createCore(opts) {
         }
         await setEach(store, toWrite);
         accepted = toWrite.length;
+        let newCcs = null;
         if (body.ccs && num(body.ccs.lat) !== null && num(body.ccs.lng) !== null) {
             const ccs = lib.normaliseLocation(body.ccs);
-            if (ccs && (!meta.ccs || (num(ccs.timestamp) || t) >= (num(meta.ccs.timestamp) || 0))) meta.ccs = Object.assign({}, ccs, { setBy: deviceId, timestamp: num(ccs.timestamp) || t });
+            if (ccs) { ccs.timestamp = fixTime(num(ccs.timestamp) || t); if (!meta.ccs || ccs.timestamp > (num(meta.ccs.timestamp) || 0)) newCcs = Object.assign({}, ccs, { setBy: deviceId }); }
         }
         const methane = cleanMethane(body.methane);
-        const dev = (await store.get(keyDev(code, deviceId))) || { deviceId, role: 'member', joinedAt: t, records: 0 };
+        if (methane) methane.timestamp = fixTime(methane.timestamp);
+        const dev = (await store.get(keyDev(code, deviceId))) || devBefore || { deviceId, role: 'member', joinedAt: t, records: 0 };
         dev.triager = str(body.triager, 80) || dev.triager || '';
         dev.lastSeen = t;
         dev.app = str(body.app, 40) || dev.app || '';
@@ -277,39 +383,51 @@ function createCore(opts) {
             const at = num(body.duress.at) || t;
             // The same duress (same 'at') repeated on every heartbeat is not a new alert, even once the commander has cleared it; a fresh 'at' is.
             if (!dev.duress || Math.abs((dev.duress.at || 0) - at) > 1000) dev.duress = { at, raisedAt: t };
+            delete dev.duress.clearedAt; delete dev.duress.clearedBy; // the commander's "cleared" lives in its own document
             const p = cleanPosition(body.duress.position, t) || dev.position || null;
             if (p) dev.duress.position = p;
         }
+        let newMethane = null;
         if (methane) {
             methane.device = deviceId;
             if (!methane.by) methane.by = dev.triager;
+            if (!dev.methane || dev.methane.timestamp !== methane.timestamp) newMethane = methane;
             dev.methane = methane;
-            // The incident's METHANE is the newest one any phone has saved.
-            if (!meta.methane || methane.timestamp >= (meta.methane.timestamp || 0)) meta.methane = methane;
         }
         await store.set(keyDev(code, deviceId), dev);
-        meta.updatedAt = t;
-        meta.seq = (meta.seq || 0) + 1;
-        await store.set(keyMeta(code), meta);
+        // Only new information keeps the incident alive: a report with nothing new (a heartbeat) does not reset the
+        // 24-hour clock, so a forgotten linked phone cannot keep the data on the server for ever. The commander's
+        // decisions are never in this write, so a report cannot undo them.
+        let m = meta;
+        if (accepted || newCcs || newMethane) {
+            m = (await touchMeta(code, (fresh) => {
+                if (newCcs && (!fresh.ccs || newCcs.timestamp >= (num(fresh.ccs.timestamp) || 0))) fresh.ccs = newCcs;
+                // The incident's METHANE is the newest one any phone has saved.
+                if (newMethane && (!fresh.methane || newMethane.timestamp >= (fresh.methane.timestamp || 0))) fresh.methane = newMethane;
+            })) || meta;
+        }
+        const [pol, mk, clr] = await Promise.all([loadPolicy(code, m), loadMarks(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
         // Map markings ride back on every push and heartbeat, so linked phones pick them up without another request.
-        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: t + TTL_MS, marks: meta.marks || [], marksAt: meta.marksAt || 0, policy: meta.policy || {}, policyAt: meta.policyAt || 0, duress: dev.duress || null });
+        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: m.updatedAt + TTL_MS, marks: mk.marks, marksAt: mk.marksAt, policy: pol.policy, policyAt: pol.policyAt, duress: withClear(dev.duress, clr) || null, clockSkewMs: Math.round(skew) });
     }
 
     // What the commander screen has is identified by a fingerprint of the stored blobs (every record and device
     // etag plus the meta's own change counter), not by the counter alone. Two phones pushing at the same moment
     // can both write the same counter value; they cannot both leave the same set of etags behind.
-    function fingerprint(meta, recs, devs) {
+    function fingerprint(meta, recs, devs, extra) {
         const parts = [String(meta.seq || 0), String(meta.updatedAt || 0), String((meta.ccs && meta.ccs.timestamp) || 0), String((meta.methane && meta.methane.timestamp) || 0), String(meta.marksAt || 0), String(meta.policyAt || 0)]
-            .concat(recs.map(e => e.key + '=' + e.etag), devs.map(e => e.key + '=' + e.etag));
+            .concat(recs.map(e => e.key + '=' + e.etag), devs.map(e => e.key + '=' + e.etag), (extra || []).map(e => e.key + '=' + e.etag));
         return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 20);
     }
-    async function read(code, pin, ifNoneMatch, client, knownSeq) {
-        const a = await authed(code, pin, client, true);
+    async function read(code, pin, ifNoneMatch, client, knownSeq, key) {
+        const a = await authed(code, pin, client, 'read', key);
         if (a.status) return a;
         const meta = a.meta;
-        const recEntries = entries(await store.list(`i/${code}/r/`));
-        const devEntries = entries(await store.list(`i/${code}/d/`));
-        const seq = fingerprint(meta, recEntries, devEntries);
+        const all = entries(await store.list(`i/${code}/`));
+        const recEntries = all.filter(e => e.key.startsWith(`i/${code}/r/`));
+        const devEntries = all.filter(e => e.key.startsWith(`i/${code}/d/`));
+        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`));
+        const seq = fingerprint(meta, recEntries, devEntries, extra) + (a.level === 'commander' ? 'c' : 'v');
         const etag = `"${seq}"`;
         // Netlify's edge rewrites the ETag it serves when it compresses the body ("2" becomes "2-df") and then drops an
         // If-None-Match that carries that suffix before the function sees it. So the page also sends the fingerprint it
@@ -319,86 +437,102 @@ function createCore(opts) {
         if ((givenSeq && givenSeq === seq) || (known && known === seq)) return { status: 304, body: null, headers: { ETag: etag, 'X-Incident-Seq': seq, 'Cache-Control': 'no-store' } };
         const t = now();
         const records = await getMany(store, recEntries.map(e => e.key));
-        const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }));
+        const clears = {};
+        (await getMany(store, extra.filter(e => e.key.indexOf('/dc/') > -1).map(e => e.key))).forEach(c => { if (c && c.deviceId) clears[c.deviceId] = c; });
+        const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return o; });
+        const [pol, mk] = await Promise.all([loadPolicy(code, meta), loadMarks(code, meta)]);
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         log('read', code);
-        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: meta.marks || [], marksAt: meta.marksAt || 0, policy: meta.policy || {}, policyAt: meta.policyAt || 0, viewOnly: !!a.viewOnly, hasViewPin: !!meta.viewHash, devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
+        // The triagers' PIN opens the screen as view only: only the commander PIN can change anything.
+        const viewOnly = a.level !== 'commander';
+        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: mk.marks, marksAt: mk.marksAt, marksBy: mk.by, policy: pol.policy, policyAt: pol.policyAt, decisions: pol.decisions, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta), devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
     }
 
     // Commander screen: replace the incident's map markings (cordons, RVP, loading point...). Full PIN only.
     // The commander acknowledges a phone's call for help. The phone sees clearedAt in its next push reply.
-    async function clearDuress(code, pin, body, client) {
-        const a = await authed(code, pin, client);
+    // Commander PIN only, and the name of who cleared it is required. Kept in its own document, so a phone's
+    // report sent at the same moment cannot write the call for help back as live.
+    async function clearDuress(code, pin, body, client, key) {
+        const a = await authed(code, pin, client, 'commander', key);
         if (a.status) return a;
-        const meta = a.meta;
         const deviceId = str(body.deviceId, 16);
+        const by = str(body.by, 80).trim();
+        if (!by) return error(400, 'bad_request', 'Say who is clearing the call for help.');
         const dev = deviceId ? await store.get(keyDev(code, deviceId)) : null;
-        if (!dev) return error(404, 'not_found', 'No such phone in this incident.');
+        if (!dev) return error(404, 'no_device', 'No such phone in this incident.');
         const t = now();
-        if (dev.duress && !dev.duress.clearedAt) {
-            dev.duress.clearedAt = t;
-            dev.duress.clearedBy = 'commander';
-            await store.set(keyDev(code, deviceId), dev);
-            meta.updatedAt = t;
-            meta.seq = (meta.seq || 0) + 1;
-            await store.set(keyMeta(code), meta);
+        let clr = await store.get(keyClear(code, deviceId));
+        if (dev.duress && !withClear(dev.duress, clr).clearedAt) {
+            clr = { deviceId, at: dev.duress.at, clearedAt: t, clearedBy: by };
+            await store.set(keyClear(code, deviceId), clr);
+            await addDecision(code, a.meta, { what: 'duress-cleared', device: deviceId, triager: dev.triager || '', by });
+            await touchMeta(code);
             log('duress-cleared', code, deviceId);
         }
-        return reply(200, { ok: true, duress: dev.duress || null });
+        return reply(200, { ok: true, duress: withClear(dev.duress, clr) || null });
+    }
+    // Every commander decision is kept with who made it and when (shown on the commander screen).
+    async function addDecision(code, meta, d) {
+        const cur = await loadPolicy(code, meta);
+        const decisions = cur.decisions.concat([Object.assign({ at: now() }, d)]).slice(-200);
+        await store.set(keyPolicy(code), { policy: cur.policy, policyAt: cur.policyAt, decisions });
     }
 
-    async function setMarks(code, pin, body, client) {
-        const a = await authed(code, pin, client);
+    async function setMarks(code, pin, body, client, key) {
+        const a = await authed(code, pin, client, 'commander', key);
         if (a.status) return a;
-        const meta = a.meta;
+        const by = str(body.by, 80).trim();
+        if (!by) return error(400, 'bad_request', 'Say who is changing the map markings.');
         const t = now();
-        meta.marks = lib.normaliseMapMarks(body.marks).map(m => Object.assign(m, { at: m.at || t }));
-        meta.marksAt = t;
-        meta.updatedAt = t;
-        meta.seq = (meta.seq || 0) + 1;
-        await store.set(keyMeta(code), meta);
-        log('marks', code, meta.marks.length);
-        return reply(200, { ok: true, marks: meta.marks, marksAt: t });
+        const marks = lib.normaliseMapMarks(body.marks).map(m => Object.assign(m, { at: m.at || t }));
+        await store.set(keyMarks(code), { marks, marksAt: t, by });
+        await addDecision(code, a.meta, { what: 'marks', count: marks.length, by });
+        await touchMeta(code);
+        log('marks', code, marks.length);
+        return reply(200, { ok: true, marks, marksAt: t });
     }
 
     // Commander screen: incident-level clinical decisions. Full PIN only.
     // body.p1Hold { on, by }: allow (or withdraw) P1 Hold on clinicians' phones, with the decision-maker's name.
     // body.mitt { groups, by }: tell the chosen groups of phones that MITT is now in use. Each send gets a new id, so a
     // phone shows it once; anyone can still switch tool on their own phone without it (Jake's decision, 29 Oct 2026).
-    async function setPolicy(code, pin, body, client) {
-        const a = await authed(code, pin, client);
+    async function setPolicy(code, pin, body, client, key) {
+        const a = await authed(code, pin, client, 'commander', key);
         if (a.status) return a;
-        const meta = a.meta;
         const t = now();
-        const policy = lib.normalisePolicy(meta.policy || {});
+        const cur = await loadPolicy(code, a.meta);
+        const policy = lib.normalisePolicy(cur.policy || {});
+        const decisions = cur.decisions.slice();
         let changed = false;
         if (body.p1Hold && typeof body.p1Hold === 'object') {
             const by = str(body.p1Hold.by, 80).trim();
-            if (body.p1Hold.on && !by) return error(400, 'bad_request', 'Say who made the P1 Hold decision.');
+            if (!by) return error(400, 'bad_request', body.p1Hold.on ? 'Say who made the P1 Hold decision.' : 'Say who is withdrawing P1 Hold.');
             policy.p1Hold = { on: !!body.p1Hold.on, at: t, by };
+            decisions.push({ at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by });
             changed = true;
         }
         if (body.mitt && typeof body.mitt === 'object') {
             const groups = lib.normalisePolicyGroups(body.mitt.groups);
             if (!groups.length) return error(400, 'bad_request', 'Choose who the MITT prompt goes to.');
-            policy.mitt = { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by: str(body.mitt.by, 80).trim(), groups };
+            const by = str(body.mitt.by, 80).trim();
+            if (!by) return error(400, 'bad_request', 'Say who is sending the MITT prompt.');
+            policy.mitt = { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by, groups };
+            decisions.push({ at: t, what: 'mitt', groups, by });
             changed = true;
         }
         if (!changed) return error(400, 'bad_request', 'Nothing to change.');
-        meta.policy = lib.normalisePolicy(policy);
-        meta.policyAt = t;
-        meta.updatedAt = t;
-        meta.seq = (meta.seq || 0) + 1;
-        await store.set(keyMeta(code), meta);
+        const out = lib.normalisePolicy(policy);
+        await store.set(keyPolicy(code), { policy: out, policyAt: t, decisions: decisions.slice(-200) });
+        await touchMeta(code);
         log('policy', code);
-        return reply(200, { ok: true, policy: meta.policy, policyAt: t });
+        return reply(200, { ok: true, policy: out, policyAt: t });
     }
 
     // A phone scanned a tag it does not know: has another phone in this incident recorded it? Full PIN only, and
     // only exact matches on the patient ID or triage card number, so it cannot be used to browse the incident.
-    async function lookup(code, pin, body, client) {
-        const a = await authed(code, pin, client);
+    async function lookup(code, pin, body, client, key) {
+        const a = await authed(code, pin, client, 'member', key);
         if (a.status) return a;
         const tag = str(body.tag, 80).trim().toUpperCase();
         if (!tag) return error(400, 'bad_request', 'tag is required.');
@@ -409,10 +543,11 @@ function createCore(opts) {
         return reply(200, { ok: true, records: records.slice(0, MAX_LOOKUP_RESULTS) });
     }
 
-    async function close(code, pin, client) {
-        const a = await authed(code, pin, client);
+    // Ending the incident deletes everything: commander PIN only.
+    async function close(code, pin, client, key) {
+        const a = await authed(code, pin, client, 'commander', key);
         if (a.status) return a;
-        const n = await deleteIncident(code);
+        const n = await deleteIncident(code, 'ended');
         log('closed', code);
         return reply(200, { ok: true, deleted: n });
     }
@@ -424,12 +559,18 @@ function createCore(opts) {
         let removed = 0;
         for (const c of codes) {
             const meta = await store.get(keyMeta(c));
-            if (!meta || now() - meta.updatedAt > TTL_MS) { removed += await deleteIncident(c); }
+            if (!meta || now() - meta.updatedAt > TTL_MS) { removed += await deleteIncident(c, meta ? 'expired' : ''); }
         }
         let locks = 0;
-        for (const k of entries(await store.list('rl/')).map(e => e.key)) {
-            const f = await store.get(k);
-            if (!f || now() - (f.since || 0) > RATE_WINDOW_MS) { await store.delete(k); locks++; }
+        for (const pre of ['rl/', 'rk/', 'rc/']) {
+            for (const k of entries(await store.list(pre)).map(e => e.key)) {
+                const f = await store.get(k);
+                if (!f || now() - (f.since || 0) > (pre === 'rc/' ? CREATE_WINDOW_MS : RATE_WINDOW_MS)) { await store.delete(k); locks++; }
+            }
+        }
+        for (const k of entries(await store.list('t/')).map(e => e.key)) {
+            const tomb = await store.get(k);
+            if (!tomb || now() - (tomb.at || 0) > TOMBSTONE_MS) { await store.delete(k); removed++; }
         }
         return { incidents: codes.length, removedBlobs: removed, removedLocks: locks };
     }
@@ -442,20 +583,22 @@ function createCore(opts) {
         const code = parts.length ? normaliseCode(parts[0]) : '';
         const action = parts[1] || '';
         const pin = normalisePin(headers['x-incident-pin'] || '');
+        const key = str(headers['x-incident-key'] || '', 64);
+        const devKey = str(headers['x-device-key'] || '', 64);
         if (bodyText && Buffer.byteLength(bodyText) > MAX_BODY_BYTES) return error(413, 'too_large', 'Request too large.');
         let body = {};
         if (bodyText) { try { body = JSON.parse(bodyText); } catch (e) { return error(400, 'bad_json', 'Body must be JSON.'); } }
         if (!body || typeof body !== 'object') body = {};
         try {
             if (method === 'POST' && !parts.length) return await create(body, client);
-            if (method === 'GET' && parts.length === 1) return await read(code, pin, headers['if-none-match'] || '', client, headers['x-incident-seq'] || '');
-            if (method === 'POST' && action === 'join') return await join(code, pin, body, client);
-            if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client);
-            if (method === 'POST' && action === 'close') return await close(code, pin, client);
-            if (method === 'POST' && action === 'marks') return await setMarks(code, pin, body, client);
-            if (method === 'POST' && action === 'policy') return await setPolicy(code, pin, body, client);
-            if (method === 'POST' && action === 'duress-clear') return await clearDuress(code, pin, body, client);
-            if (method === 'POST' && action === 'lookup') return await lookup(code, pin, body, client);
+            if (method === 'GET' && parts.length === 1) return await read(code, pin, headers['if-none-match'] || '', client, headers['x-incident-seq'] || '', key);
+            if (method === 'POST' && action === 'join') return await join(code, pin, body, client, key);
+            if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client, key, devKey);
+            if (method === 'POST' && action === 'close') return await close(code, pin, client, key);
+            if (method === 'POST' && action === 'marks') return await setMarks(code, pin, body, client, key);
+            if (method === 'POST' && action === 'policy') return await setPolicy(code, pin, body, client, key);
+            if (method === 'POST' && action === 'duress-clear') return await clearDuress(code, pin, body, client, key);
+            if (method === 'POST' && action === 'lookup') return await lookup(code, pin, body, client, key);
             return error(404, 'not_found', 'Unknown endpoint.');
         } catch (e) {
             log('error', e && e.message);
@@ -463,7 +606,7 @@ function createCore(opts) {
         }
     }
 
-    return { handle, cleanup, create, join, push, read, close, setMarks, setPolicy, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_LENGTH, PIN_LENGTH, READ_BATCH } };
+    return { handle, cleanup, create, join, push, read, close, setMarks, setPolicy, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_MAX_FAILURES, CREATE_MAX, CODE_LENGTH, PIN_LENGTH, READ_BATCH, TOMBSTONE_MS } };
 }
 
 // Simple in-memory store (tests and local development). opts.delay (ms) or opts.jitter (ms) make every operation

@@ -1281,6 +1281,48 @@ group('v0.11.0: demo incident', () => {
             if (saved.pako) globalThis.pako = saved.pako; else delete globalThis.pako;
         }
     });
+    console.log('\nlib: v0.19.6 clinical checks (v0.19.5 test: no tests for these)');
+    await test('MITT breathing rate: 12 to 23 is YES; 11 and 24 are NO', () => {
+        const y = lib.MITT_COUNT.rr.yesIf;
+        assert.deepStrictEqual([10, 11, 12, 13, 22, 23, 24, 30].map(y), [false, false, true, true, true, true, false, false]);
+    });
+    await test('MITT heart rate: 100 or more is YES; 99 is NO', () => {
+        const y = lib.MITT_COUNT.hr.yesIf;
+        assert.deepStrictEqual([60, 99, 100, 101, 140].map(y), [false, false, true, true, true]);
+    });
+    await test('a counted rate within 4 of a cut-off is flagged; one further away is not', () => {
+        assert.strictEqual(lib.countNearCutoff('rr', 12), true);
+        assert.strictEqual(lib.countNearCutoff('rr', 8), true);
+        assert.strictEqual(lib.countNearCutoff('rr', 16), true);
+        assert.strictEqual(lib.countNearCutoff('rr', 20), true);
+        assert.strictEqual(lib.countNearCutoff('rr', 28), false);
+        assert.strictEqual(lib.countNearCutoff('rr', 4), false);
+        assert.strictEqual(lib.countNearCutoff('hr', 96), true);
+        assert.strictEqual(lib.countNearCutoff('hr', 120), false);
+        assert.strictEqual(lib.countNearCutoff('voice', 12), false);
+    });
+    await test('time of death is kept only while the category is Dead', () => {
+        assert.strictEqual(lib.todAfterChange('DEAD', '16:26 30/10/2026', ''), '16:26 30/10/2026');
+        assert.strictEqual(lib.todAfterChange('DEAD', '', '16:26 30/10/2026'), '16:26 30/10/2026', 'kept on a Dead re-triage with no new time');
+        assert.strictEqual(lib.todAfterChange('P1', '', '16:26 30/10/2026'), '', 'cleared when the casualty is breathing');
+        assert.strictEqual(lib.todAfterChange('NOT_BREATHING', '16:26', '16:26'), '');
+    });
+    await test('category changes by hand: clinicians any; others only more urgent, never to or from Not breathing, Dead or P1 Hold', () => {
+        const ok = (role, a, b) => lib.canChangeCategory(role, a, b).ok;
+        assert.strictEqual(ok('HCP', 'NOT_BREATHING', 'P3'), true);
+        assert.strictEqual(ok('HCP', 'P1', 'DEAD'), true);
+        assert.strictEqual(ok('NON_HCP', 'NOT_BREATHING', 'P3'), false, 'the v0.19.5 test case');
+        assert.strictEqual(ok('NON_HCP', 'P1', 'P3'), false, 'less urgent');
+        assert.strictEqual(ok('NON_HCP', 'P2', 'P3'), false);
+        assert.strictEqual(ok('NON_HCP', 'P3', 'P2'), true, 'more urgent');
+        assert.strictEqual(ok('NON_HCP', 'P2', 'P1'), true);
+        assert.strictEqual(ok('NON_HCP', 'P1', 'DEAD'), false);
+        assert.strictEqual(ok('NON_HCP', 'P1', 'P1_HOLD'), false);
+        assert.strictEqual(ok('NON_HCP', 'DEAD', 'P1'), false);
+        assert.strictEqual(ok('NON_HCP', 'P1_HOLD', 'P1'), false);
+        assert.strictEqual(ok('NON_HCP', 'P2', 'P2'), true, 'no change');
+        assert.match(lib.canChangeCategory('NON_HCP', 'P1', 'P3').why, /Re-triage/);
+    });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);
 })();

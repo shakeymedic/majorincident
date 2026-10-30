@@ -19,13 +19,13 @@ function firestoreStore(db, opts) {
     opts = opts || {};
     const col = db.collection(opts.collection || DEFAULT_COLLECTION);
     return {
+        // A failed read throws (the request then gets a 500 and phones retry). Returning null would read as
+        // "no such incident", which phones took as "incident ended" and unlinked (v0.19.5 test).
         async get(key) {
-            try {
-                const snap = await col.doc(docId(key)).get();
-                if (!snap.exists) return null;
-                const v = snap.get('v');
-                return typeof v === 'string' ? JSON.parse(v) : null;
-            } catch (e) { return null; }
+            const snap = await col.doc(docId(key)).get();
+            if (!snap.exists) return null;
+            const v = snap.get('v');
+            try { return typeof v === 'string' ? JSON.parse(v) : null; } catch (e) { return null; }
         },
         async set(key, value) {
             const text = JSON.stringify(value);
@@ -37,8 +37,7 @@ function firestoreStore(db, opts) {
             const out = [];
             for (let i = 0; i < keys.length; i += GET_CHUNK) {
                 const refs = keys.slice(i, i + GET_CHUNK).map(k => col.doc(docId(k)));
-                let snaps = [];
-                try { snaps = refs.length ? await db.getAll(...refs) : []; } catch (e) { snaps = []; }
+                const snaps = refs.length ? await db.getAll(...refs) : [];
                 refs.forEach((r, j) => {
                     const sn = snaps[j];
                     let v = null;

@@ -1419,6 +1419,32 @@
 
     // ---------- Deterioration detection ----------
     const CATEGORY_RANK = { P1: 0, P2: 1, P3: 2 };
+    // Who may change a casualty's category by hand (v0.19.6). Clinicians: any change. Everyone else: only to a more
+    // urgent category, and never to or from Not breathing, Dead or P1 Hold (clinician decisions). Re-triage with the
+    // questions stays open to everyone.
+    function canChangeCategory(role, from, to) {
+        if (from === to || role === 'HCP') return { ok: true };
+        if (to === 'DEAD' || to === 'P1_HOLD') return { ok: false, why: `${categoryShort(to)} can only be set by a healthcare professional.` };
+        if (from === 'NOT_BREATHING' || from === 'DEAD' || from === 'P1_HOLD') return { ok: false, why: `A casualty recorded as ${categoryShort(from)} can only be changed by a healthcare professional.` };
+        if (!categoryWorsened(from, to)) return { ok: false, why: 'Only a healthcare professional can make a casualty less urgent by hand. To check them again, use Re-triage and answer the questions.' };
+        return { ok: true };
+    }
+    // MITT counting help: the breathing-rate and heart-rate cut-offs (NHS England MITT card, April 2023: breathing
+    // rate 12-23 is the "yes" answer; heart rate 100 or more is the "yes" answer). The help only suggests: the
+    // clinician still taps YES or NO. A 15-second count times 4 can be out by up to 4 a minute, so a counted rate
+    // that close to a cut-off is flagged.
+    const MITT_COUNT = {
+        rr: { yesIf: (r) => r >= 12 && r <= 23, cuts: [12, 23] },
+        hr: { yesIf: (r) => r >= 100, cuts: [100] },
+    };
+    function countNearCutoff(stepId, perMin, margin) {
+        const c = MITT_COUNT[stepId];
+        if (!c || !isFinite(perMin)) return false;
+        const m = margin === undefined ? 4 : margin;
+        return c.cuts.some(x => Math.abs(perMin - x) <= m);
+    }
+    // A time of death belongs only to a casualty recorded as Dead: any other category clears it (v0.19.6).
+    function todAfterChange(category, newTod, oldTod) { return category === 'DEAD' ? String(newTod || oldTod || '') : ''; }
     function categoryWorsened(prev, next) {
         if (prev === next || !next) return false;
         const terminal = ['DEAD', 'NOT_BREATHING', 'P1_HOLD'];
@@ -2291,7 +2317,7 @@
         formatLocationAge, appendLocationHistory, mergeLocationHistory, mergeLocationFieldsInto, distanceMeters,
         similarityScore, findDuplicateCandidates,
         nextReassessmentDue, reassessmentStatus, applyReassessment,
-        categoryWorsened, buildPatientTimeline, shortCodeFromHash,
+        categoryWorsened, canChangeCategory, todAfterChange, MITT_COUNT, countNearCutoff, buildPatientTimeline, shortCodeFromHash,
         FIELD_LIMITS, FIELD_INPUT_LIMITS, normaliseIncidentCode,
         CATEGORIES, CATEGORY_INFO, PATIENT_QR_MAX_CHARS, PATIENT_QR_LOCATION_HISTORY_MAX, AUDIT_GENESIS,
         isValidCategory, categoryShort, categoryLabel, toAsciiJSON, makeUid, makeDeviceCode, nextAutoId,

@@ -164,6 +164,28 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.6 build 2026-10-30-findings — fixes from the v0.19.5 test (Jake, 30 October 2026)
+- **Three PINs** for each new incident: the triagers' PIN (link phones and send casualties), the **commander PIN** (commander screen decisions, map markings, clearing a call for help, ending the incident) and the view-only PIN. The triagers' PIN opens the commander screen as view only, labelled "View only (triagers' PIN)". Incidents started before v0.19.6 keep their single PIN with full access until they expire.
+- **Every decision is named**: P1 Hold allowed or withdrawn, MITT prompts, map markings and cleared calls for help need the name and role of who made them (asked once on the commander screen), and a decision log shows who did what.
+- **Phone reports can no longer undo commander decisions**: decisions, markings and cleared calls for help are stored apart from what phones write, so a report sent at the same moment cannot write an older copy back.
+- **Wrong phone clocks**: phones send their clock with each report; the server moves record times onto its own clock and never accepts a time in the future, so a phone a year fast cannot block a later real change.
+- **Storage errors** are now server errors (phones retry), not "incident not found". Phones only unlink when the server says the incident has **ended** or **expired** (ended incidents leave a marker for 48 hours, so phones and screens are told "ended").
+- **Wrong PINs**: guesses sent in parallel are counted (25 per address per 15 minutes), and an incident that gets 100 wrong PINs from anywhere refuses strangers for 15 minutes while linked phones and screens carry on with a key the server gave them. A wrong code and a wrong PIN get the same reply.
+- **Device codes**: a phone gets a device key when it links, so another phone cannot report under its device code, rename it or clear its call for help.
+- **Expiry**: only new information (casualties, CCS position, METHANE, decisions) keeps an incident alive; heartbeats with nothing new no longer reset the 24-hour clock. Starting incidents is limited to 10 an hour from one address.
+- **Linking asks before sending any casualty already on the phone** (unless already marked with that incident's code).
+- **Category changes by hand**: non-clinicians can only make a casualty more urgent, never change to or from Not breathing, Dead or P1 Hold; re-triage with the questions is still open to all. A changed category replaces the old instruction text.
+- **Time of death** is cleared when a casualty is no longer Dead, and is recorded with the date.
+- **Correcting a mis-tap** ("Change the last answer") is no longer flagged as deteriorating.
+- **Stab-wound question**: the card wording is unchanged; the hint underneath now names the neck, chest, belly, back, armpits, groin and buttocks (NARU guidance; Jake's choice).
+- **🏠 during triage** asks before leaving, like Cancel, and logs it. The update banner never covers YES / NO / Back during triage. A new version found in the first 15 seconds after opening is switched to at once.
+- **Leaving the demo** returns the phone to the mode it was in before (training stays on if it was on); casualties triaged during the demo are cleared with the demo ones.
+- **Dialogs** wait their turn instead of replacing each other; Escape and Android Back close the most recently opened one.
+- **MITT counting help**: a counted rate within 4 a minute of a cut-off says so ("count for longer or type the rate").
+- Smaller: no "Non-clinical" label before a role is chosen; Back ignores a double tap; white-on-orange MITT badge and Demo button darker (4.6:1); questions announced to screen readers; reassessment interval selects labelled.
+- Tests: cut-offs, time-of-death clearing and category-change permissions now have unit tests.
+- Service worker cache v44.
+
 ### v0.19.5 build 2026-10-30-retest — fixes from Jake's retest of v0.19.4 (30 October 2026)
 - **↩ Back** on the question screen shows the previous question again (it used to leave the screen unchanged and upset the question counter; the final category was not affected in the case tested).
 - **Reload part-way through a triage**: the app now says the triage was not finished and nothing was saved for that ID, logs it (TRIAGE_NOT_FINISHED), and does not give that ID to the next casualty.
