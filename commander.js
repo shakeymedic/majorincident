@@ -172,11 +172,12 @@ async function refreshNow() {
         if (to) clearTimeout(to);
         if (r.status === 304) { lastOkAt = Date.now(); setStatus('live', 'Live'); setUpdated(`Checked ${time(Date.now())} • no change`); $('conn-warn').classList.add('hidden'); render({ sameData: true }); return; }
         if (r.status === 401 || r.status === 404 || r.status === 410 || r.status === 429) {
-            let msg = 'Could not open this incident.';
-            try { msg = (await r.json()).message || msg; } catch (e) {}
+            let msg = 'Could not open this incident.', why = '';
+            try { const j = await r.json(); msg = j.message || msg; why = j.error || ''; } catch (e) {}
             if (!data) { signOut(); $('signin').classList.remove('hidden'); $('signin-error').textContent = msg; $('signin-error').classList.remove('hidden'); return; }
             const gone = r.status === 404 || r.status === 410;
-            setStatus('bad', r.status === 410 ? 'Incident expired' : r.status === 404 ? 'Incident ended' : 'Access refused');
+            // The server says whether it was ended or expired; an ended incident was labelled "expired" (v0.19.7 stress test).
+            setStatus('bad', r.status === 410 ? (why === 'expired' ? 'Incident expired' : 'Incident ended') : r.status === 404 ? 'Incident ended' : 'Access refused');
             // An ended incident must not look live: the old figures are greyed and labelled with when they were last received.
             $('conn-warn').textContent = msg + (gone ? ` The incident has ended or expired. Everything below is the last copy this page received${lastOkAt ? ' at ' + time(lastOkAt) : ''}: it is NOT live.` : '');
             $('conn-warn').classList.remove('hidden');
@@ -258,7 +259,7 @@ function render(opts) {
     setText('counts-note', `Big number = on scene now (field + casualty clearing station); "in total" includes evacuated. CCS on the small labels = casualty clearing station (set on the phone, or inferred from the sector name). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
     // phones
     const devs = data.devices || [];
-    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.commander ? 'Incident commander • ' : d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
+    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}${d.oldApp ? ' <span class="cat-chip" style="background:#c9a700;color:#000;font-size:0.72rem;padding:1px 6px" title="This phone is on an old version of the app">Old app version</span>' : ''}</b><span class="ph-meta">${d.oldApp ? '<b>Old app version: ask them to close and reopen the app to update, then join again.</b> ' : ''}${d.role === 'creator' ? 'Started sharing • ' : ''}${d.commander ? 'Incident commander • ' : d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
     setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes${devs.some(d => d.position) ? ' • 📍 = shares its position (opt-in on the phone)' : ''}`);
     renderSos(devs);
     // sectors

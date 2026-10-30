@@ -10,6 +10,7 @@ const { firestoreStore, firestoreConfig, docId } = require('../netlify/lib/fires
 // Stand-in for the parts of a Firestore client the store uses: collection, doc get/set/delete, where/select/get.
 function fakeFirestore() {
     const cols = new Map();
+    let txChain = Promise.resolve();
     const snap = (data) => ({ exists: !!data, get: (f) => data ? data[f] : undefined });
     function query(docs, filters, fields) {
         return {
@@ -31,6 +32,14 @@ function fakeFirestore() {
     return {
         // Bulk read and batched writes, as the real client: getAll(...refs) keeps the order; a batch applies on commit.
         async getAll(...refs) { if (refs.length > 500) throw new Error('too many'); return Promise.all(refs.map(r => r.get())); },
+        // Transactions run one at a time here, which is what Firestore's retries amount to for these tests.
+        runTransaction(fn) {
+            const go = () => fn({ get: (ref) => ref.get(), set: (ref, data) => { pending.push(() => ref.set(data)); } });
+            let pending = [];
+            const run = txChain.then(async () => { pending = []; const out = await go(); for (const op of pending) await op(); return out; });
+            txChain = run.catch(() => {});
+            return run;
+        },
         batch() {
             const ops = [];
             return {

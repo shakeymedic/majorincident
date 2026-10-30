@@ -13,6 +13,9 @@ function createCore(o) {
         const m = /^\/api\/incident\/?([A-Za-z0-9]*)\/?([a-z-]*)/.exec(path) || [];
         const code = String(m[1] || '').toUpperCase(), action = m[2] || '';
         let body = {}; try { body = JSON.parse(bodyText || '{}') || {}; } catch (e) {}
+        // v0.19.8 phones say they use device keys when they create or join; a test sends keys: false to play an old app.
+        if (method === 'POST' && (action === 'join' || !code) && body && typeof body === 'object' && body.keys === undefined) { body.keys = true; bodyText = JSON.stringify(body); }
+        if (body && body.keys === false) { delete body.keys; bodyText = JSON.stringify(body); }
         if (action === 'records' && body && body.deviceId && keys[code + '/' + body.deviceId] && !(headers || {})['x-device-key']) headers = Object.assign({}, headers, { 'x-device-key': keys[code + '/' + body.deviceId] });
         const r = await handle(method, path, headers, bodyText, client);
         if (r.body && r.body.deviceKey && (r.body.code || code) && body.deviceId) keys[(r.body.code || code) + '/' + body.deviceId] = r.body.deviceKey;
@@ -523,14 +526,103 @@ function rec(uid, id, category, extra) {
         assert.ok(st.filter(x => x === 401).length <= 25, `${st.filter(x => x === 401).length} guesses checked`);
         assert.ok(st.filter(x => x === 429).length >= 175);
     });
-    await test('100 wrong PINs for one incident from many addresses lock out strangers; linked phones carry on with their key', async () => {
+    await test('100 wrong PINs for one incident lock out guessing addresses; a clean address and linked phones carry on', async () => {
         const c13 = createCore({ store: makeStore(), now: () => clock });
         const c = await mk(c13);
         const j = await c13.handle('POST', `/api/incident/${c.code}/join`, H(c.pin), JSON.stringify({ deviceId: 'DEVB' }), '3.3.3.3');
         for (let i = 0; i < 100; i++) await c13.handle('GET', `/api/incident/${c.code}`, H('000001'), '', '10.0.' + Math.floor(i / 20) + '.' + i);
-        assert.strictEqual((await c13.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '11.1.1.1')).status, 429, 'a stranger with the right PIN must wait');
+        assert.strictEqual((await c13.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '10.0.0.1')).status, 429, 'an address that guessed wrong must wait, even with the right PIN');
+        // v0.19.8: strangers' guesses cannot keep out a new commander screen from an address with no wrong PINs.
+        assert.strictEqual((await c13.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '11.1.1.1')).status, 200, 'a clean address with the right PIN gets in');
+        // ...but it gets one try: after a wrong PIN it waits too.
+        assert.strictEqual((await c13.handle('GET', `/api/incident/${c.code}`, H('000002'), '', '12.1.1.1')).status, 401);
+        assert.strictEqual((await c13.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '12.1.1.1')).status, 429);
         const linked = await c13.handle('PUT', `/api/incident/${c.code}/records`, Object.assign(H(c.pin), { 'x-incident-key': j.body.accessKey }), JSON.stringify({ deviceId: 'DEVB', records: [] }), '3.3.3.3');
         assert.strictEqual(linked.status, 200);
+    });
+    await test('v0.19.8: a triager\'s access key does not let it guess the commander PIN past the lock-out, and its wrong guesses count', async () => {
+        const c = createCore({ store: makeStore(), now: () => clock });
+        const inc = await mk(c);
+        const j = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'DEVB' }), '3.3.3.3');
+        assert.strictEqual(j.body.level, 'member');
+        const KH = (pin) => Object.assign(H(pin), { 'x-incident-key': j.body.accessKey });
+        for (let i = 0; i < 100; i++) await c.handle('GET', `/api/incident/${inc.code}`, KH('00000' + (i % 10)), '', '20.0.' + Math.floor(i / 20) + '.' + i);
+        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, KH(inc.commanderPin), '', '20.0.0.1')).status, 429, 'the triager key does not cover the commander PIN');
+        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, KH(inc.pin), '', '20.0.0.1')).status, 200, 'it still covers its own PIN');
+    });
+    await test('v0.19.8: a phone on an old app (no device keys) joins and its casualties arrive; the commander sees it is out of date', async () => {
+        const c = createCore({ store: makeStore(), now: () => clock });
+        const inc = await mk(c);
+        const j = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'OLD1', triager: 'Old Phone', keys: false }), '7.7.7.7');
+        assert.strictEqual(j.status, 200);
+        assert.strictEqual(j.body.deviceKey, '');
+        const p = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'OLD1', records: [rec('old-1', 'OLD-001', 'P1')] }), '7.7.7.7');
+        assert.strictEqual(p.status, 200);
+        assert.strictEqual(p.body.accepted, 1);
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '2.2.2.2');
+        assert.ok(g.body.records.some(r => r.uid === 'old-1'));
+        assert.strictEqual(g.body.devices.find(d => d.deviceId === 'OLD1').oldApp, true);
+        // Updated and joined again: keyed from then on, and the old-app mark goes.
+        const j2 = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'OLD1', triager: 'Old Phone' }), '7.7.7.7');
+        assert.ok(j2.body.deviceKey);
+        const g2 = await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '2.2.2.2');
+        assert.ok(!g2.body.devices.find(d => d.deviceId === 'OLD1').oldApp);
+        assert.strictEqual((await c.handle('PUT', `/api/incident/${inc.code}/records`, Object.assign(H(inc.pin), { 'x-device-key': 'nope' }), JSON.stringify({ deviceId: 'OLD1', records: [] }), '6.6.6.6')).status, 403);
+    });
+    await test('v0.19.8: P1 Hold and MITT changes sent at the same moment are all kept', async () => {
+        const c = createCore({ store: makeStore({ jitter: 15 }), now: () => clock });
+        const inc = await mk(c);
+        const CH = H(inc.commanderPin);
+        await Promise.all([
+            c.handle('POST', `/api/incident/${inc.code}/policy`, CH, JSON.stringify({ p1Hold: { on: true, by: 'Dr A' } }), '2.2.2.2'),
+            c.handle('POST', `/api/incident/${inc.code}/policy`, CH, JSON.stringify({ mitt: { groups: ['all'], by: 'Dr B' } }), '2.2.2.3'),
+            c.handle('POST', `/api/incident/${inc.code}/marks`, CH, JSON.stringify({ marks: [], by: 'Dr C' }), '2.2.2.4'),
+        ]);
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, CH, '', '2.2.2.2');
+        assert.strictEqual(g.body.policy.p1Hold.on, true);
+        assert.ok(g.body.policy.mitt && g.body.policy.mitt.by === 'Dr B');
+        assert.strictEqual(g.body.decisions.length, 3, JSON.stringify(g.body.decisions));
+    });
+    await test('v0.19.8: a phone whose clock is out does not make its unchanged METHANE look new on every report', async () => {
+        let t0 = clock;
+        const c = createCore({ store: makeStore(), now: () => t0 });
+        const inc = await mk(c);
+        const fast = 365 * 24 * 3600 * 1000;
+        const methane = { m: 'Major incident declared', e: 'Stadium', t: 'Collapse', h: '', a: '', n: '20', e_svc: '', timestamp: t0 + fast, by: 'Medic A' };
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', methane, clientNow: t0 + fast, records: [] }), '1.1.1.1');
+        const m1 = (await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '2.2.2.2')).body.updatedAt;
+        t0 += 60000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', methane, clientNow: t0 + fast + 37, records: [] }), '1.1.1.1');
+        const m2 = (await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '2.2.2.2')).body.updatedAt;
+        assert.strictEqual(m2, m1, 'the same METHANE did not extend the incident');
+    });
+    await test('v0.19.8: a record\'s triage time is moved onto the server clock with its update time', async () => {
+        const c = createCore({ store: makeStore(), now: () => clock });
+        const inc = await mk(c);
+        const fast = 365 * 24 * 3600 * 1000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', clientNow: clock + fast, records: [rec('sk-1', 'SK-001', 'P2', { timestamp: clock + fast - 5000, updatedAt: clock + fast - 5000, createdAt: clock + fast - 5000 })] }), '1.1.1.1');
+        const r = (await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '2.2.2.2')).body.records.find(x => x.uid === 'sk-1');
+        assert.ok(Math.abs(r.timestamp - (clock - 5000)) < 2000, String(r.timestamp - clock));
+    });
+    await test('v0.19.8: incidents started at the same moment from one address still stop at 10', async () => {
+        const c = createCore({ store: makeStore({ jitter: 10 }), now: () => clock });
+        const rs = await Promise.all(Array.from({ length: 15 }, (_, i) => c.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'P' + i }), '8.8.8.8')));
+        assert.strictEqual(rs.filter(r => r.status === 201).length, 10);
+    });
+    await test('v0.19.8: one store error does not stop the hourly clean-up', async () => {
+        const st = makeStore();
+        const c = createCore({ store: st, now: () => clock });
+        const a1 = await mk(c), a2 = await mk(c);
+        const realGet = st.get.bind(st);
+        let failedOnce = false;
+        st.get = async (k) => { if (!failedOnce && k.endsWith('/meta')) { failedOnce = true; throw new Error('boom'); } return realGet(k); };
+        clock += TTL_MS + 1000;
+        const out = await c.cleanup();
+        st.get = realGet;
+        assert.strictEqual(out.errors, 1);
+        assert.ok(out.removedBlobs > 0, 'the other incident was still cleared');
+        clock -= TTL_MS + 1000;
+        void a1; void a2;
     });
     await test('a phone cannot report under another phone\'s device code', async () => {
         const c14 = createCore({ store: makeStore(), now: () => clock });

@@ -1352,7 +1352,7 @@
         <div class="location-status-card good" style="text-align:center;">
             <div class="qr-meta">Incident code</div>
             <div id="cmd-code" style="font-size:2.2rem; font-weight:900; letter-spacing:0.15em; font-family:ui-monospace, Menlo, monospace;"></div>
-            <div class="qr-meta" style="margin-top:6px;">Triagers' PIN (to link phones)</div>
+            <div class="qr-meta" style="margin-top:6px;" id="cmd-pin-label">Triagers' PIN (to link phones)</div>
             <div id="cmd-pin" style="font-size:1.8rem; font-weight:900; letter-spacing:0.2em; font-family:ui-monospace, Menlo, monospace;"></div>
             <div id="cmd-cmdpin-wrap" style="display:none; margin-top:6px; border-top:1px solid rgba(0,0,0,0.12); padding-top:6px;">
                 <div class="qr-meta">Commander PIN (commander screen on another device; can change decisions and end the incident; keep it to the command team)</div>
@@ -2232,8 +2232,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.7';
-    const APP_BUILD = '2026-10-30-under2-bleeding';
+    const APP_VERSION = '0.19.8';
+    const APP_BUILD = '2026-10-30-stress';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -3415,6 +3415,8 @@
         if (existing) {
             const again = await inAppConfirm({ title: `${val} already exists`, message: `This ID belongs to a patient already on this device (${catShort(existing.category)}, triaged ${fmtTime(existing.createdAt || existing.timestamp)} by ${existing.triager || 'unknown'}).\n\nIs this the SAME patient? Re-triage updates that record. Otherwise cancel and check the tag.`, okLabel: 'Same patient — re-triage', cancelLabel: 'Different patient — re-enter ID' });
             if (!again) { $('manual-id-input').focus(); return; }
+            const rt = MITTLib.canReTriage(userRole, existing.category);
+            if (!rt.ok) { $('manual-id-modal').style.display = 'none'; showBlockingError('Clinician needed', rt.why); return; }
             pendingReTriageUid = existing.uid;
             logAudit('RETRIAGE_STARTED', existing.id, `Manual ID matched existing record. Prev category: ${catShort(existing.category)}`, Date.now(), { uid: existing.uid });
         }
@@ -3562,17 +3564,30 @@
         const p = pendingDeadEntry;
         if (!p) { closeTodModal(); return; }
         let tod = '';
-        // With the date (v0.19.5 test), as "HH:MM DD/MM/YYYY"; a typed time is taken as today.
-        const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        if (mode === 'now') tod = `${fmtTime(Date.now())} ${today}`;
-        else if (mode === 'entered') { tod = $('tod-input').value; if (!tod) { showToast('Enter the time, or choose "time now" / "no time yet".', { alert: true }); return; } tod = `${tod} ${today}`; }
+        // With the date (v0.19.5 test), as "HH:MM DD/MM/YYYY"; a typed time later than now is taken as yesterday.
+        if (mode === 'now') tod = MITTLib.todWithDate('', Date.now());
+        else if (mode === 'entered') { tod = $('tod-input').value; if (!tod) { showToast('Enter the time, or choose "time now" / "no time yet".', { alert: true }); return; } tod = MITTLib.todWithDate(tod, Date.now()); }
         pendingDeadEntry = null;
         $('tod-modal').style.display = 'none';
+        // Dead chosen by hand on the patient screen (v0.19.7 stress test: no time-of-death prompt).
+        if (p.overrideUid) {
+            const i = indexByUid(p.overrideUid);
+            if (i < 0) return;
+            const entry = incidentLog[i];
+            if (entry.category !== 'DEAD') return;
+            entry.tod = tod;
+            entry.action = entry.action + (tod ? ` Time of death ${tod}.` : ' Time of death not yet recorded.');
+            touch(entry, ['tod', 'action']);
+            logAudit(tod ? 'TOD_RECORDED' : 'TOD_NOT_RECORDED', entry.id, tod ? `Time of death ${tod}` : 'Time of death not yet recorded', Date.now(), { uid: entry.uid });
+            saveState(); updateDashboard();
+            if (entry === currentEntry()) renderResultScreen(entry, { keepDetailsOpen: true });
+            return;
+        }
         completeLogResult({ category: p.category, action: p.action + (tod ? ` Time of death ${tod}.` : ' Time of death not yet recorded.'), reason: p.reason, tod });
     }
     function closeTodModal() {
         $('tod-modal').style.display = 'none';
-        if (pendingDeadEntry && stepHistory.length) stepHistory.pop(); // stay on the breathing question
+        if (pendingDeadEntry && !pendingDeadEntry.overrideUid && stepHistory.length) stepHistory.pop(); // stay on the breathing question
         pendingDeadEntry = null;
     }
     function completeLogResult({ category, action, reason, tod }) {
@@ -3588,6 +3603,16 @@
             const idx = indexByUid(targetUid);
             const entry = incidentLog[idx];
             const prev = entry.category;
+            // Whatever route led here (scanned tag, typed ID, log), a non-clinician cannot re-triage a casualty out
+            // of Not breathing, Dead or P1 Hold.
+            const rt = kind === 'retriage' ? MITTLib.canReTriage(userRole, prev) : { ok: true };
+            if (!rt.ok && category !== prev) {
+                logAudit('RETRIAGE_REFUSED', entry.id, `${currentTool}: ${catShort(prev)} -> ${catShort(category)} not saved (needs a healthcare professional)`, now, { uid: entry.uid });
+                currentLogIndex = idx;
+                renderResultScreen(entry); showScreen('result-screen');
+                showBlockingError('Clinician needed', rt.why + ' Nothing was changed.');
+                return;
+            }
             entry.triageHistory = (entry.triageHistory || []).concat([hist]);
             Object.assign(entry, { category, action, reason, tool: currentTool, time, timestamp: now, triager: triagerName });
             entry.lastReassessed = now; entry.reassessOutcome = kind === 'correction' ? 'triage corrected' : 're-triaged';
@@ -3644,6 +3669,8 @@
     function reTriage() {
         const entry = currentEntry();
         if (!entry) return;
+        const rt = MITTLib.canReTriage(userRole, entry.category);
+        if (!rt.ok) { showBlockingError('Clinician needed', rt.why); return; }
         commitDirtyFields('Re-triage');
         pendingReTriageUid = entry.uid;
         pendingCorrectionUid = null;
@@ -3909,6 +3936,7 @@
         } else logAudit('CATEGORY_CHANGE', entry.id, `Changed ${catShort(oldCat)} -> ${catShort(newCat)} (manual)`, Date.now(), { uid: entry.uid });
         saveState(); updateDashboard();
         renderResultScreen(entry, { keepDetailsOpen: true });
+        if (newCat === 'DEAD' && !entry.tod) { pendingDeadEntry = { overrideUid: entry.uid }; $('tod-input').value = ''; $('tod-modal').style.display = 'flex'; }
     }
     function onHighRiskChange() {
         const entry = currentEntry();
@@ -4803,11 +4831,16 @@
     function renderConflictChoice(c) {
         const name = 'res-' + c.field;
         const show = (x) => c.field === 'category' ? catShort(x) : x;
+        // The same rule as changing the category by hand (v0.19.7 stress test): a non-clinician cannot pick a less
+        // urgent incoming category, or one into or out of Not breathing, Dead or P1 Hold.
+        const perm = c.field === 'category' ? MITTLib.canChangeCategory(userRole, c.local, c.incoming) : { ok: true };
+        const incomingAttrs = perm.ok ? { type: 'radio', name, value: 'incoming' } : { type: 'radio', name, value: 'incoming', disabled: 'disabled' };
         return el('div', { className: 'conflict-row' }, [
             el('strong', { text: `⚠ ${c.field === 'category' ? 'Category' : 'Demographics'} differ: ${c.why}` }),
             el('label', null, [el('input', { type: 'radio', name, value: 'local', checked: 'checked' }), `Keep this device's: ${show(c.local)}`]),
-            el('label', null, [el('input', { type: 'radio', name, value: 'incoming' }), `Use incoming: ${show(c.incoming)}`]),
-        ]);
+            el('label', null, [el('input', incomingAttrs), `Use incoming: ${show(c.incoming)}`]),
+            perm.ok ? null : el('small', { text: perm.why }),
+        ].filter(Boolean));
     }
     function declinePreview() {
         if (_pendingImport) logAudit('QR_DECLINED', _pendingImport.data.id, 'Receiver declined import', Date.now(), { uid: _pendingImport.data.uid });
@@ -4823,6 +4856,11 @@
         }
         const resolutions = {};
         ['category', 'demos'].forEach(f => { const r = document.querySelector(`input[name="res-${f}"]:checked`); if (r) resolutions[f] = r.value; });
+        if (resolutions.category === 'incoming' && match.index > -1) {
+            const local = incidentLog[match.index];
+            const perm = MITTLib.canChangeCategory(userRole, local.category, data.category);
+            if (!perm.ok) { showBlockingError('Clinician decision', perm.why); return; }
+        }
         _commitImport({ resolutions });
     }
     function auditMergeReport(id, uid, res, sender, how) {
@@ -6446,7 +6484,7 @@
         }
         if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showBlockingError('No connection', 'Starting needs a signal once, to create the incident. Try again when you have Wi-Fi or mobile data; after that, records are queued and sent whenever signal returns.'); return; }
         try {
-            const r = await cmdFetch('/api/incident', { method: 'POST', body: { deviceId, triager: triagerName, name: '', incidentCode, training: TRAINING, app: APP_VERSION } });
+            const r = await cmdFetch('/api/incident', { method: 'POST', body: { deviceId, triager: triagerName, name: '', incidentCode, training: TRAINING, app: APP_VERSION, keys: true } });
             if (r.status !== 201 || !r.body.code) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
             const skip = await cmdAskAboutOlder(incidentCode);
             CMD.cfg = { code: r.body.code, pin: r.body.pin, cmdPin: r.body.commanderPin || '', viewPin: r.body.viewPin || '', deviceKey: r.body.deviceKey || '', accessKey: r.body.accessKey || '', role: 'creator', commander: !!opts.commander, startedAt: Date.now(), skip };
@@ -6472,7 +6510,7 @@
         if (code.length !== 6 || pin.length !== 6) { showToast('The code is 6 letters or digits and the PIN is 6 digits.', { alert: true }); return false; }
         try {
             const sameIncident = CMD.cfg && CMD.cfg.code === code;
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(code)}/join`, { method: 'POST', pin, keys: false, body: { deviceId, triager: triagerName, app: APP_VERSION, deviceKey: (sameIncident && CMD.cfg.deviceKey) || cmdKnownDeviceKey(code) || undefined } });
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(code)}/join`, { method: 'POST', pin, keys: false, body: { deviceId, triager: triagerName, app: APP_VERSION, keys: true, deviceKey: (sameIncident && CMD.cfg.deviceKey) || cmdKnownDeviceKey(code) || undefined } });
             if (r.status !== 200) { showBlockingError('Could not join', r.body && r.body.message ? r.body.message : `Server replied ${r.status}.`); return false; }
             if (!!r.body.training !== TRAINING) { showBlockingError('Training mismatch', r.body.training ? 'That incident is a training incident, and this phone is in real use. To join it, turn on Training mode at the top of ⚙ Settings, then join again.' : 'That incident is real, and this phone is in training mode. To join it, turn off Training mode at the top of ⚙ Settings, then join again.'); return false; }
             const skip = CMD.cfg && CMD.cfg.code === code && Array.isArray(CMD.cfg.skip) ? CMD.cfg.skip : await cmdAskAboutOlder(r.body.incidentCode || incidentCode);
@@ -6503,10 +6541,19 @@
         if (!ok) return;
         await cmdJoin(code, pin);
     }
+    // The PIN this phone may hand on to other triagers. A phone that joined with the commander PIN does not know the
+    // triagers' PIN, and must never pass its own on as if it were (v0.19.7 stress test), so it shows none.
+    function cmdTriagerPin() {
+        if (!CMD.cfg) return '';
+        if (CMD.cfg.role === 'creator') return CMD.cfg.pin;
+        return CMD.cfg.cmdPin && CMD.cfg.cmdPin === CMD.cfg.pin ? '' : CMD.cfg.pin;
+    }
     function cmdShowDetails() {
         if (!cmdActive()) { openModesMenu(); return; }
         setText('cmd-code', CMD.cfg.code);
-        setText('cmd-pin', CMD.cfg.pin);
+        const tpin = cmdTriagerPin();
+        setText('cmd-pin-label', tpin ? "Triagers' PIN (to link phones)" : "This phone joined with the commander PIN. Ask the incident commander for the triagers' PIN to link other phones.");
+        setText('cmd-pin', tpin);
         $('cmd-cmdpin-wrap').style.display = CMD.cfg.cmdPin && CMD.cfg.cmdPin !== CMD.cfg.pin ? '' : 'none';
         setText('cmd-cmdpin', CMD.cfg.cmdPin || '');
         $('cmd-view-wrap').style.display = CMD.cfg.viewPin ? '' : 'none';
@@ -6517,15 +6564,15 @@
         setText('cmd-title', CMD.cfg.commander ? 'Incident commander' : 'Live sharing');
         setText('cmd-detail-hint', CMD.cfg.role === 'creator'
             ? 'Triagers: on their start screen, pick a role, then "Scan the commander\'s code" and point the camera at this QR. The commander screen opens below on this phone with no sign-in; on a laptop or big screen, open the link and enter the PIN.'
-            : 'Show this QR to another triager so they can link too. The commander screen opens below on this phone with no sign-in.');
+            : tpin ? 'Show this QR to another triager so they can link too. The commander screen opens below on this phone with no sign-in.' : 'The commander screen opens below on this phone with no sign-in.');
         $('cmd-end-btn').style.display = CMD.cfg.cmdPin ? '' : 'none';
-        try { _renderQR($('cmd-qr'), JSON.stringify({ t: 'MIT_JOIN', c: CMD.cfg.code, p: CMD.cfg.pin }), Math.min(220, qrSize())); } catch (e) { clearChildren($('cmd-qr')); }
+        try { if (tpin) _renderQR($('cmd-qr'), JSON.stringify({ t: 'MIT_JOIN', c: CMD.cfg.code, p: tpin }), Math.min(220, qrSize())); else clearChildren($('cmd-qr')); } catch (e) { clearChildren($('cmd-qr')); }
         cmdRenderStatus();
         closeModesMenu();
         $('cmd-modal').style.display = 'flex';
     }
     function closeCmdDetails() { $('cmd-modal').style.display = 'none'; }
-    function cmdCopyLink() { if (!cmdActive()) return; copyText(`Incident ${CMD.cfg.code}\nTriagers' PIN (to link phones): ${CMD.cfg.pin}${CMD.cfg.cmdPin && CMD.cfg.cmdPin !== CMD.cfg.pin ? `\nCommander PIN (commander screen, can change decisions; keep it to the command team): ${CMD.cfg.cmdPin}` : ''}${CMD.cfg.viewPin ? `\nView-only PIN (watch only): ${CMD.cfg.viewPin}` : ''}\nCommander screen: ${$('cmd-link').href}`, 'Code, PINs and link copied.'); }
+    function cmdCopyLink() { if (!cmdActive()) return; const tpin = cmdTriagerPin(); copyText(`Incident ${CMD.cfg.code}${tpin ? `\nTriagers' PIN (to link phones): ${tpin}` : ''}${CMD.cfg.cmdPin && CMD.cfg.cmdPin !== CMD.cfg.pin ? `\nCommander PIN (commander screen, can change decisions; keep it to the command team): ${CMD.cfg.cmdPin}` : ''}${CMD.cfg.viewPin ? `\nView-only PIN (watch only): ${CMD.cfg.viewPin}` : ''}\nCommander screen: ${$('cmd-link').href}`, tpin ? 'Code, PINs and link copied.' : 'Code and link copied (no triagers\' PIN on this phone).'); }
     function cmdStopLocal(reason) {
         const code = CMD.cfg ? CMD.cfg.code : '';
         CMD.cfg = null; cmdSaveCfg();

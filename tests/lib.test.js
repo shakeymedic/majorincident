@@ -615,6 +615,19 @@ group('reassessment', () => {
         assert.strictEqual(lib.tstNext('talking', lib.TST_UNDER2), null);
         assert.deepStrictEqual(lib.tstNext('walking', true), { type: 'result', category: 'P3', reason: 'Walking' }, 'card answers unchanged');
     });
+    test('v0.19.8: a non-clinician cannot re-triage a casualty out of Not breathing, Dead or P1 Hold; other re-triage is allowed', () => {
+        ['NOT_BREATHING', 'DEAD', 'P1_HOLD'].forEach(c => { assert.strictEqual(lib.canReTriage('NON_HCP', c).ok, false, c); assert.strictEqual(lib.canReTriage('HCP', c).ok, true, c); });
+        ['P1', 'P2', 'P3'].forEach(c => assert.strictEqual(lib.canReTriage('NON_HCP', c).ok, true, c));
+        assert.strictEqual(lib.canReTriage('', 'NOT_BREATHING').ok, false, 'no role chosen counts as non-clinician');
+    });
+    test('v0.19.8: a typed time of death later than now is yesterday; otherwise today', () => {
+        const at = new Date(2026, 9, 31, 0, 10).getTime();
+        assert.strictEqual(lib.todWithDate('23:50', at), '23:50 30/10/2026');
+        assert.strictEqual(lib.todWithDate('00:05', at), '00:05 31/10/2026');
+        assert.strictEqual(lib.todWithDate('00:14', at), '00:14 31/10/2026', 'a few minutes ahead (clock difference) is still today');
+        assert.strictEqual(lib.todWithDate('', at), '00:10 31/10/2026', 'no typed time: now');
+        assert.strictEqual(lib.todWithDate('7:05', at), '07:05 30/10/2026');
+    });
     test('G5: a TST P1, P2 or P3 is due in 15 minutes (NARU TST guidance); MITT keeps the P1/P2/P3 intervals', () => {
         ['P1', 'P2', 'P3'].forEach(c => assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'TST', category: c, timestamp: 1000 }), 1000 + 15*60*1000, c));
         assert.strictEqual(lib.nextReassessmentDue({ id: 'A', tool: 'MITT', category: 'P2', timestamp: 1000 }), 1000 + 30*60*1000);
