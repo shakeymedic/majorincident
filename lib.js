@@ -1429,6 +1429,27 @@
         if (!categoryWorsened(from, to)) return { ok: false, why: 'Only a healthcare professional can make a casualty less urgent by hand. To check them again, use Re-triage and answer the questions.' };
         return { ok: true };
     }
+    // A typed time of death ("HH:MM") with its date, as "HH:MM DD/MM/YYYY". A time later than now (more than 5 minutes
+    // ahead) is taken as yesterday, e.g. 23:50 typed at 00:10 (v0.19.7 stress test: it always got today's date).
+    function todWithDate(hhmm, nowMs) {
+        const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());
+        const d = new Date(nowMs);
+        if (m) {
+            const typed = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Number(m[1]), Number(m[2]));
+            if (typed.getTime() - nowMs > 5 * 60 * 1000) d.setDate(d.getDate() - 1);
+        }
+        const p2 = (x) => String(x).padStart(2, '0');
+        const time = m ? `${p2(m[1])}:${m[2]}` : `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+        return `${time} ${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`;
+    }
+    // Re-triage answers the questions again, so a casualty can rightly become less urgent. But a casualty recorded as
+    // Not breathing, Dead or P1 Hold must be reassessed by a healthcare professional (NHS England TST card), so a
+    // non-clinician cannot re-triage them out of it (v0.19.7 stress test: re-triage, "Walking? YES" gave P3).
+    function canReTriage(role, from) {
+        if (role === 'HCP') return { ok: true };
+        if (from === 'NOT_BREATHING' || from === 'DEAD' || from === 'P1_HOLD') return { ok: false, why: `A casualty recorded as ${categoryShort(from)} must be reassessed by a healthcare professional. Ask a clinician to re-triage them.` };
+        return { ok: true };
+    }
     // MITT counting help: the breathing-rate and heart-rate cut-offs (NHS England MITT card, April 2023: breathing
     // rate 12-23 is the "yes" answer; heart rate 100 or more is the "yes" answer). The help only suggests: the
     // clinician still taps YES or NO. A 15-second count times 4 can be out by up to 4 a minute, so a counted rate
@@ -2310,7 +2331,7 @@
         BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
         escapeHTML, fnv1a, canonicalJSON, buildPatientPayload, decompressData,
         validatePatientWrapper, mergePatientRecords, buildAckPayload,
-        tstNext, mittNext, TST_UNDER2,
+        tstNext, mittNext, TST_UNDER2, canReTriage, todWithDate,
         classifyBodymapPoint, buildInjuryMark, injuriesToText, sanitiseInjuries,
         buildBulkPayload, validateBulkWrapper, bulkPayloadFits,
         clonePatientRecord, buildAllPatientsPayload, validateAllPatientsWrapper,

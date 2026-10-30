@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v45-2026-10-30-under2-bleeding';
+const CACHE_NAME = 'mit-triage-v46-2026-10-30-stress';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 // The printed-number reader (vendor/tesseract, ~10 MB, fetched on demand) is kept across app updates too,
@@ -105,8 +105,19 @@ self.addEventListener('fetch', event => {
         );
         return;
     }
-    // The app page and lib.js: served from the cache at once, then fetched again in the background so a phone that
-    // opens the app once after a release already has the new files next time. Nothing reloads by itself.
+    // Opening the app (a page navigation): fetch the page and lib.js from the network first, as a pair, and use them
+    // if they arrive within a few seconds; otherwise use the stored pair at once (no signal, or a slow one). The first
+    // load after a release used to show the old version (v0.19.7 stress test).
+    if (url.origin === self.location.origin && isShellPath(url.pathname) && req.mode === 'navigate') {
+        const fresh = fetchShellPair();
+        event.waitUntil(fresh.catch(() => {}));
+        const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
+        event.respondWith(Promise.race([fresh.catch(() => null), timeout]).then(page => page
+            || caches.match(req).then(c => c || caches.match('./index.html')).then(c => c || fetch(req))));
+        return;
+    }
+    // lib.js and other requests for the page: served from the cache at once, then fetched again in the background so
+    // a phone that opens the app once after a release already has the new files next time. Nothing reloads by itself.
     if (url.origin === self.location.origin && isShellPath(url.pathname)) {
         event.respondWith(caches.match(req).then(cached => {
             if (cached) { event.waitUntil(refreshShell()); return cached; }
@@ -144,6 +155,15 @@ function refreshShell() {
     return Promise.all([get('./'), get('./lib.js')]).then(([page, lib]) => caches.open(CACHE_NAME).then(cache => Promise.all([
         cache.put('./', page.clone()), cache.put('./index.html', page), cache.put('./lib.js', lib),
     ]))).catch(() => {});
+}
+
+// The network copy of the page and lib.js, stored as a pair (see refreshShell). Resolves with the page response.
+const NAV_TIMEOUT_MS = 3000;
+function fetchShellPair() {
+    const get = (u) => fetch(u, { cache: 'no-cache' }).then(r => (r && r.status === 200 && r.type === 'basic' && !r.redirected) ? r : Promise.reject(new Error(u)));
+    return Promise.all([get('./'), get('./lib.js')]).then(([page, lib]) => caches.open(CACHE_NAME).then(cache => Promise.all([
+        cache.put('./', page.clone()), cache.put('./index.html', page.clone()), cache.put('./lib.js', lib),
+    ])).then(() => { lastShellRefresh = Date.now(); return page; }));
 }
 
 function trimTileCache(cache) {

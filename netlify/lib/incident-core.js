@@ -110,7 +110,14 @@ function createCore(opts) {
     const keyMeta = (code) => `i/${code}/meta`;
     const keyRec = (code, uid) => `i/${code}/r/${uid}`;
     const keyDev = (code, id) => `i/${code}/d/${id}`;
-    const keyPolicy = (code) => `i/${code}/policy`;
+    const keyPolicy = (code) => `i/${code}/policy`;            // pre-v0.19.8 incidents: one document for both decisions and the log
+    const keyPol = (code, what) => `i/${code}/pol/${what}`;    // v0.19.8: one small document per decision field (p1hold, mitt)
+    const keyDec = (code, id) => `i/${code}/dec/${id}`;        // v0.19.8: one document per decision-log entry, append only
+    const DECISIONS_MAX = 200;
+    // Decision-log documents sort by their key: the time, then a per-server counter (keeps the order of entries
+    // written in the same millisecond), then a few random characters (two servers at once).
+    let decSeq = 0;
+    const decKey = (code, at) => keyDec(code, at.toString(36).padStart(9, '0') + '-' + String(++decSeq).padStart(6, '0') + '-' + crypto.randomBytes(2).toString('hex'));
     const keyMarks = (code) => `i/${code}/marks`;
     const keyClear = (code, id) => `i/${code}/dc/${id}`;
     const keyTomb = (code) => `t/${code}`;
@@ -118,7 +125,16 @@ function createCore(opts) {
     // A key only the server can make, given to a phone or screen once it has shown a right PIN. Presenting it lets
     // that phone or screen through the incident-wide wrong-PIN lock-out (which strangers' guesses can trigger).
     // The device key ties a phone's reports to its device code, so another phone cannot send under that code.
-    const accessKey = (meta) => meta.keySecret ? shortHash(meta.keySecret + ':access:' + meta.code) + shortHash(meta.code + ':' + meta.keySecret) : '';
+    // The access key is tied to the PIN level it was given for (v0.19.8): it only lets through a PIN of that level or
+    // lower, so a triager's or observer's key cannot be used to guess the commander PIN past the lock-out.
+    // Keys handed out before v0.19.8 (no level) count as the triagers' level.
+    const accessKey = (meta, level) => meta.keySecret ? shortHash(meta.keySecret + ':access:' + meta.code + (level ? ':' + level : '')) + shortHash(meta.code + ':' + meta.keySecret + (level ? ':' + level : '')) : '';
+    const LEVEL_RANK = { view: 0, member: 1, commander: 2 };
+    function keyLevel(meta, key) {
+        if (!key || !meta.keySecret) return '';
+        for (const l of ['commander', 'member', 'view']) if (safeEqual(String(key), accessKey(meta, l))) return l;
+        return safeEqual(String(key), accessKey(meta)) ? 'member' : '';
+    }
     const deviceKey = (meta, id) => meta.keySecret ? shortHash(meta.keySecret + ':device:' + id) + shortHash(id + ':' + meta.keySecret) : '';
     // The client address itself is never stored. The hash is salted with a server-only secret (RATE_LIMIT_SALT),
     // so a stored key cannot be matched back to an address by hashing guesses.
@@ -151,6 +167,7 @@ function createCore(opts) {
         try { await store.set(keyRate(client), f); } catch (e) {}
     }
     const codeFailures = new Map(); // incident code -> { count, since }
+    const creates = new Map();      // rc/<client> -> { count, since }
     async function readCodeFailures(code) {
         let f = codeFailures.get(code) || null;
         try { const s = await store.get(keyCodeFail(code)); if (s && (!f || (s.count || 0) > f.count)) f = { count: s.count || 0, since: s.since || 0 }; } catch (e) {}
@@ -193,13 +210,8 @@ function createCore(opts) {
             await noteFailure(client);
             return refused();
         }
-        const keyOk = !!key && !!meta.keySecret && safeEqual(String(key), accessKey(meta));
-        if (!keyOk) {
-            await readCodeFailures(code);
-            const cf = codeFailures.get(code);
-            if (cf && cf.count >= CODE_MAX_FAILURES) return error(429, 'rate_limited', 'Too many wrong PINs have been tried for this incident. Phones already linked carry on; others can try again in 15 minutes.');
-        }
-        // From here to the verdict nothing is awaited, so parallel guesses cannot all slip past the counts above.
+        await readCodeFailures(code);
+        // From here to the verdict nothing is awaited, so parallel guesses cannot all slip past the counts.
         const mineNow = failures.get(client);
         if (mineNow && now() - mineNow.since <= RATE_WINDOW_MS && mineNow.count >= RATE_MAX_FAILURES) return error(429, 'rate_limited', 'Too many wrong codes or PINs from here. Try again in 15 minutes.');
         const h = pin ? hashPin(meta.salt, pin) : '';
@@ -207,10 +219,21 @@ function createCore(opts) {
         if (h && meta.cmdHash && safeEqual(h, meta.cmdHash)) level = 'commander';
         else if (h && safeEqual(h, meta.pinHash)) level = meta.cmdHash ? 'member' : 'commander';
         else if (h && meta.viewHash && safeEqual(h, meta.viewHash)) level = 'view';
+        // Incident-wide lock-out after many wrong PINs from anywhere. Still let through: a phone or screen whose key
+        // covers the PIN it presents, and an address with no wrong PINs of its own in this window (so strangers'
+        // guesses cannot keep a new commander screen or a re-joining phone out; each address then gets one try).
+        const cf = codeFailures.get(code);
+        if (cf && now() - cf.since <= RATE_WINDOW_MS && cf.count >= CODE_MAX_FAILURES) {
+            const kl = keyLevel(meta, key);
+            const keyCovers = !!kl && !!level && LEVEL_RANK[level] <= LEVEL_RANK[kl];
+            const cleanAddress = !mineNow || now() - mineNow.since > RATE_WINDOW_MS || !mineNow.count;
+            if (!keyCovers && !cleanAddress) return error(429, 'rate_limited', 'Too many wrong PINs have been tried for this incident. Phones already linked carry on; others can try again in 15 minutes.');
+        }
         if (!level) {
+            // Every wrong PIN counts, whoever sends it and whatever key it carries.
             noteFailureNow(failures, client);
-            const cf = keyOk ? null : noteFailureNow(codeFailures, code);
-            try { await store.set(keyRate(client), failures.get(client)); if (cf) await store.set(keyCodeFail(code), cf); } catch (e) {}
+            const cfNow = noteFailureNow(codeFailures, code);
+            try { await store.set(keyRate(client), failures.get(client)); await store.set(keyCodeFail(code), cfNow); } catch (e) {}
             return refused();
         }
         if (need === 'read') return { meta, level };
@@ -218,10 +241,28 @@ function createCore(opts) {
         if (need === 'commander' && level !== 'commander') return error(403, 'not_commander', 'That PIN lets phones send casualties but not change incident decisions. Use the commander PIN.');
         return { meta, level };
     }
-    // The decisions and markings, kept apart from the meta (older incidents kept them in it).
-    async function loadPolicy(code, meta) {
-        const d = await store.get(keyPolicy(code));
-        return d ? { policy: d.policy || {}, policyAt: d.policyAt || 0, decisions: d.decisions || [] } : { policy: meta.policy || {}, policyAt: meta.policyAt || 0, decisions: [] };
+    // The decisions and markings, kept apart from the meta (older incidents kept them in it). From v0.19.8 each
+    // decision field and each log entry is its own document, so two commander actions at the same moment never
+    // read-and-rewrite the same document (v0.19.7 stress test: 1 of 12 simultaneous changes was lost, and the
+    // transaction retries tried first took longer than a function is allowed). Older incidents' single document is
+    // still read underneath.
+    async function loadPolicyFields(code, meta) {
+        const [legacy, p1, mitt] = await getEach(store, [keyPolicy(code), keyPol(code, 'p1hold'), keyPol(code, 'mitt')]);
+        const base = legacy ? { policy: legacy.policy || {}, policyAt: legacy.policyAt || 0, decisions: legacy.decisions || [] } : { policy: meta.policy || {}, policyAt: meta.policyAt || 0, decisions: [] };
+        const policy = Object.assign({}, base.policy);
+        let policyAt = base.policyAt;
+        if (p1 && (p1.at || 0) >= ((policy.p1Hold && policy.p1Hold.at) || 0)) { policy.p1Hold = p1; policyAt = Math.max(policyAt, p1.at || 0); }
+        if (mitt && (mitt.at || 0) >= ((policy.mitt && policy.mitt.at) || 0)) { policy.mitt = mitt; policyAt = Math.max(policyAt, mitt.at || 0); }
+        return { policy, policyAt, legacyDecisions: base.decisions };
+    }
+    // The decision log: the older single document's entries plus one document per entry since, newest last.
+    async function loadPolicy(code, meta, decKeys) {
+        const f = await loadPolicyFields(code, meta);
+        const keys = decKeys || entries(await store.list(`i/${code}/dec/`)).map(e => e.key);
+        const extra = keys.length ? await getEach(store, keys) : [];
+        const fromDocs = keys.map((k, i) => ({ k, d: extra[i] })).filter(x => x.d).sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0).map(x => x.d);
+        const decisions = f.legacyDecisions.concat(fromDocs).slice(-DECISIONS_MAX);
+        return { policy: f.policy, policyAt: f.policyAt, decisions };
     }
     async function loadMarks(code, meta) {
         const d = await store.get(keyMarks(code));
@@ -261,9 +302,14 @@ function createCore(opts) {
         const ck = `rc/${shortHash(rateSalt ? rateSalt + ':' + client : client)}`;
         let made = null;
         try { made = await store.get(ck); } catch (e) {}
+        const mem = creates.get(ck);
+        if (mem && (!made || mem.count > (made.count || 0))) made = mem;
         if (made && now() - (made.since || 0) > CREATE_WINDOW_MS) made = null;
+        // Counted in memory before anything else is awaited, so requests sent together cannot all slip under the limit.
         if (made && made.count >= CREATE_MAX) return error(429, 'rate_limited', 'Too many incidents started from here in the last hour. Try again later.');
-        try { await store.set(ck, made ? { count: made.count + 1, since: made.since } : { count: 1, since: now() }); } catch (e) {}
+        const nextMade = made ? { count: made.count + 1, since: made.since } : { count: 1, since: now() };
+        creates.set(ck, nextMade);
+        try { await store.set(ck, nextMade); } catch (e) {}
         let code = '';
         for (let i = 0; i < 5; i++) { code = randomCode(rng); if (!(await store.get(keyMeta(code))) && !(await store.get(keyTomb(code)))) break; code = ''; }
         if (!code) return error(503, 'no_code', 'Could not allocate an incident code. Try again.');
@@ -276,9 +322,9 @@ function createCore(opts) {
         const t = now();
         const meta = { code, salt, keySecret: crypto.randomBytes(16).toString('hex'), pinHash: hashPin(salt, pin), cmdHash: hashPin(salt, commanderPin), viewHash: hashPin(salt, viewPin), name: str(body.name, 80), incidentCode: lib.normaliseIncidentCode(body.incidentCode), training: !!body.training, createdAt: t, updatedAt: t, createdBy: { deviceId, triager: str(body.triager, 80) }, ccs: null, methane: null, seq: 1 };
         await store.set(keyMeta(code), meta);
-        await store.set(keyDev(code, deviceId), { deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40), keyed: true });
+        await store.set(keyDev(code, deviceId), Object.assign({ deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40) }, body.keys === true ? { keyed: true } : { oldApp: true }));
         log('created', code);
-        return reply(201, { code, pin, commanderPin, viewPin, deviceKey: deviceKey(meta, deviceId), accessKey: accessKey(meta), createdAt: t, expiresAt: t + TTL_MS, ttlMs: TTL_MS });
+        return reply(201, { code, pin, commanderPin, viewPin, deviceKey: deviceKey(meta, deviceId), accessKey: accessKey(meta, 'commander'), createdAt: t, expiresAt: t + TTL_MS, ttlMs: TTL_MS });
     }
 
     async function join(code, pin, body, client, key) {
@@ -294,9 +340,15 @@ function createCore(opts) {
         const t = now();
         // A device code already used by a phone that holds its device key cannot be taken over by another phone.
         if (existing && existing.keyed && !(body.deviceKey && safeEqual(String(body.deviceKey), deviceKey(a.meta, deviceId)))) return error(409, 'device_taken', 'Another phone in this incident already uses this device code. Change the device code on this phone (⚙ Settings) and join again.');
-        await store.set(keyDev(code, deviceId), Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40) }, a.meta.keySecret ? { keyed: true } : {}));
+        // Phones on v0.19.5 or earlier do not know about device keys: they join unkeyed and are marked as an old app,
+        // so their casualties still arrive (they were all refused in the v0.19.7 stress test) and the commander
+        // screen can tell the user to update. A phone that sends keys: true gets a device key from now on.
+        const keyedNow = !!a.meta.keySecret && (body.keys === true || !!(existing && existing.keyed));
+        const devDoc = Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40) });
+        if (keyedNow) { devDoc.keyed = true; delete devDoc.oldApp; } else devDoc.oldApp = true;
+        await store.set(keyDev(code, deviceId), devDoc);
         log('joined', code, deviceId);
-        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, deviceKey: deviceKey(a.meta, deviceId), accessKey: accessKey(a.meta) });
+        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, deviceKey: keyedNow ? deviceKey(a.meta, deviceId) : '', accessKey: accessKey(a.meta, a.level) });
     }
 
     async function push(code, pin, body, client, key, devKey) {
@@ -324,6 +376,8 @@ function createCore(opts) {
             const rec = cleanRecord(raw);
             if (!rec) { rejected.push(raw && raw.uid ? String(raw.uid).slice(0, 64) : '?'); continue; }
             rec.updatedAt = fixTime(rec.updatedAt);
+            // Triage and creation times are moved onto the server's clock too (v0.19.7 stress test).
+            if (Math.abs(skew) > CLOCK_SKEW_MS) { if (num(rec.timestamp)) rec.timestamp = fixTime(rec.timestamp); if (num(rec.createdAt)) rec.createdAt = fixTime(rec.createdAt); }
             if (Math.abs(skew) > CLOCK_SKEW_MS) rec.clockSkewMs = Math.round(skew);
             if (seenUid.has(rec.uid)) { const i = cleaned.findIndex(x => x.uid === rec.uid); if ((rec.updatedAt || 0) >= (cleaned[i].updatedAt || 0)) cleaned[i] = rec; continue; }
             seenUid.add(rec.uid);
@@ -357,10 +411,14 @@ function createCore(opts) {
         let newCcs = null;
         if (body.ccs && num(body.ccs.lat) !== null && num(body.ccs.lng) !== null) {
             const ccs = lib.normaliseLocation(body.ccs);
-            if (ccs) { ccs.timestamp = fixTime(num(ccs.timestamp) || t); if (!meta.ccs || ccs.timestamp > (num(meta.ccs.timestamp) || 0)) newCcs = Object.assign({}, ccs, { setBy: deviceId }); }
+            // Compared by what the phone sent (its own time and the place), not the clock-corrected time, which moves
+            // on every report from a phone whose clock is out and made every report look new (v0.19.7 stress test).
+            const sentAt = ccs ? num(ccs.timestamp) || 0 : 0;
+            const same = !!ccs && !!meta.ccs && meta.ccs.setBy === deviceId && (meta.ccs.sentAt || 0) === sentAt && meta.ccs.lat === ccs.lat && meta.ccs.lng === ccs.lng;
+            if (ccs && !same) { ccs.timestamp = fixTime(sentAt || t); if (!meta.ccs || ccs.timestamp > (num(meta.ccs.timestamp) || 0)) newCcs = Object.assign({}, ccs, { setBy: deviceId, sentAt }); }
         }
         const methane = cleanMethane(body.methane);
-        if (methane) methane.timestamp = fixTime(methane.timestamp);
+        if (methane) { methane.sentAt = methane.timestamp; methane.timestamp = fixTime(methane.timestamp); }
         const dev = (await store.get(keyDev(code, deviceId))) || devBefore || { deviceId, role: 'member', joinedAt: t, records: 0 };
         dev.triager = str(body.triager, 80) || dev.triager || '';
         dev.lastSeen = t;
@@ -391,8 +449,9 @@ function createCore(opts) {
         if (methane) {
             methane.device = deviceId;
             if (!methane.by) methane.by = dev.triager;
-            if (!dev.methane || dev.methane.timestamp !== methane.timestamp) newMethane = methane;
-            dev.methane = methane;
+            // New only if the phone's own save time or the text changed (not the clock-corrected time).
+            const sameM = dev.methane && (dev.methane.sentAt || dev.methane.timestamp) === methane.sentAt && ['m', 'e', 't', 'h', 'a', 'n', 'e_svc'].every(k => dev.methane[k] === methane[k]);
+            if (!sameM) { newMethane = methane; dev.methane = methane; }
         }
         await store.set(keyDev(code, deviceId), dev);
         // Only new information keeps the incident alive: a report with nothing new (a heartbeat) does not reset the
@@ -406,7 +465,7 @@ function createCore(opts) {
                 if (newMethane && (!fresh.methane || newMethane.timestamp >= (fresh.methane.timestamp || 0))) fresh.methane = newMethane;
             })) || meta;
         }
-        const [pol, mk, clr] = await Promise.all([loadPolicy(code, m), loadMarks(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
+        const [pol, mk, clr] = await Promise.all([loadPolicyFields(code, m), loadMarks(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
         // Map markings ride back on every push and heartbeat, so linked phones pick them up without another request.
         return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: m.updatedAt + TTL_MS, marks: mk.marks, marksAt: mk.marksAt, policy: pol.policy, policyAt: pol.policyAt, duress: withClear(dev.duress, clr) || null, clockSkewMs: Math.round(skew) });
     }
@@ -426,7 +485,7 @@ function createCore(opts) {
         const all = entries(await store.list(`i/${code}/`));
         const recEntries = all.filter(e => e.key.startsWith(`i/${code}/r/`));
         const devEntries = all.filter(e => e.key.startsWith(`i/${code}/d/`));
-        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`));
+        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`) || e.key.startsWith(`i/${code}/pol/`) || e.key.startsWith(`i/${code}/dec/`));
         const seq = fingerprint(meta, recEntries, devEntries, extra) + (a.level === 'commander' ? 'c' : 'v');
         const etag = `"${seq}"`;
         // Netlify's edge rewrites the ETag it serves when it compresses the body ("2" becomes "2-df") and then drops an
@@ -440,13 +499,13 @@ function createCore(opts) {
         const clears = {};
         (await getMany(store, extra.filter(e => e.key.indexOf('/dc/') > -1).map(e => e.key))).forEach(c => { if (c && c.deviceId) clears[c.deviceId] = c; });
         const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return o; });
-        const [pol, mk] = await Promise.all([loadPolicy(code, meta), loadMarks(code, meta)]);
+        const [pol, mk] = await Promise.all([loadPolicy(code, meta, extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key)), loadMarks(code, meta)]);
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         log('read', code);
         // The triagers' PIN opens the screen as view only: only the commander PIN can change anything.
         const viewOnly = a.level !== 'commander';
-        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: mk.marks, marksAt: mk.marksAt, marksBy: mk.by, policy: pol.policy, policyAt: pol.policyAt, decisions: pol.decisions, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta), devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
+        return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: mk.marks, marksAt: mk.marksAt, marksBy: mk.by, policy: pol.policy, policyAt: pol.policyAt, decisions: pol.decisions, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta, a.level), devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
     }
 
     // Commander screen: replace the incident's map markings (cordons, RVP, loading point...). Full PIN only.
@@ -474,9 +533,8 @@ function createCore(opts) {
     }
     // Every commander decision is kept with who made it and when (shown on the commander screen).
     async function addDecision(code, meta, d) {
-        const cur = await loadPolicy(code, meta);
-        const decisions = cur.decisions.concat([Object.assign({ at: now() }, d)]).slice(-200);
-        await store.set(keyPolicy(code), { policy: cur.policy, policyAt: cur.policyAt, decisions });
+        const at = now();
+        await store.set(decKey(code, at), Object.assign({ at }, d));
     }
 
     async function setMarks(code, pin, body, client, key) {
@@ -501,29 +559,30 @@ function createCore(opts) {
         const a = await authed(code, pin, client, 'commander', key);
         if (a.status) return a;
         const t = now();
-        const cur = await loadPolicy(code, a.meta);
-        const policy = lib.normalisePolicy(cur.policy || {});
-        const decisions = cur.decisions.slice();
-        let changed = false;
+        let p1By = '', mittBy = '', groups = [];
         if (body.p1Hold && typeof body.p1Hold === 'object') {
-            const by = str(body.p1Hold.by, 80).trim();
-            if (!by) return error(400, 'bad_request', body.p1Hold.on ? 'Say who made the P1 Hold decision.' : 'Say who is withdrawing P1 Hold.');
-            policy.p1Hold = { on: !!body.p1Hold.on, at: t, by };
-            decisions.push({ at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by });
-            changed = true;
+            p1By = str(body.p1Hold.by, 80).trim();
+            if (!p1By) return error(400, 'bad_request', body.p1Hold.on ? 'Say who made the P1 Hold decision.' : 'Say who is withdrawing P1 Hold.');
         }
         if (body.mitt && typeof body.mitt === 'object') {
-            const groups = lib.normalisePolicyGroups(body.mitt.groups);
+            groups = lib.normalisePolicyGroups(body.mitt.groups);
             if (!groups.length) return error(400, 'bad_request', 'Choose who the MITT prompt goes to.');
-            const by = str(body.mitt.by, 80).trim();
-            if (!by) return error(400, 'bad_request', 'Say who is sending the MITT prompt.');
-            policy.mitt = { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by, groups };
-            decisions.push({ at: t, what: 'mitt', groups, by });
-            changed = true;
+            mittBy = str(body.mitt.by, 80).trim();
+            if (!mittBy) return error(400, 'bad_request', 'Say who is sending the MITT prompt.');
         }
-        if (!changed) return error(400, 'bad_request', 'Nothing to change.');
-        const out = lib.normalisePolicy(policy);
-        await store.set(keyPolicy(code), { policy: out, policyAt: t, decisions: decisions.slice(-200) });
+        if (!p1By && !mittBy) return error(400, 'bad_request', 'Nothing to change.');
+        // Each field is its own document and each log entry its own document: nothing here reads and rewrites.
+        const writes = [];
+        if (p1By) {
+            writes.push([keyPol(code, 'p1hold'), { on: !!body.p1Hold.on, at: t, by: p1By }]);
+            writes.push([decKey(code, t), { at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by: p1By }]);
+        }
+        if (mittBy) {
+            writes.push([keyPol(code, 'mitt'), { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by: mittBy, groups }]);
+            writes.push([decKey(code, t), { at: t, what: 'mitt', groups, by: mittBy }]);
+        }
+        await setEach(store, writes);
+        const out = lib.normalisePolicy((await loadPolicyFields(code, a.meta)).policy);
         await touchMeta(code);
         log('policy', code);
         return reply(200, { ok: true, policy: out, policyAt: t });
@@ -557,22 +616,35 @@ function createCore(opts) {
         const keys = entries(await store.list('i/')).map(e => e.key);
         const codes = Array.from(new Set(keys.map(k => k.split('/')[1]).filter(Boolean)));
         let removed = 0;
+        // One failed read or delete is logged and skipped, so it cannot stop the rest of the sweep (v0.19.7 stress test).
+        let errors = 0;
+        const each = async (fn) => { try { await fn(); } catch (e) { errors++; log('cleanup-error', e && e.message); } };
         for (const c of codes) {
-            const meta = await store.get(keyMeta(c));
-            if (!meta || now() - meta.updatedAt > TTL_MS) { removed += await deleteIncident(c, meta ? 'expired' : ''); }
+            await each(async () => {
+                const meta = await store.get(keyMeta(c));
+                if (!meta || now() - meta.updatedAt > TTL_MS) { removed += await deleteIncident(c, meta ? 'expired' : ''); }
+            });
         }
         let locks = 0;
         for (const pre of ['rl/', 'rk/', 'rc/']) {
-            for (const k of entries(await store.list(pre)).map(e => e.key)) {
-                const f = await store.get(k);
-                if (!f || now() - (f.since || 0) > (pre === 'rc/' ? CREATE_WINDOW_MS : RATE_WINDOW_MS)) { await store.delete(k); locks++; }
+            let keys2 = [];
+            await each(async () => { keys2 = entries(await store.list(pre)).map(e => e.key); });
+            for (const k of keys2) {
+                await each(async () => {
+                    const f = await store.get(k);
+                    if (!f || now() - (f.since || 0) > (pre === 'rc/' ? CREATE_WINDOW_MS : RATE_WINDOW_MS)) { await store.delete(k); locks++; }
+                });
             }
         }
-        for (const k of entries(await store.list('t/')).map(e => e.key)) {
-            const tomb = await store.get(k);
-            if (!tomb || now() - (tomb.at || 0) > TOMBSTONE_MS) { await store.delete(k); removed++; }
+        let tombs = [];
+        await each(async () => { tombs = entries(await store.list('t/')).map(e => e.key); });
+        for (const k of tombs) {
+            await each(async () => {
+                const tomb = await store.get(k);
+                if (!tomb || now() - (tomb.at || 0) > TOMBSTONE_MS) { await store.delete(k); removed++; }
+            });
         }
-        return { incidents: codes.length, removedBlobs: removed, removedLocks: locks };
+        return { incidents: codes.length, removedBlobs: removed, removedLocks: locks, errors };
     }
 
     // Generic HTTP dispatcher: method, path (e.g. "/api/incident/ABC123/records"), headers (lower-case keys), body text, client id.

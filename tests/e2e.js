@@ -1729,6 +1729,51 @@ async function test(name, fn) {
         await C._ctx.close();
         await A._ctx.close();
     });
+    await test('v0.19.8: non-clinician re-triage cannot take a casualty out of Not breathing; Dead by hand asks for a time; a commander-PIN phone never shares its PIN', async () => {
+        const N = await device('v0198', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(N, 'PC Oscar', 'NON_HCP');
+        await triage(N, 'TST', [false, false, false, false]);
+        assert.strictEqual(await N.evaluate(() => currentEntry().category), 'NOT_BREATHING');
+        await N.evaluate(() => reTriage());
+        await N.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
+        assert.match(await N.textContent('#confirm-message'), /healthcare professional/);
+        await N.click('#confirm-ok');
+        assert.strictEqual(await N.evaluate(() => pendingReTriageUid), null, 'no re-triage started');
+        // Any other route to a re-triage is refused when it would be saved
+        const uid = await N.evaluate(() => currentEntry().uid);
+        await N.evaluate((u) => { pendingReTriageUid = u; currentTool = 'TST'; stepHistory = ['walking']; completeLogResult({ category: 'P3', action: 'x', reason: 'Walking' }); }, uid);
+        await N.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
+        await N.click('#confirm-ok');
+        assert.strictEqual(await N.evaluate((u) => incidentLog.find(e => e.uid === u).category, uid), 'NOT_BREATHING');
+        await N._ctx.close();
+        // Clinician sets Dead by hand: asked for a time of death
+        const M = await device('v0198b', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(M, 'Dr Papa', 'HCP');
+        await triage(M, 'TST', [false, false, false, false]);
+        await M.evaluate(() => { document.getElementById('p-cat-override').value = 'DEAD'; onCategoryOverride(); });
+        await page_visible(M, '#tod-modal');
+        await M.evaluate(() => confirmDeath('now'));
+        assert.match(await M.evaluate(() => currentEntry().tod), /^\d\d:\d\d \d\d\/\d\d\/\d{4}$/);
+        await M._ctx.close();
+        // Start an incident, then a second phone joins with the commander PIN: its details show no PIN and no QR
+        const K = await device('v0198k'); await setup(K, 'Cdr Romeo');
+        await K.evaluate(() => { cmdStart(); });
+        await answerDialog(K, true);
+        await K.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        const sh = await K.evaluate(() => { closeCmdDetails(); return { code: CMD.cfg.code, pin: CMD.cfg.pin, cmdPin: CMD.cfg.cmdPin }; });
+        assert.match(await K.evaluate(() => { cmdShowDetails(); return document.getElementById('cmd-pin').textContent; }), /^\d{6}$/, 'the creator still shows the triagers\' PIN');
+        const J = await device('v0198c', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(J, 'Silver Quebec', 'HCP');
+        await J.evaluate(([c, p]) => cmdJoin(c, p), [sh.code, sh.cmdPin]);
+        await J.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        const d = await J.evaluate(() => { cmdShowDetails(); return { pin: document.getElementById('cmd-pin').textContent, label: document.getElementById('cmd-pin-label').textContent, qr: document.getElementById('cmd-qr').children.length, tp: cmdTriagerPin() }; });
+        assert.strictEqual(d.pin, '');
+        assert.strictEqual(d.tp, '');
+        assert.strictEqual(d.qr, 0);
+        assert.match(d.label, /Ask the incident commander for the triagers' PIN/);
+        await J._ctx.close();
+        await K._ctx.close();
+    });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
         const CI = await device('Cmd I');
         await CI.fill('#intro-triager', 'Cdr India');
@@ -1782,7 +1827,9 @@ async function test(name, fn) {
         await CE.evaluate(() => cmdPush(true));
         await CE.waitForFunction(() => !cmdActive(), null, { timeout: 8000 });
         await CC.evaluate(() => refreshNow());
-        await CC.waitForFunction(() => /refused|expired|No such/i.test(document.getElementById('conn-warn').textContent + document.getElementById('status-pill').textContent), null, { timeout: 8000 });
+        // v0.19.8: an ended incident is labelled "ended", never "expired"
+        await CC.waitForFunction(() => /Incident ended/.test(document.getElementById('status-pill').textContent) && /has ended/.test(document.getElementById('conn-warn').textContent), null, { timeout: 8000 });
+        assert.ok(!/expired/i.test(await CC.textContent('#conn-warn')));
         await CE._ctx.close();
     });
     await test('sharing survives a reload of the phone (settings are kept, records re-sent)', async () => {
