@@ -1,6 +1,6 @@
 {
   "name": "mitt",
-  "version": "0.19.10",
+  "version": "0.19.11",
   "private": true,
   "description": "Major Incident Triage Tool — offline PWA with an optional incident commander dashboard (Netlify Functions + Firestore London, or Netlify Blobs until Firestore is set up). The site has no build step; devDependencies are for tests only.",
   "scripts": {

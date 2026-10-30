@@ -10,6 +10,10 @@ function blobStore() {
         async get(key) { try { return await s.get(key, { type: 'json' }); } catch (e) { return null; } },
         async set(key, value) { await s.setJSON(key, value); },
         async delete(key) { await s.delete(key); },
+        // Netlify Blobs has no atomic increment: a read and a write (two server copies at once can each miss the
+        // other's count). Only used until Firestore is set up; production uses Firestore.
+        async incr(key, fields) { let cur = null; try { cur = await s.get(key, { type: 'json' }); } catch (e) {} const n = (cur && cur.n) || {}; Object.keys(fields).forEach(f => { n[f] = (n[f] || 0) + fields[f]; }); await s.setJSON(key, { n }); },
+        async counts(keys) { return Promise.all(keys.map(async k => { try { const v = await s.get(k, { type: 'json' }); return (v && v.n) || null; } catch (e) { return null; } })); },
         async list(prefix) { const r = await s.list({ prefix }); return (r.blobs || []).map(b => ({ key: b.key, etag: b.etag || '' })).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0); },
     };
 }

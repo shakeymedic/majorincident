@@ -18,7 +18,20 @@ function etagOf(text) { return crypto.createHash('sha1').update(text).digest('he
 function firestoreStore(db, opts) {
     opts = opts || {};
     const col = db.collection(opts.collection || DEFAULT_COLLECTION);
+    // Counters use Firestore's own atomic increment, so two server copies adding at once both count.
+    let FieldValue = opts.FieldValue || null;
+    const fv = () => FieldValue || (FieldValue = require('@google-cloud/firestore').FieldValue);
     return {
+        async incr(key, fields) {
+            const n = {};
+            Object.keys(fields).forEach(f => { n[f] = fv().increment(fields[f]); });
+            await col.doc(docId(key)).set({ k: String(key), n }, { merge: true });
+        },
+        async counts(keys) {
+            const refs = keys.map(k => col.doc(docId(k)));
+            const snaps = refs.length ? await db.getAll(...refs) : [];
+            return snaps.map(sn => (sn && sn.exists && sn.get('n')) || null);
+        },
         // A failed read throws (the request then gets a 500 and phones retry). Returning null would read as
         // "no such incident", which phones took as "incident ended" and unlinked (v0.19.5 test).
         async get(key) {
