@@ -1130,6 +1130,9 @@
     .coach-card li { margin: 2px 0; }
     #intro-screen .intro-step-label { font-weight: 800; margin: 0.2rem 0 0.4rem; }
     #intro-screen .intro-role { text-align: left; }
+    #intro-screen .intro-role-pair { display: flex; gap: 8px; }
+    #intro-screen .intro-role-pair .btn { flex: 1 1 0; margin: 0 0 0.3rem 0 !important; padding: 0.8rem 0.6rem !important; font-size: 1.05rem !important; text-align: center; }
+    #intro-screen .intro-role-note { text-align: left; margin: 0 0 0.6rem; }
     #intro-screen .intro-role-sub { font-size: 0.9rem; font-weight: normal; }
     #intro-screen .intro-role-cmd { background: transparent !important; color: var(--nhs-dark-blue); border: 2px dashed var(--nhs-dark-blue); font-size: 0.95rem !important; padding: 0.6rem 0.8rem !important; }
     #intro-screen .intro-role-cmd:hover { background: rgba(0,48,135,0.06) !important; }
@@ -1756,9 +1759,15 @@
             <button class="btn btn-primary intro-role" id="btn-role-responder" onclick="setUserRole('NON_HCP')">
                 🚒 Police, fire or first aider<br><span class="intro-role-sub">Simple yes/no questions (Ten Second Triage)</span>
             </button>
-            <button class="btn btn-secondary intro-role" id="btn-role-clinician" onclick="setUserRole('HCP')">
-                🩺 Doctor, nurse or paramedic<br><span class="intro-role-sub">Ten Second Triage, plus MITT when directed</span>
-            </button>
+            <div class="intro-role-pair">
+                <button class="btn btn-secondary intro-role" id="btn-role-paramedic" onclick="setUserRole('HCP')">
+                    🚑 Paramedic or ambulance medic
+                </button>
+                <button class="btn btn-secondary intro-role" id="btn-role-clinician" onclick="setUserRole('HCP')">
+                    🩺 Doctor or nurse
+                </button>
+            </div>
+            <p class="qr-meta intro-role-note">Clinicians start with Ten Second Triage and switch to MITT when the commander asks.</p>
             <button class="btn btn-secondary intro-role-cmd" id="btn-role-commander" onclick="startAsCommander()">
                 🎖 Running the incident? Start as incident commander
             </button>
@@ -2185,8 +2194,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.2';
-    const APP_BUILD = '2026-10-30-walkthrough';
+    const APP_VERSION = '0.19.3';
+    const APP_BUILD = '2026-10-30-paramedic';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -5255,7 +5264,12 @@
         clearChildren(box);
         if (!coachDone() && !(typeof CMD !== 'undefined' && CMD.cfg && CMD.cfg.commander)) box.appendChild(el('div', { className: 'alert-card info coach-card', id: 'home-coach', onclick: dismissCoach }, [
             el('strong', { text: 'How to use this' }),
-            el('ol', {}, [el('li', { text: 'Tap the big START TRIAGE button.' }), el('li', { text: 'Answer each question YES or NO.' }), el('li', { text: 'Put the matching colour tag on the casualty. The app does not replace the paper tag.' })]),
+            el('ol', {}, userRole === 'HCP' ? [
+                el('li', { text: 'Tap START TRIAGE (Ten Second Triage) and answer YES or NO.' }),
+                el('li', { text: 'Put the matching colour tag on the casualty. The app does not replace the paper tag.' }),
+                el('li', { text: 'When the commander asks for MITT, a card appears here. Use the MITT button, or tap "Switch to MITT" to make it the big button.' }),
+                el('li', { text: 'To reassess someone, open the Patient log, tap them and use ⏱ Reassess.' })
+            ] : [el('li', { text: 'Tap the big START TRIAGE button.' }), el('li', { text: 'Answer each question YES or NO.' }), el('li', { text: 'Put the matching colour tag on the casualty. The app does not replace the paper tag.' })]),
             el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap here to hide this.' })]));
         const rt = pendingReTriageUid ? indexByUid(pendingReTriageUid) : -1;
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));

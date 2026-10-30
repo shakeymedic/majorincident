@@ -164,6 +164,11 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.3 build 2026-10-30-paramedic — a paramedic button on the start screen (Jake, 30 October 2026)
+- "2. Who are you?" now has **🚑 Paramedic or ambulance medic** and **🩺 Doctor or nurse** side by side (both the clinician role), under **🚒 Police, fire or first aider**, with one line: clinicians start with Ten Second Triage and switch to MITT when the commander asks.
+- Clinicians get their own first-use "How to use this" card: START TRIAGE starts with TST, tag the casualty, use the MITT button when the commander asks (their card offers "Switch to MITT" to make it the big button), and reassess from the Patient log.
+- Service worker cache v41.
+
 ### v0.19.2 build 2026-10-30-walkthrough — simpler first run for first responders, faster big incidents (Jake, 30 October 2026)
 - Start screen in plain words with numbered steps: "1. Your name or call sign", "2. Who are you?" with **🚒 Police, fire or first aider** first, then **🩺 Doctor, nurse or paramedic**. Starting as incident commander is a smaller dashed button ("Running the incident?"). "Options" is now "Extra settings — most people can skip this".
 - After the role, one sheet asks two quick questions: **Where are you working?** (Inner cordon, Casualty clearing station, Loading point, Not sure yet; optional, one tap, audit `SECTOR_SET`) and **Has someone set up a commander screen?** ("Yes: scan their code", "Yes: type their code and PIN", "No, or not sure: start triage").
