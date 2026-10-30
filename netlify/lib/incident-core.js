@@ -16,6 +16,8 @@ const MAX_RECORDS_PER_PUSH = 250;
 const MAX_RECORDS_PER_INCIDENT = 3000;
 const MAX_DEVICES_PER_INCIDENT = 200;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
+// Ended incidents are deleted, so "never existed" and "ended" cannot be told apart: one message covers both.
+const NOT_FOUND_MSG = 'No incident with that code. It may have ended, or the code may be mistyped.';
 const RATE_MAX_FAILURES = 25;                 // wrong PINs per client per window
 const STALE_DEVICE_MS = 5 * 60 * 1000;
 const READ_BATCH = 25;                        // blobs fetched at once when the commander screen reads
@@ -143,11 +145,11 @@ function createCore(opts) {
     }
     // Returns {meta, viewOnly} or an error reply. The view-only PIN (if the incident has one) can only read.
     async function authed(code, pin, client, allowViewOnly) {
-        if (!code) return error(404, 'not_found', 'No such incident.');
+        if (!code) return error(404, 'not_found', NOT_FOUND_MSG);
         if (await tooManyFailures(client)) return error(429, 'rate_limited', 'Too many wrong PINs. Try again in 15 minutes.');
         const meta = await loadMeta(code);
         if (meta === 'expired') return error(410, 'expired', 'This incident has expired and its data has been deleted.');
-        if (!meta) { await noteFailure(client); return error(404, 'not_found', 'No such incident.'); }
+        if (!meta) { await noteFailure(client); return error(404, 'not_found', NOT_FOUND_MSG); }
         if (pin && safeEqual(hashPin(meta.salt, pin), meta.pinHash)) return { meta, viewOnly: false };
         if (pin && meta.viewHash && safeEqual(hashPin(meta.salt, pin), meta.viewHash)) {
             if (allowViewOnly) return { meta, viewOnly: true };

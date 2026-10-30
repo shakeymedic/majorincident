@@ -1772,9 +1772,6 @@
 
     <main>
         <div id="intro-screen" class="screen" style="padding: 1.2rem;">
-            <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin-bottom:1.2rem; border:2px solid var(--nhs-blue);" onclick="showLog()">
-                📋 View Existing Log (<span id="resume-count">0</span>)
-            </button>
             <div class="start-head">
                 <h2 style="margin:0;">Start</h2>
                 <button type="button" class="demo-btn" id="btn-demo" onclick="startDemo()">▶ Demo</button>
@@ -1787,7 +1784,7 @@
             </div>
             <p class="intro-step-label">2. Who are you?</p>
             <button class="btn btn-primary intro-role" id="btn-role-responder" onclick="setUserRole('NON_HCP')">
-                🚒 Police, fire or first aider<br><span class="intro-role-sub">Simple yes/no questions (Ten Second Triage)</span>
+                🚒 Police, fire or first aider<br><span class="intro-role-sub">Simple yes/no questions</span>
             </button>
             <div class="intro-role-pair">
                 <button class="btn btn-secondary intro-role" id="btn-role-paramedic" onclick="setUserRole('HCP')">
@@ -1797,11 +1794,15 @@
                     🩺 Doctor or nurse
                 </button>
             </div>
-            <p class="qr-meta intro-role-note">Clinicians start with Ten Second Triage and switch to MITT when the commander asks.</p>
+            <p class="qr-meta intro-role-note">Paramedics, doctors and nurses start with the same yes/no questions, and switch to the clinicians' tool (MITT) when the commander asks.</p>
             <button class="btn btn-secondary intro-role-cmd" id="btn-role-commander" onclick="startAsCommander()">
                 🎖 Running the incident? Start as incident commander
             </button>
             <p class="qr-meta" id="intro-cmd-status" style="text-align:left; margin:-4px 0 12px;"></p>
+            <!-- Below the setup steps and small, so a new user does not tap it first (Chrome retest, 30 Oct 2026). -->
+            <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin:0 0 12px; padding:0.6rem; font-size:0.95rem;" onclick="showLog()">
+                📋 Patients already on this phone (<span id="resume-count">0</span>)
+            </button>
             <details class="rs-sec intro-options" id="intro-options">
                 <summary>Extra settings <span class="rs-sum">most people can skip this</span></summary>
                 <div class="rs-body">
@@ -2225,13 +2226,13 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.4';
-    const APP_BUILD = '2026-10-30-chrome-test';
+    const APP_VERSION = '0.19.5';
+    const APP_BUILD = '2026-10-30-retest';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
     const DB_NAME = TRAINING ? 'MITT_TRAINING_DB' : 'MITT_DB';
-    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander', 'mit_tally']);
+    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander', 'mit_tally', 'mit_triage_open']);
     // Name, role, sector and ID prefix: training starts with the real-use values but keeps its own changes (the demo sets
     // them to the phone you play), so nothing typed in training is carried back into real use.
     const TRAINING_INHERIT_KEYS = new Set(['mit_triager', 'mit_device_prefix', 'mit_sector', 'mit_user_role']);
@@ -2414,6 +2415,8 @@
         migrated.events.forEach(ev => logAudit(ev.action, ev.patientId, ev.details, Date.now()));
         const queued = pendingAudit; pendingAudit = [];
         queued.forEach(a => appendAudit(a));
+        if (TRAINING && !demoMode()) dropDemoRecords('demo no longer in use');
+        checkUnfinishedTriage();
         if (!TRAINING) {
             const left = parseInt(ls('mit_training_left_at'), 10);
             if (left) { logAudit('TRAINING_MODE_OFF', '-', `Returned from training mode at ${MITTLib.isoWithOffset(left)}`, left); ls('mit_training_left_at', null); }
@@ -3114,6 +3117,7 @@
             $('m-decl').value = m.m || 'Standby'; $('m-loc').value = m.e || ''; $('m-type').value = m.t || '';
             $('m-haz').value = m.h || ''; $('m-acc').value = m.a || ''; $('m-num').value = m.n || ''; $('m-svc').value = m.e_svc || '';
         }
+        if (TRAINING && !demoMode()) dropDemoSettings('demo no longer in use');
         updateIdExample();
         const savedRole = ls('mit_user_role');
         if (savedRole && triagerName) applyRole(savedRole, false);
@@ -3122,9 +3126,7 @@
     function applyRole(role, isNewSession) {
         userRole = role;
         setText('header-user', `User: ${triagerName}`);
-        const roleEl = $('header-role');
-        roleEl.textContent = role === 'HCP' ? 'Clinician' : 'Non-clinical';
-        roleEl.className = 'status-item role-pill ' + (role === 'HCP' ? 'role-hcp' : 'role-non');
+        renderRolePill();
         document.body.classList.toggle('role-nonhcp', role !== 'HCP');
         setText('header-sector', currentSector);
         if (role !== 'HCP') toolMode = 'TST';
@@ -3136,10 +3138,26 @@
         showScreen('home-screen');
         if (isNewSession) renderHomeAlerts();
     }
+    // The incident commander's phone says so (it uses the clinician role underneath).
+    function renderRolePill() {
+        const roleEl = $('header-role');
+        if (!roleEl) return;
+        const cdr = typeof CMD !== 'undefined' && CMD.cfg && CMD.cfg.commander && CMD.cfg.code;
+        roleEl.textContent = cdr ? 'Incident commander' : userRole === 'HCP' ? 'Clinician' : 'Non-clinical';
+        roleEl.className = 'status-item role-pill ' + (userRole === 'HCP' ? 'role-hcp' : 'role-non');
+    }
     function setUserRole(role, asCommander) {
         const name = $('intro-triager').value.trim();
         if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
         const prevUser = triagerName, prevRole = userRole;
+        // Someone other than the demo role setting up here ends the demo (training mode stays on).
+        if (TRAINING && demoMode() && !exerciseRole() && !(demoPhone() && demoPhone().triager === name)) {
+            ls('mit_demo_mode', null); renderDemoBanner();
+            logAudit('DEMO_ENDED', '-', `Demo ended: ${name} set up on this phone`, Date.now());
+            dropDemoRecords('a new person set up');
+            if (MITTLib.normaliseIncidentCode($('intro-incident-code').value) === MITTLib.DEMO_INCIDENT.incidentCode) $('intro-incident-code').value = '';
+            if (/^DEMO/i.test($('intro-device-prefix').value)) $('intro-device-prefix').value = '';
+        }
         triagerName = name;
         const inputPrefix = $('intro-device-prefix').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
         devicePrefix = inputPrefix;
@@ -3147,6 +3165,8 @@
         if (inputSec) currentSector = inputSec;
         const inputCode = MITTLib.normaliseIncidentCode($('intro-incident-code').value);
         if (inputCode !== incidentCode) setIncidentCode(inputCode, 'start screen');
+        // A different person gets the "How to use this" card again (v0.19.4 retest).
+        if (prevUser && prevUser !== triagerName) ls('mit_coach_done', null);
         if (prevUser !== triagerName || prevRole !== role) {
             logAudit(prevUser && prevUser !== triagerName ? 'USER_CHANGED' : 'USER_SESSION_START', '-', `${triagerName} (${asCommander ? 'incident commander' : role === 'HCP' ? 'clinician' : 'non-clinical'}) on device ${deviceId}${prevUser && prevUser !== triagerName ? `; previous user ${prevUser}` : ''}; sector ${currentSector || '-'}; ID prefix ${idPrefix()}`, Date.now());
         }
@@ -3377,6 +3397,9 @@
     function flowFor(tool) { return tool === 'TST' ? tstFlow : mittFlow; }
     function outcomeFor(tool, stepId, answer) { return tool === 'TST' ? MITTLib.tstNext(stepId, answer) : MITTLib.mittNext(stepId, answer); }
     function startFlow(startStepId) {
+        // A new patient's ID is noted until the triage is saved or cancelled, so a reload cannot lose it
+        // silently or give the same ID to the next casualty (v0.19.4 retest).
+        if (!pendingReTriageUid && !pendingCorrectionUid) ls('mit_triage_open', JSON.stringify({ id: currentPatientId, tool: currentTool, at: Date.now() }));
         setText('q-patient-id', currentPatientId);
         setText('question-header', `${currentTool} assessment`);
         const flow = flowFor(currentTool);
@@ -3469,11 +3492,26 @@
     }
     function stepBack() {
         if (!stepHistory.length) return;
-        loadStep(flowFor(currentTool).find(s => s.id === stepHistory.pop()));
+        // Pop once, outside find(): popping inside the callback emptied the history (v0.19.4 retest).
+        const prevId = stepHistory.pop();
+        const prev = flowFor(currentTool).find(s => s.id === prevId);
+        if (prev) loadStep(prev);
+    }
+    // After a reload part-way through a triage: say so, and keep that ID from being given to the next casualty.
+    function checkUnfinishedTriage() {
+        let open = null;
+        try { open = JSON.parse(ls('mit_triage_open') || 'null'); } catch (e) {}
+        ls('mit_triage_open', null);
+        if (!open || !open.id || incidentLog.some(e => e.id === open.id)) return;
+        const m = /-(\d{3,})$/.exec(open.id);
+        const n = m ? parseInt(m[1], 10) : 0;
+        if (n && open.id === MITTLib.nextAutoId(idPrefix(), open.tool, n, []).id && n >= patientCounter) { patientCounter = n + 1; ls('mit_patient_counter', patientCounter); }
+        logAudit('TRIAGE_NOT_FINISHED', open.id, `The app closed or reloaded during ${open.tool || ''} triage started ${fmtTime(open.at)}; nothing was saved for this ID.`, Date.now());
+        setTimeout(() => inAppConfirm({ title: 'Triage not finished', message: `The app closed before ${open.id} was saved, so there is no record for that patient. Triage them again. The next new casualty will get a different ID.`, okLabel: 'OK', alertOnly: true }), 600);
     }
     async function confirmCancelCase() {
         const ok = await inAppConfirm({ title: 'Cancel this assessment?', message: 'Nothing is saved for this patient ID.', okLabel: 'Cancel assessment', cancelLabel: 'Continue assessment', danger: true });
-        if (ok) { pendingReTriageUid = null; pendingCorrectionUid = null; resetToHome(); }
+        if (ok) { pendingReTriageUid = null; pendingCorrectionUid = null; ls('mit_triage_open', null); resetToHome(); }
     }
     let pendingDeadEntry = null;
     function logResult(category, action, reason, lastAnswer) {
@@ -3506,6 +3544,7 @@
         const targetUid = pendingCorrectionUid || pendingReTriageUid;
         const kind = pendingCorrectionUid ? 'correction' : (pendingReTriageUid ? 'retriage' : 'triage');
         pendingCorrectionUid = null; pendingReTriageUid = null;
+        ls('mit_triage_open', null);
         const hist = { ts: now, category, reason, action, tool: currentTool, by: triagerName, kind };
         if (targetUid && indexByUid(targetUid) > -1) {
             // Re-triage / correction updates the SAME record: interventions, allergies, notes, injuries are kept.
@@ -3796,7 +3835,7 @@
         document.querySelectorAll('.loc-field').forEach(f => f.addEventListener('change', onLocationFieldChange));
         $('intro-device-prefix').addEventListener('input', updateIdExample);
     }
-    function onCategoryOverride() {
+    async function onCategoryOverride() {
         const entry = currentEntry();
         if (!entry) return;
         const newCat = $('p-cat-override').value;
@@ -3804,6 +3843,11 @@
         if (newCat === oldCat) return;
         if (newCat === 'P1_HOLD' && userRole === 'HCP' && !p1HoldAllowedHere()) { showBlockingError('P1 Hold not in use', 'P1 Hold is not nationally signed off. It can only be used once the incident commander allows it for this incident on the commander screen.'); $('p-cat-override').value = oldCat; return; }
         if ((newCat === 'DEAD' || newCat === 'P1_HOLD') && userRole !== 'HCP') { showBlockingError('Clinician decision', `${catShort(newCat)} can only be set by a healthcare professional.`); $('p-cat-override').value = oldCat; return; }
+        if (newCat === 'P1_HOLD') {
+            // A senior clinical decision: confirm it, and say whose name it is recorded under (v0.19.4 retest).
+            const ok = await inAppConfirm({ title: `Put ${entry.id} in P1 Hold?`, message: `P1 Hold is a senior clinical decision. It will be recorded as decided by ${triagerName || 'this phone\'s user'}.`, okLabel: 'Yes, P1 Hold', cancelLabel: 'No, keep ' + catShort(oldCat) });
+            if (!ok || entry !== currentEntry() || entry.category !== oldCat) { $('p-cat-override').value = entry.category; return; }
+        }
         entry.category = newCat;
         entry.lastReassessed = Date.now(); entry.reassessOutcome = 'category changed';
         entry.triageHistory = (entry.triageHistory || []).concat([{ ts: Date.now(), category: newCat, reason: 'Category changed manually', tool: entry.tool, by: triagerName, kind: 'override' }]);
@@ -4403,7 +4447,8 @@
         }
         if (MITTLib.isCompressedTransport(txt)) {
             try { txt = await MITTLib.decodeTransportText(txt); }
-            catch (e) { stopScanner(); showBlockingError('Could not read transfer', e.message); return; }
+            // The technical reason (often "Failed to fetch" for a damaged code) goes to the audit, not the screen.
+            catch (e) { stopScanner(); logAudit('SCAN_UNREADABLE', '-', `Compressed code could not be read: ${(e && e.message) || e}`, Date.now()); showBlockingError('Could not read that code', 'That code isn\'t a valid handover, or only part of it was scanned. Ask them to show it again, hold the phones still and turn the brightness up.'); return; }
         }
         let parsed = null;
         try { parsed = JSON.parse(txt); } catch (_) {}
@@ -5942,7 +5987,7 @@
     function closeModesMenu() { $('modes-modal').style.display = 'none'; }
     async function toggleTrainingMode(on) {
         const ok = await inAppConfirm(on
-            ? { title: 'Switch to training mode?', message: 'The app restarts with a separate, empty practice log. Real patient records are not touched, and come back when you switch training off.\n\nWhile in training, the screen shows an orange TRAINING banner, and codes made here cannot be received by a phone in real use (or the other way round).', okLabel: 'Start training' }
+            ? { title: 'Switch to training mode?', message: 'The app restarts with a separate practice log (empty unless you practised before; demo casualties are cleared). Real patient records are not touched, and come back when you switch training off.\n\nWhile in training, the screen shows an orange TRAINING banner, and codes made here cannot be received by a phone in real use (or the other way round).', okLabel: 'Start training' }
             : { title: 'Leave training mode?', message: 'The app restarts with your real patient records. Training data is kept until you delete it.', okLabel: 'Back to real use' });
         if (!ok) { $('mode-training').checked = TRAINING; return; }
         commitDirtyFields('Mode change');
@@ -6122,7 +6167,7 @@
         let changed = false;
         const live = new Set();
         incidentLog.forEach(e => {
-            if (!e || !e.uid) return;
+            if (!e || !e.uid || cmdHeld(e.uid)) return;
             live.add(e.uid);
             const sig = `${e._rev || 0}:${e.updatedAt || 0}:${e.timestamp || 0}:${e.category}:${e.evacuated ? 1 : 0}:${e.atCcs ? 1 : 0}:${e.evacDest || ''}:${e.lastReassessed || 0}`;
             if (CMD.seen[e.uid] !== sig) { CMD.seen[e.uid] = sig; CMD.dirty.add(e.uid); changed = true; }
@@ -6130,7 +6175,31 @@
         Object.keys(CMD.seen).forEach(u => { if (!live.has(u)) delete CMD.seen[u]; });
         if (changed) { cmdSchedule(CMD_PUSH_DEBOUNCE_MS); cmdRenderStatus(); }
     }
-    function cmdQueueAll() { CMD.seen = {}; cmdScanChanges(); incidentLog.forEach(e => { if (e && e.uid) CMD.dirty.add(e.uid); }); }
+    function cmdQueueAll() { CMD.seen = {}; cmdScanChanges(); incidentLog.forEach(e => { if (e && e.uid && !cmdHeld(e.uid)) CMD.dirty.add(e.uid); }); }
+    // Casualties the user chose NOT to send to this incident (older ones already on the phone when it linked).
+    function cmdHeld(uid) { return !!(CMD.cfg && Array.isArray(CMD.cfg.skip) && CMD.cfg.skip.indexOf(uid) > -1); }
+    // Linking sends what is on the phone. Casualties triaged just before linking belong to this incident and go
+    // without a question; older ones (over 3 hours, another incident code, or demo casualties outside the demo) are
+    // asked about, so a previous incident never lands on a new commander screen (Chrome retest, 30 Oct 2026).
+    async function cmdAskAboutOlder(targetIncidentCode) {
+        const cutoff = Date.now() - 3 * 60 * 60 * 1000;
+        const demoOn = !!demoMode();
+        // A record already marked with this incident's code belongs to it, however long the incident has run.
+        const older = incidentLog.filter(r => r && r.uid && (
+            (!demoOn && MITTLib.isDemoRecord(r)) ||
+            (!(targetIncidentCode && r.incidentCode === targetIncidentCode) && (
+                (r.createdAt || r.timestamp || 0) < cutoff ||
+                (targetIncidentCode && r.incidentCode && r.incidentCode !== targetIncidentCode)))));
+        if (!older.length) return [];
+        const first = Math.min.apply(null, older.map(r => r.createdAt || r.timestamp || Date.now()));
+        const send = await inAppConfirm({
+            title: `Send ${older.length} older casualt${older.length === 1 ? 'y' : 'ies'} too?`,
+            message: `This phone already holds ${older.length} casualt${older.length === 1 ? 'y' : 'ies'} that look${older.length === 1 ? 's' : ''} as if ${older.length === 1 ? 'it is' : 'they are'} from before this incident (the earliest triaged ${fmtDateTime(first)}${older.some(r => MITTLib.isDemoRecord(r)) ? ', including made-up demo patients' : ''}).\n\nOnly send them if they are part of this incident. Casualties you record from now on are always sent.`,
+            okLabel: 'Yes, send them too', cancelLabel: 'No, only new casualties'
+        });
+        logAudit('COMMANDER_OLDER_RECORDS', '-', `${older.length} older casualt${older.length === 1 ? 'y' : 'ies'} on this phone ${send ? 'sent' : 'NOT sent'} to the incident`, Date.now(), { uids: older.map(r => r.uid) });
+        return send ? [] : older.map(r => r.uid);
+    }
     function cmdSchedule(ms) { if (CMD.timer) clearTimeout(CMD.timer); CMD.timer = setTimeout(() => { CMD.timer = null; cmdPush(); }, ms); }
     async function cmdFetch(path, opts) {
         opts = opts || {};
@@ -6155,7 +6224,7 @@
         CMD.inflight = true;
         try {
             const duressSent = CMD.cfg.duress ? Object.assign({}, CMD.cfg.duress) : null;
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length, records: batch, sector: currentSector || '', userRole: userRole || undefined, commander: !!CMD.cfg.commander, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length - (CMD.cfg.skip ? incidentLog.filter(e => cmdHeld(e.uid)).length : 0), records: batch, sector: currentSector || '', userRole: userRole || undefined, commander: !!CMD.cfg.commander, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
                 cmdHandleDuressReply(r.body.duress, duressSent);
@@ -6283,6 +6352,7 @@
                 pill.title = CMD.lastError ? `Commander: not sent (${CMD.lastError}). Retrying.` : pending ? 'Commander: sending…' : `Commander: up to date${CMD.lastSentAt ? ' ' + fmtTime(CMD.lastSentAt) : ''}`;
             }
         }
+        renderRolePill();
         const off = $('cmd-off'), on = $('cmd-on');
         if (off) off.style.display = active ? 'none' : '';
         if (on) on.style.display = active ? '' : 'none';
@@ -6304,7 +6374,8 @@
         try {
             const r = await cmdFetch('/api/incident', { method: 'POST', body: { deviceId, triager: triagerName, name: '', incidentCode, training: TRAINING, app: APP_VERSION } });
             if (r.status !== 201 || !r.body.code) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
-            CMD.cfg = { code: r.body.code, pin: r.body.pin, viewPin: r.body.viewPin || '', role: 'creator', commander: !!opts.commander, startedAt: Date.now() };
+            const skip = await cmdAskAboutOlder(incidentCode);
+            CMD.cfg = { code: r.body.code, pin: r.body.pin, viewPin: r.body.viewPin || '', role: 'creator', commander: !!opts.commander, startedAt: Date.now(), skip };
             cmdSaveCfg();
             logAudit('COMMANDER_SHARE_START', '-', `Started live sharing: incident ${CMD.cfg.code} created by this phone${opts.commander ? ' (incident commander)' : ''}`, Date.now());
             cmdQueueAll();
@@ -6328,8 +6399,9 @@
         try {
             const r = await cmdFetch(`/api/incident/${encodeURIComponent(code)}/join`, { method: 'POST', pin, body: { deviceId, triager: triagerName, app: APP_VERSION } });
             if (r.status !== 200) { showBlockingError('Could not join', r.body && r.body.message ? r.body.message : `Server replied ${r.status}.`); return false; }
-            if (!!r.body.training !== TRAINING) { showBlockingError('Training mismatch', r.body.training ? 'That incident is a training incident, and this phone is in real use.' : 'That incident is real, and this phone is in training mode.'); return false; }
-            CMD.cfg = { code, pin, role: 'member', startedAt: Date.now() };
+            if (!!r.body.training !== TRAINING) { showBlockingError('Training mismatch', r.body.training ? 'That incident is a training incident, and this phone is in real use. To join it, turn on Training mode at the top of ⚙ Settings, then join again.' : 'That incident is real, and this phone is in training mode. To join it, turn off Training mode at the top of ⚙ Settings, then join again.'); return false; }
+            const skip = CMD.cfg && CMD.cfg.code === code && Array.isArray(CMD.cfg.skip) ? CMD.cfg.skip : await cmdAskAboutOlder(r.body.incidentCode || incidentCode);
+            CMD.cfg = { code, pin, role: 'member', startedAt: Date.now(), skip };
             cmdSaveCfg();
             logAudit('COMMANDER_JOINED', '-', `Joined live sharing for incident ${code}`, Date.now());
             if (r.body.incidentCode && !incidentCode) setIncidentCode(r.body.incidentCode, 'commander join');
@@ -6532,6 +6604,36 @@
     // casualties) or 'cmd' (the incident commander of a live practice that other devices link to).
     function demoMode() { return TRAINING ? (ls('mit_demo_mode') || '') : ''; }
     function demoPhone(mode) { const m = /^p(\d)$/.exec(mode || demoMode()); return m ? MITTLib.DEMO_INCIDENT.phones[+m[1]] || null : null; }
+    // Once the demo is over (left, or a real person sets up), nothing of it may carry on: not its casualties, its
+    // incident code, its "DEMO-" ID prefix or a demo role's name (Chrome retest, 30 Oct 2026: DEMO-KESTREL reached a
+    // new practice incident, practice IDs came out as TRAIN-DEMO-FR-TST-001, and "empty" practice logs held the demo).
+    const DEMO_NAMES = ['Demo user', 'Incident commander', 'HART 1', 'Medic 2', 'MERIT doctor', 'Fire crew 3', 'Control room'];
+    function dropDemoSettings(why) {
+        if (!TRAINING) return false;
+        let changed = false;
+        if (incidentCode && incidentCode === MITTLib.DEMO_INCIDENT.incidentCode) { setIncidentCode('', why); $('intro-incident-code').value = ''; changed = true; }
+        if (/^DEMO/i.test(devicePrefix || '')) { devicePrefix = ''; ls('mit_device_prefix', null); $('intro-device-prefix').value = ''; changed = true; }
+        if ($('intro-device-prefix') && /^DEMO/i.test($('intro-device-prefix').value)) $('intro-device-prefix').value = '';
+        if (DEMO_NAMES.indexOf(triagerName) > -1 || MITTLib.DEMO_INCIDENT.phones.some(p => p.triager === triagerName)) {
+            // A demo role's name is not a person: back to the start page to type a real one.
+            triagerName = ''; ls('mit_triager', null); ls('mit_user_role', null); userRole = ''; $('intro-triager').value = ''; changed = true;
+        }
+        return changed;
+    }
+    function dropDemoRecords(why) {
+        if (!TRAINING) return 0;
+        const before = incidentLog.length;
+        incidentLog = incidentLog.filter(r => !MITTLib.isDemoRecord(r));
+        const removed = before - incidentLog.length;
+        const mBefore = methaneHistory.length;
+        methaneHistory = methaneHistory.filter(m => !/^DEMO/.test((m && m.device) || ''));
+        if (removed || mBefore !== methaneHistory.length) {
+            currentLogIndex = -1;
+            logAudit('DEMO_CLEARED', '-', `Demo leftovers removed (${why}): ${removed} made-up casualt${removed === 1 ? 'y' : 'ies'}`, Date.now());
+            saveState(); updateDashboard();
+        }
+        return removed;
+    }
     function startDemo() {
         if (TRAINING && !dbReady) { showToast('Still loading. Try again in a moment.'); return; }
         const all = MITTLib.buildDemoScenario({}).records;
@@ -6613,7 +6715,9 @@
         cachedCcsLocation = d.incident.ccs;
         currentLogIndex = -1; pendingReTriageUid = null; pendingCorrectionUid = null; lastTriagePath = null;
         // Training keeps its own name, role, sector and ID prefix (see TRAINING_INHERIT_KEYS), so none of this reaches real use.
-        if (phone) { triagerName = phone.triager; devicePrefix = phone.prefix; currentSector = phone.sector; }
+        // New casualties keep this phone's own device code in their IDs (never the demo phone's "DEMO-FR"), so two
+        // phones that both practised as the same demo role cannot make the same ID (Chrome stress test, 30 Oct 2026).
+        if (phone) { triagerName = phone.triager; devicePrefix = ''; currentSector = phone.sector; }
         else { if (!triagerName) triagerName = 'Demo user'; currentSector = 'Casualty clearing station'; }
         $('intro-triager').value = triagerName; $('intro-device-prefix').value = devicePrefix; $('intro-sector').value = currentSector;
         patientCounter = 1;

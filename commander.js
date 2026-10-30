@@ -81,7 +81,8 @@ function renderHeader() {
     bits.push(`<span class="chip">Code <b>${esc(data.code || '')}</b></span>`);
     if (data.incidentCode) bits.push(`<span class="chip">Incident <b>${esc(data.incidentCode)}</b></span>`);
     if (data.createdAt) bits.push(`<span class="chip">Running <b id="hdr-elapsed">${elapsedText(Date.now() - data.createdAt)}</b></span>`);
-    if (data.viewOnly) bits.push(`<span class="chip" title="Opened with the view-only PIN">👁 View only</span>`);
+    // First and in amber, so an observer cannot miss that nothing here can be changed (v0.19.4 retest).
+    if (data.viewOnly) bits.unshift(`<span class="chip chip-view" title="Opened with the view-only PIN: you can watch but not change anything">👁 View only</span>`);
     $('hdr-incident').innerHTML = bits.join('');
 }
 function start() {
