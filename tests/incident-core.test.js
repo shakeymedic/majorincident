@@ -694,9 +694,12 @@ function rec(uid, id, category, extra) {
         let t0 = dayStart(clock);
         const c = createCore({ store: makeStore(), now: () => t0 });
         const inc = await mk(c);
+        const linked = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'SAME' }), '40.1.1.1');
         // 25 wrong PINs every 15 minutes from one address for 5 hours: 500 wrong, past the day's 300.
         for (let w = 0; w < 20; w++) { for (let i = 0; i < 25; i++) await c.handle('GET', `/api/incident/${inc.code}`, H(String(300000 + w * 25 + i)), '', '40.1.1.1'); t0 += 15 * 60 * 1000; }
         assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.pin), '', '40.1.1.1')).status, 429, 'the guessing address is held up even with the right PIN');
+        const sameAddr = await c.handle('PUT', `/api/incident/${inc.code}/records`, Object.assign(H(inc.pin), { 'x-incident-key': linked.body.accessKey }), JSON.stringify({ deviceId: 'SAME', records: [] }), '40.1.1.1');
+        assert.strictEqual(sameAddr.status, 200, 'a linked phone behind the same address (e.g. a mobile network) carries on');
         assert.strictEqual((await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'NEW1' }), '41.1.1.1')).status, 200, 'a new phone joins');
         assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '42.1.1.1')).status, 200, 'a new commander screen opens');
     });

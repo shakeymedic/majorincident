@@ -231,12 +231,12 @@ function createCore(opts) {
         if (!code) return refused();
         const t = now(), win = winOf(t), ck = clientKey(client, t), ik = incidentKey(code, t);
         const [mine] = await readCounts([ck]);
-        if ((mine[win] || 0) >= RATE_MAX_FAILURES) return tooManyHere();
         const meta = await loadMeta(code);
         if (meta === 'expired') return error(410, 'expired', EXPIRED_MSG);
         if (!meta) {
             const tomb = await store.get(keyTomb(code));
             if (tomb && now() - (tomb.at || 0) <= TOMBSTONE_MS) return error(410, tomb.why === 'expired' ? 'expired' : 'ended', tomb.why === 'expired' ? EXPIRED_MSG : ENDED_MSG);
+            if ((mine[win] || 0) >= RATE_MAX_FAILURES) return tooManyHere();
             await bump(ck, { d: 1, [win]: 1 });
             return refused();
         }
@@ -245,7 +245,8 @@ function createCore(opts) {
         if (h && meta.cmdHash && safeEqual(h, meta.cmdHash)) level = 'commander';
         else if (h && safeEqual(h, meta.pinHash)) level = meta.cmdHash ? 'member' : 'commander';
         else if (h && meta.viewHash && safeEqual(h, meta.viewHash)) level = 'view';
-        // A phone or screen whose key covers the PIN it presents is never held up by the counts.
+        // A phone or screen whose key covers the PIN it presents is never held up by the counts, not even its own
+        // address's (another device behind the same mobile network address may have guessed wrong).
         const kl = keyLevel(meta, key);
         const keyCovers = !!kl && !!level && LEVEL_RANK[level] <= LEVEL_RANK[kl];
         if (!keyCovers) {
