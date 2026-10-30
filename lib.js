@@ -1373,8 +1373,10 @@
     }
 
     // ---------- Reassessment scheduling ----------
-    // Local defaults (not specified by NHSE B0128, which says "reassess regularly") — require clinical sign-off.
-    // Not Breathing (TST) is due immediately: NARU — "must be re-assessed by a Healthcare responder as soon as possible".
+    // MITT P1/P2/P3 10/30/60 min are suggested timings, not from a published source (NHSE B0128 says "reassess
+    // regularly"); Jake confirmed them as suggested timings on 30 Oct 2026. Users can change them in Settings.
+    // Not Breathing (TST) is due immediately: reassessment by a healthcare responder as soon as possible (app wording,
+    // not a quoted source; Jake confirmed 30 Oct 2026).
     // TST: NARU TST supplementary information (v1.0, April 2023) — re-triage "approximately every 15 minutes is a
     // reasonable starting point". So a P1/P2/P3 whose latest triage was TST uses the TST interval whatever its colour;
     // the P1/P2/P3 intervals apply once the casualty has had MITT.

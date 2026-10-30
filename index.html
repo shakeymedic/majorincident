@@ -1476,7 +1476,7 @@
         <details class="menu-list settings-sec">
             <summary>Reassessment timers <span class="rs-sum">TST, MITT P1, P2, P3</span></summary>
             <div class="menu-items">
-                <p class="qr-meta" style="text-align:left;">TST: every 15 minutes by default, from the national (NARU) TST guidance, whatever the colour. MITT P1, P2 and P3: local defaults, not set by NHS England. Agree them with your clinical lead.</p>
+                <p class="qr-meta" style="text-align:left;">TST: every 15 minutes by default, from the national (NARU) TST guidance, whatever the colour. MITT P1, P2 and P3 (10, 30 and 60 minutes): suggested timings, not from a national source. Agree them with your clinical lead.</p>
                 <div class="setting-row"><span><strong>TST</strong> (any colour)</span><select id="interval-TST" aria-label="Reassessment interval, TST" onchange="saveIntervalSettings()"><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
                 <div class="setting-row"><span><strong>MITT P1</strong></span><select id="interval-P1" aria-label="Reassessment interval, MITT P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
                 <div class="setting-row"><span><strong>MITT P2</strong></span><select id="interval-P2" aria-label="Reassessment interval, MITT P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
@@ -2232,8 +2232,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.8';
-    const APP_BUILD = '2026-10-30-stress';
+    const APP_VERSION = '0.19.9';
+    const APP_BUILD = '2026-10-30-wording';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
