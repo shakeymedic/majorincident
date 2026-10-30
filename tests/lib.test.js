@@ -607,7 +607,11 @@ group('reassessment', () => {
         assert.strictEqual(lib.nextReassessmentDue(e), 1000 + 10*60*1000);
     });
     test('G3: a child under 2 is P1 in TST from the first question; the answer means nothing elsewhere', () => {
-        assert.deepStrictEqual(lib.tstNext('walking', lib.TST_UNDER2), { type: 'result', category: 'P1', reason: 'Child Under 2' });
+        // Severe bleeding is still asked (Jake, 30 Oct 2026); either answer is P1.
+        assert.deepStrictEqual(lib.tstNext('walking', lib.TST_UNDER2), { type: 'next', step: 'bleeding_u2' });
+        assert.deepStrictEqual(lib.tstNext('bleeding_u2', true), { type: 'result', category: 'P1', reason: 'Severe Bleeding, Child Under 2' });
+        assert.deepStrictEqual(lib.tstNext('bleeding_u2', false), { type: 'result', category: 'P1', reason: 'Child Under 2' });
+        assert.strictEqual(lib.tstNext('bleeding_u2', lib.TST_UNDER2), null);
         assert.strictEqual(lib.tstNext('talking', lib.TST_UNDER2), null);
         assert.deepStrictEqual(lib.tstNext('walking', true), { type: 'result', category: 'P3', reason: 'Walking' }, 'card answers unchanged');
     });

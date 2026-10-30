@@ -164,6 +164,11 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.7 build 2026-10-30-under2-bleeding — under 2s are asked about severe bleeding; follow-on care on P1 results (Jake, 30 October 2026)
+- TST "👶 Child under 2? Tap: always P1" no longer ends the triage straight away: it goes on to **Severe bleeding?** so bleeding is found and treated first. Either answer gives P1; YES records the reason "Severe Bleeding, Child Under 2" with the bleeding treatment, NO records "Child Under 2". Back and "Change last answer" work through the extra question.
+- The card stops at the first P1 answer, so the result's action line now also says what else may be needed once the first treatment is done. For example TST severe bleeding: "Then, if they are not talking but are breathing: open the airway and place them in the recovery position (leave the tourniquet on)". Also added: chest seal for an open chest wound (TST penetrating injury, MITT catastrophic bleeding), and keep warm / with carer for under 2s. The care prompts list matches. Records triaged before this version keep their old action text.
+- Quick reference card updated to match. This wording needs clinical sign-off with the rest of the card text. Service worker cache v45. Web change only: no Android rebuild.
+
 ### v0.19.6 build 2026-10-30-findings — fixes from the v0.19.5 test (Jake, 30 October 2026)
 - **Three PINs** for each new incident: the triagers' PIN (link phones and send casualties), the **commander PIN** (commander screen decisions, map markings, clearing a call for help, ending the incident) and the view-only PIN. The triagers' PIN opens the commander screen as view only, labelled "View only (triagers' PIN)". Incidents started before v0.19.6 keep their single PIN with full access until they expire.
 - **Every decision is named**: P1 Hold allowed or withdrawn, MITT prompts, map markings and cleared calls for help need the name and role of who made them (asked once on the commander screen), and a decision log shows who did what.

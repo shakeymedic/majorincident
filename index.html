@@ -1899,7 +1899,7 @@
             <div id="clinical-instruction-box" class="q-instruction" style="display:none;"></div>
             <div id="q-count" class="q-count" style="display:none;"></div>
             <div id="q-unsure" class="q-unsure"></div>
-            <button type="button" id="btn-under2" class="btn btn-under2" style="display:none;" onclick="answerTap(MITTLib.TST_UNDER2)">👶 Child under 2? Tap for P1</button>
+            <button type="button" id="btn-under2" class="btn btn-under2" style="display:none;" onclick="answerTap(MITTLib.TST_UNDER2)">👶 Child under 2? Tap: always P1</button>
             <!-- YES / NO are pinned to the bottom of the screen so they are always reachable without scrolling. -->
             <div class="q-answer-bar" id="q-answer-bar">
                 <div class="q-yn">
@@ -2232,8 +2232,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.6';
-    const APP_BUILD = '2026-10-30-findings';
+    const APP_VERSION = '0.19.7';
+    const APP_BUILD = '2026-10-30-under2-bleeding';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -3304,6 +3304,8 @@
     const tstFlow = [
         { id: 'walking', question: 'Walking?', instruction: '', unsure: 'NO', unsureText: 'Tap NO: treat them as not walking.' },
         { id: 'bleeding', question: 'Severe bleeding?', instruction: 'If YES: pressure, tourniquet, packing.', unsure: 'YES', unsureText: 'Tap YES: treat it as severe bleeding.' },
+        // After "Child under 2": P1 either way, but severe bleeding is still asked so it gets treated first (Jake, 30 Oct 2026).
+        { id: 'bleeding_u2', question: 'Severe bleeding?', instruction: 'Child under 2: P1 whatever the answer. If YES: pressure, tourniquet, packing.', unsure: 'YES', unsureText: 'Tap YES: treat it as severe bleeding.' },
         { id: 'talking', question: 'Talking?', instruction: '', unsure: 'NO', unsureText: 'Tap NO: treat them as not talking.' },
         // Question text stays as on the card; the instruction says what it means in plain words (Chrome test, 30 Oct 2026).
         { id: 'penetrating', question: 'Penetrating injury to the torso — front or back?', instruction: 'Any stab, gunshot or other wound to the neck, chest, belly, back, armpits, groin or buttocks? Check the front and the back.', unsure: 'YES', unsureText: 'Tap YES: treat it as a penetrating injury.' },
@@ -3320,27 +3322,33 @@
     ];
     // Longest possible path through each flow (TST ends after penetrating OR breathing).
     const FLOW_MAX_QUESTIONS = { TST: 4, MITT: 7 };
+    // The card stops at the first P1 answer, so a P1 action also says what else may be needed once the
+    // first treatment is done, e.g. bleeding controlled, then recovery position if unconscious (Jake, 30 Oct 2026).
+    // Needs clinical sign-off with the rest of the wording.
     const OUTCOME_ACTIONS = {
         'TST|Walking': 'P3 — walking. Direct them where instructed (for example the casualty clearing station).',
-        'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing.',
-        'TST|Penetrating Injury': 'P1 — immediate priority.',
+        'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing. Then, if they are not talking but are breathing: open the airway and place them in the recovery position (leave the tourniquet on).',
+        'TST|Severe Bleeding, Child Under 2': 'P1 — child under 2 with severe bleeding. Control bleeding: pressure, tourniquet, packing. Then keep them warm and with their carer where possible; if not responding but breathing: open the airway and place them in the recovery position.',
+        'TST|Penetrating Injury': 'P1 — immediate priority. Open wound to the chest: chest seal if trained.',
         'TST|Talking, No Penetrating Injury': 'P2 — urgent priority.',
         'TST|Not Talking, Breathing': 'P1 — place in the recovery position.',
-        'TST|Child Under 2': 'P1 — any child under 2 is P1 (national TST guidance).',
+        'TST|Child Under 2': 'P1 — any child under 2 is P1 (national TST guidance). Keep them warm and with their carer where possible. If not responding but breathing: open the airway and place them in the recovery position.',
         'TST|Not Breathing': 'NOT BREATHING — CPR if resources allow. Must be reassessed by a healthcare responder as soon as possible.',
-        'MITT|Catastrophic Bleeding': 'P1 — control bleeding: pressure dressing, tourniquet, haemostatic packing.',
+        'MITT|Catastrophic Bleeding': 'P1 — control bleeding: pressure dressing, tourniquet, haemostatic packing. Then, if not responding to voice: airway and recovery position; open chest wound: chest seal.',
         'MITT|Walking': 'P3 — walking. Walking patients may be compensating for hidden injuries: reassess early.',
         'MITT|Not Breathing': 'DEAD.',
         'MITT|Does Not Respond to Voice': 'P1 — place in the recovery position.',
-        'MITT|Aged 2 or Under': 'P1 — immediate priority.',
+        'MITT|Aged 2 or Under': 'P1 — immediate priority. Keep warm and with their carer where possible.',
         'MITT|Breathing Rate Outside 12-23': 'P1 — immediate priority.',
         'MITT|Heart Rate 100 or More': 'P1 — immediate priority.',
         'MITT|Heart Rate Under 100': 'P2 — urgent priority.',
     };
     // Scene-appropriate care prompts (NARU "Clinical interventions in the CCP"). Not a substitute for clinical judgement.
     const clinicalPrompts = {
-        'Severe Bleeding': ['Pressure / tourniquet / packing', 'Record the tourniquet time (Interventions)', 'Recheck bleeding control regularly'],
-        'Catastrophic Bleeding': ['Pressure dressing / tourniquet / haemostatic packing', 'Record the tourniquet time (Interventions)', 'Recheck haemorrhage control', 'TXA, IO access, pain relief — clinician decision'],
+        'Severe Bleeding': ['Pressure / tourniquet / packing', 'Record the tourniquet time (Interventions)', 'Not talking but breathing: open the airway, recovery position (leave the tourniquet on)', 'Open wound to the chest: chest seal (if trained)', 'Recheck bleeding control regularly'],
+        'Severe Bleeding, Child Under 2': ['Pressure / tourniquet / packing', 'Record the tourniquet time (Interventions)', 'Keep warm; keep with carer where possible', 'Not responding but breathing: open the airway, recovery position', 'Recheck bleeding control regularly'],
+        'Catastrophic Bleeding': ['Pressure dressing / tourniquet / haemostatic packing', 'Record the tourniquet time (Interventions)', 'Not responding to voice: airway maintenance, recovery position', 'Open chest wound: chest seal', 'Recheck haemorrhage control', 'TXA, IO access, pain relief — clinician decision'],
+        'Child Under 2': ['Keep warm', 'Keep with carer where possible', 'Not responding but breathing: open the airway, recovery position', 'Recheck for bleeding'],
         'Penetrating Injury': ['Chest seal for open torso wounds (if trained)', 'Recheck for bleeding', 'Priority for evacuation'],
         'Not Talking, Breathing': ['Recovery position', 'Keep the airway open', 'Reassess breathing'],
         'Does Not Respond to Voice': ['Recovery position', 'Airway maintenance: suction, adjuncts, SGA (clinician)', 'Supplemental oxygen'],
