@@ -1532,12 +1532,15 @@
     // G3 (Jake, 29 Oct 2026): NARU TST supplementary information v1.0 (April 2023): "any child under 2 should be
     // automatically triaged as a P1". The TST card does not print it, so the app offers it as a one-tap answer on
     // the first question (answer 'under2'), which catches a toddler who walks (P3) or babbles (P2) under the card.
+    // Jake (30 Oct 2026): the under-2 answer must not skip severe bleeding, which needs treating straight away, so
+    // it goes on to "Severe bleeding?" (step 'bleeding_u2'). Either answer is P1; YES records the bleeding too.
     const TST_UNDER2 = 'under2';
     function tstNext(stepId, answer) {
-        if (answer === TST_UNDER2) return stepId === 'walking' ? { type: 'result', category: 'P1', reason: 'Child Under 2' } : null;
+        if (answer === TST_UNDER2) return stepId === 'walking' ? { type: 'next', step: 'bleeding_u2' } : null;
         const flow = {
             walking: { yes: { type: 'result', category: 'P3', reason: 'Walking' }, no: { type: 'next', step: 'bleeding' } },
             bleeding: { yes: { type: 'result', category: 'P1', reason: 'Severe Bleeding' }, no: { type: 'next', step: 'talking' } },
+            bleeding_u2: { yes: { type: 'result', category: 'P1', reason: 'Severe Bleeding, Child Under 2' }, no: { type: 'result', category: 'P1', reason: 'Child Under 2' } },
             talking: { yes: { type: 'next', step: 'penetrating' }, no: { type: 'next', step: 'breathing' } },
             penetrating: { yes: { type: 'result', category: 'P1', reason: 'Penetrating Injury' }, no: { type: 'result', category: 'P2', reason: 'Talking, No Penetrating Injury' } },
             breathing: { yes: { type: 'result', category: 'P1', reason: 'Not Talking, Breathing' }, no: { type: 'result', category: 'NOT_BREATHING', reason: 'Not Breathing' } },
@@ -2014,15 +2017,15 @@
     };
     const DEMO_ACTIONS = {
         'TST|Walking': 'P3 — walking. Direct them where instructed (for example the casualty clearing station).',
-        'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing.',
-        'TST|Penetrating Injury': 'P1 — immediate priority.',
+        'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing. Then, if they are not talking but are breathing: open the airway and place them in the recovery position (leave the tourniquet on).',
+        'TST|Penetrating Injury': 'P1 — immediate priority. Open wound to the chest: chest seal if trained.',
         'TST|Talking, No Penetrating Injury': 'P2 — urgent priority.',
         'TST|Not Breathing': 'NOT BREATHING — CPR if resources allow. Must be reassessed by a healthcare responder as soon as possible.',
-        'MITT|Catastrophic Bleeding': 'P1 — control bleeding: pressure dressing, tourniquet, haemostatic packing.',
+        'MITT|Catastrophic Bleeding': 'P1 — control bleeding: pressure dressing, tourniquet, haemostatic packing. Then, if not responding to voice: airway and recovery position; open chest wound: chest seal.',
         'MITT|Walking': 'P3 — walking. Walking patients may be compensating for hidden injuries: reassess early.',
         'MITT|Not Breathing': 'DEAD.',
         'MITT|Does Not Respond to Voice': 'P1 — place in the recovery position.',
-        'MITT|Aged 2 or Under': 'P1 — immediate priority.',
+        'MITT|Aged 2 or Under': 'P1 — immediate priority. Keep warm and with their carer where possible.',
         'MITT|Breathing Rate Outside 12-23': 'P1 — immediate priority.',
         'MITT|Heart Rate 100 or More': 'P1 — immediate priority.',
         'MITT|Heart Rate Under 100': 'P2 — urgent priority.',

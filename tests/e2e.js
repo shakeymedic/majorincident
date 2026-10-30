@@ -150,18 +150,38 @@ async function test(name, fn) {
         assert.strictEqual(await A.evaluate(() => getComputedStyle(document.getElementById('tod-modal')).display), 'none');
         assert.match(await A.textContent('#result-alerts'), /healthcare reassessment/i);
     });
-    await test('v0.19.1: TST offers "Child under 2" on the first question only; it gives P1', async () => {
+    await test('v0.19.1: TST offers "Child under 2" on the first question only; it gives P1 after asking about severe bleeding', async () => {
         await A.evaluate(() => initiateTriage('TST'));
         assert.strictEqual(await A.isVisible('#btn-under2'), true);
         await A.evaluate(() => handleAnswer(false));
         assert.strictEqual(await A.isVisible('#btn-under2'), false, 'only on Walking?');
+        await A.waitForTimeout(450);
         await A.evaluate(() => stepBack());
         assert.strictEqual(await A.isVisible('#btn-under2'), true);
+        const before = await A.evaluate(() => incidentLog.length);
         await A.click('#btn-under2');
+        // v0.19.7: severe bleeding is not skipped (Jake, 30 Oct 2026).
+        assert.strictEqual(await A.evaluate(() => document.getElementById('question-screen').dataset.stepId), 'bleeding_u2');
+        assert.match(await A.textContent('#question-text'), /Severe bleeding/);
+        assert.match(await A.textContent('#clinical-instruction-box'), /P1 whatever the answer/);
+        assert.strictEqual(await A.evaluate(() => incidentLog.length), before, 'nothing saved yet');
+        await A.waitForTimeout(450);
+        await A.evaluate(() => handleAnswer(false));
         const e = await A.evaluate(() => incidentLog[incidentLog.length - 1]);
         assert.strictEqual(e.category, 'P1');
         assert.strictEqual(e.reason, 'Child Under 2');
         assert.strictEqual(e.tool, 'TST');
+        assert.match(e.action, /recovery position/);
+        // Severe bleeding in a child under 2: P1, bleeding recorded, follow-on care on the result.
+        await A.evaluate(() => { resetToHome(); initiateTriage('TST'); });
+        await A.click('#btn-under2');
+        await A.waitForTimeout(450);
+        await A.evaluate(() => handleAnswer(true));
+        const b = await A.evaluate(() => incidentLog[incidentLog.length - 1]);
+        assert.strictEqual(b.category, 'P1');
+        assert.strictEqual(b.reason, 'Severe Bleeding, Child Under 2');
+        assert.match(await A.textContent('#action-box'), /tourniquet.*recovery position/);
+        assert.match(await A.textContent('#clinical-prompts'), /Keep warm/);
         await A.evaluate(() => { resetToHome(); initiateTriage('MITT'); });
         assert.strictEqual(await A.isVisible('#btn-under2'), false, 'not in MITT');
         await A.evaluate(() => resetToHome());
