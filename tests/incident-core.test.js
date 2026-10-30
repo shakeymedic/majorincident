@@ -262,6 +262,13 @@ function rec(uid, id, category, extra) {
         let g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
         assert.strictEqual(g.body.devices[0].sector, 'Casualty Clearing');
         assert.strictEqual(g.body.devices[0].userRole, 'HCP');
+        assert.strictEqual(g.body.devices[0].commander, undefined, 'not the commander unless the phone says so');
+        // v0.19.4: the commander's own phone says so, and can say it is no longer
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], commander: true }), '1.1.1.1');
+        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].commander, true);
+        await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], commander: false }), '1.1.1.1');
+        g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
+        assert.strictEqual(g.body.devices[0].commander, undefined);
         const seq1 = g.headers['X-Incident-Seq'];
         assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.viewPin), JSON.stringify({ p1Hold: { on: true, by: 'X' } }), '3.3.3.3')).status, 403, 'view-only PIN cannot');
         assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: true } }), '3.3.3.3')).status, 400, 'a name is required');

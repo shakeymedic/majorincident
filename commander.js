@@ -159,13 +159,18 @@ async function refreshNow() {
             let msg = 'Could not open this incident.';
             try { msg = (await r.json()).message || msg; } catch (e) {}
             if (!data) { signOut(); $('signin').classList.remove('hidden'); $('signin-error').textContent = msg; $('signin-error').classList.remove('hidden'); return; }
-            setStatus('bad', r.status === 410 ? 'Incident expired' : 'Access refused');
-            $('conn-warn').textContent = msg + (r.status === 410 ? ' The data below is the last copy this page received.' : '');
+            const gone = r.status === 404 || r.status === 410;
+            setStatus('bad', r.status === 410 ? 'Incident expired' : r.status === 404 ? 'Incident ended' : 'Access refused');
+            // An ended incident must not look live: the old figures are greyed and labelled with when they were last received.
+            $('conn-warn').textContent = msg + (gone ? ` The incident has ended or expired. Everything below is the last copy this page received${lastOkAt ? ' at ' + time(lastOkAt) : ''}: it is NOT live.` : '');
             $('conn-warn').classList.remove('hidden');
+            document.body.classList.toggle('incident-gone', gone);
+            if (gone) setUpdated(`Incident ended • last copy ${lastOkAt ? time(lastOkAt) : 'unknown'}`);
             return;
         }
         if (!r.ok) throw new Error('Server error ' + r.status);
         data = await r.json();
+        document.body.classList.remove('incident-gone');
         etag = r.headers.get('ETag') || '';
         knownSeq = r.headers.get('X-Incident-Seq') || (data.seq !== undefined ? String(data.seq) : '');
         lastOkAt = Date.now();
@@ -236,7 +241,7 @@ function render(opts) {
     setText('counts-note', `Big number = on scene now (field + casualty clearing station); "in total" includes evacuated. CCS on the small labels = casualty clearing station (set on the phone, or inferred from the sector name). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
     // phones
     const devs = data.devices || [];
-    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
+    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}</b><span class="ph-meta">${d.role === 'creator' ? 'Started sharing • ' : ''}${d.commander ? 'Incident commander • ' : d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
     setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes${devs.some(d => d.position) ? ' • 📍 = shares its position (opt-in on the phone)' : ''}`);
     renderSos(devs);
     // sectors
@@ -323,12 +328,12 @@ async function saveMarks(marks) {
     try {
         const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/marks`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify({ marks }), cache: 'no-store' });
         const b = await r.json().catch(() => ({}));
-        if (!r.ok) { alert(b.message || `Could not save the map markings (server replied ${r.status}).`); return false; }
+        if (!r.ok) { tell(b.message || `Could not save the map markings (server replied ${r.status}).`); return false; }
         data.marks = b.marks || marks; data.marksAt = b.marksAt || Date.now();
         render();
         setText('mark-hint', 'Saved. Phones get it with their next report (within a minute).');
         return true;
-    } catch (e) { alert('Could not reach the server, so the map markings were not saved. Try again.'); return false; }
+    } catch (e) { tell('Could not reach the server, so the map markings were not saved. Try again.'); return false; }
 }
 function onMapClickMark(ev) {
     if (!marking) return;
@@ -363,7 +368,9 @@ function sectorGroups() {
         .forEach(x => { const t = String(x || '').trim(); if (t && !seen[t.toLowerCase()]) seen[t.toLowerCase()] = t; });
     return Object.keys(seen).sort().map(k => seen[k]);
 }
-function phonesIn(group) { return (data.devices || []).filter(d => MITTLib.policyPromptApplies([group], { role: d.userRole, sector: d.sector })).length; }
+// The commander's own phone is not counted: the commander is the one sending the prompt.
+function promptTargets(groups) { return (data.devices || []).filter(d => !d.commander && MITTLib.policyPromptApplies(groups, { role: d.userRole, sector: d.sector })); }
+function phonesIn(group) { return promptTargets([group]).length; }
 function renderDecisions() {
     const box = $('decisions');
     if (!box || !data) return;
@@ -401,26 +408,26 @@ async function savePolicy(change) {
     try {
         const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/policy`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify(change), cache: 'no-store' });
         const b = await r.json().catch(() => ({}));
-        if (!r.ok) { alert(b.message || `Could not save the decision (server replied ${r.status}).`); return false; }
+        if (!r.ok) { tell(b.message || `Could not save the decision (server replied ${r.status}).`); return false; }
         data.policy = b.policy || {}; data.policyAt = b.policyAt || Date.now();
         knownSeq = ''; etag = '';
         render();
         return true;
-    } catch (e) { alert('Could not reach the server, so the decision was not saved. Try again.'); return false; }
+    } catch (e) { tell('Could not reach the server, so the decision was not saved. Try again.'); return false; }
 }
-function setP1Hold(on) {
+async function setP1Hold(on) {
     if (!canMark()) return;
-    if (!on) { if (confirm('Withdraw P1 Hold?\n\nClinicians\' phones stop offering it. Casualties already in P1 Hold keep it until a clinician changes them.')) savePolicy({ p1Hold: { on: false } }); return; }
+    if (!on) { if (await ask({ title: 'Withdraw P1 Hold?', message: 'Clinicians\' phones stop offering it. Casualties already in P1 Hold keep it until a clinician changes them.', okLabel: 'Withdraw P1 Hold', danger: true })) savePolicy({ p1Hold: { on: false } }); return; }
     const by = (($('p1hold-by') || {}).value || '').trim();
-    if (!by) { alert('Type who made the P1 Hold decision (name and role) first.'); if ($('p1hold-by')) $('p1hold-by').focus(); return; }
-    if (confirm(`Allow P1 Hold for this incident?\n\nDecision by: ${by}\n\nClinicians' phones will offer P1 Hold from their next report.`)) savePolicy({ p1Hold: { on: true, by } });
+    if (!by) { await tell('Type who made the P1 Hold decision (name and role) first.', 'Name needed'); if ($('p1hold-by')) $('p1hold-by').focus(); return; }
+    if (await ask({ title: 'Allow P1 Hold for this incident?', message: `Decision by: ${by}\n\nClinicians' phones will offer P1 Hold from their next report.`, okLabel: 'Allow P1 Hold' })) savePolicy({ p1Hold: { on: true, by } });
 }
-function sendMittPrompt() {
+async function sendMittPrompt() {
     if (!canMark()) return;
     const groups = Array.from(document.querySelectorAll('.mitt-grp:checked')).map(x => x.value);
     if (!groups.length) { setText('mitt-hint', 'Tick who the prompt goes to first.'); return; }
-    const n = (data.devices || []).filter(d => MITTLib.policyPromptApplies(groups, { role: d.userRole, sector: d.sector })).length;
-    if (!confirm(`Tell ${groups.map(MITTLib.policyGroupLabel).join(', ')} that MITT is now in use?\n\n${n} phone${n === 1 ? '' : 's'} reporting now match. Phones that join later or change sector see it too if they match.`)) return;
+    const n = promptTargets(groups).length;
+    if (!await ask({ title: 'Send the MITT prompt?', message: `Tell ${groups.map(MITTLib.policyGroupLabel).join(', ')} that MITT is now in use?\n\n${n} phone${n === 1 ? '' : 's'} reporting now match. Phones that join later or change sector see it too if they match.`, okLabel: 'Send prompt' })) return;
     savePolicy({ mitt: { groups } }).then(ok => { if (ok) setText('mitt-hint', 'Sent. Phones see it with their next report.'); });
 }
 
@@ -535,17 +542,17 @@ async function clearDuress(deviceId) {
     if (!canMark() || !data) return;
     const d = (data.devices || []).find(x => x.deviceId === deviceId);
     if (!d || !sos(d)) return;
-    if (!confirm(`Clear the call for help from ${d.triager || deviceId}?\n\nOnly do this once someone is going to them. Their phone is told it was cleared; they can call again if they still need help.`)) return;
+    if (!await ask({ title: `Clear the call for help from ${d.triager || deviceId}?`, message: 'Only do this once someone is going to them. Their phone is told it was cleared; they can call again if they still need help.', okLabel: 'Clear: help is on its way' })) return;
     if (demo) { d.duress = Object.assign({}, d.duress, { clearedAt: Date.now(), clearedBy: 'commander' }); render(); return; }
     try {
         const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/duress-clear`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify({ deviceId }), cache: 'no-store' });
         const b = await r.json().catch(() => ({}));
-        if (!r.ok) { alert(b.message || `Could not clear the call for help (server replied ${r.status}).`); return; }
+        if (!r.ok) { tell(b.message || `Could not clear the call for help (server replied ${r.status}).`); return; }
         d.duress = b.duress || Object.assign({}, d.duress, { clearedAt: Date.now(), clearedBy: 'commander' });
         knownSeq = ''; etag = '';   // make sure the next poll brings the server's copy
         render();
         refreshNow();
-    } catch (e) { alert('Could not reach the server, so the call for help was not cleared. Try again.'); }
+    } catch (e) { tell('Could not reach the server, so the call for help was not cleared. Try again.'); }
 }
 function teamIcon(d, now) {
     const stale = posStale(d.position, now);
@@ -747,6 +754,35 @@ function fitMap() {
     const b = L.featureGroup(layers).getBounds();
     map.fitBounds(b.pad(0.2), { maxZoom: 18 });
 }
+// ---------- In-app dialogs ----------
+// The browser's own confirm()/alert() stop the whole page (no refresh, no alarms) until someone clicks,
+// so the commander screen asks its questions in its own dialog instead.
+let askResolve = null, askReturnFocus = null;
+function ask(opts) {
+    if (askResolve) askAnswer(false);
+    const o = typeof opts === 'string' ? { message: opts } : opts;
+    setText('ask-title', o.title || '');
+    setText('ask-msg', o.message || '');
+    $('ask-title').style.display = o.title ? '' : 'none';
+    const ok = $('ask-ok'), cancel = $('ask-cancel');
+    ok.textContent = o.okLabel || 'OK';
+    ok.className = 'btn' + (o.danger ? ' danger' : '');
+    cancel.textContent = o.cancelLabel || 'Cancel';
+    cancel.style.display = o.alertOnly ? 'none' : '';
+    askReturnFocus = document.activeElement;
+    $('ask-modal').classList.add('open');
+    try { (o.alertOnly ? ok : cancel).focus(); } catch (e) {}
+    return new Promise(res => { askResolve = res; });
+}
+function askAnswer(ok) {
+    $('ask-modal').classList.remove('open');
+    const res = askResolve; askResolve = null;
+    const back = askReturnFocus; askReturnFocus = null;
+    if (back && back.isConnected && back.focus) { try { back.focus(); } catch (e) {} }
+    if (res) res(!!ok);
+}
+function tell(message, title) { return ask({ title: title || '', message, alertOnly: true }); }
+
 // ---------- Patient details (any row, attention item or marker) ----------
 let openUid = null;
 let ptReturnFocus = null;   // where focus goes back to when the details close
@@ -844,11 +880,13 @@ const ACTIONS = {
     clearDuress: (t) => clearDuress(t.getAttribute('data-dev')),
     setP1Hold: (t) => setP1Hold(t.getAttribute('data-on') === '1'),
     sendMittPrompt,
+    askAnswer: (t) => askAnswer(t.getAttribute('data-ok') === '1'),
     showTeamOnMap: (t) => showTeamOnMap(t.getAttribute('data-dev')),
     dismissAlert: (t) => dismissAlert(t.hasAttribute('data-id') ? Number(t.getAttribute('data-id')) : undefined),
     toggleTimeline: () => { timelineAll = !timelineAll; renderTimeline((data && data.records) || []); },
 };
 document.addEventListener('click', e => {
+    if (e.target === $('ask-modal')) { askAnswer(false); return; }
     if (e.target === $('pt-modal')) { closePatient(); return; }
     const t = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
     if (!t || !ACTIONS[t.getAttribute('data-act')]) return;
@@ -864,6 +902,7 @@ document.addEventListener('change', e => {
 document.addEventListener('keydown', e => {
     // Rows, alerts and timeline entries open with Enter or Space, as a button would.
     if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(button):not(a)')) { e.preventDefault(); e.target.click(); return; }
+    if (askResolve) { if (e.key === 'Escape') { e.preventDefault(); askAnswer(false); } return; }
     if (e.key === 'Escape' && openUid) { closePatient(); return; }
     if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
     if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();

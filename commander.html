@@ -133,6 +133,13 @@
     /* patient details */
     .modal { position:fixed; inset:0; background:rgba(5,12,26,0.62); display:none; align-items:center; justify-content:center; z-index:1000; padding:12px; }
     .modal.open { display:flex; }
+    #ask-modal { z-index:1100; }
+    body.incident-gone #dash > *:not(#conn-warn) { opacity:0.45; filter:grayscale(1); }
+    .ask-box { max-width:480px; padding:18px 20px; }
+    .ask-box h3 { margin:0 0 8px; }
+    .ask-box p { white-space:pre-line; margin:0 0 16px; }
+    .ask-btns { justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+    .btn.danger { background:#da291c; }
     .modal-box { background:var(--card); color:var(--text); border-radius:16px; max-width:900px; width:100%; max-height:94vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,0.45); border:1px solid var(--line); }
     .pt-head { position:sticky; top:0; background:var(--card); padding:14px 18px 10px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; flex-wrap:wrap; z-index:1; }
     .pt-head .pid { font-family:var(--mono); font-weight:900; font-size:1.35rem; letter-spacing:0.02em; }
@@ -485,7 +492,7 @@
             <button type="button" class="btn" data-act="signIn">Open dashboard</button>
             <p class="muted">No incident? <a href="#DEMO">See the demo incident</a> (made up, updates by itself, nothing sent or received).</p>
         </div>
-        <div class="how"><b>Where the code comes from:</b> the commander's phone shows it on the start screen under <b>"I'm the incident commander"</b>, or in ⚙ Settings → Incident &amp; training. On that phone this page signs in by itself. Data is held for 24 hours after the last update, then deleted. For a TV in the command post, use <b>Wall display</b> (or add <b>/wall</b> to the link) and the ⛶ button for full screen.</div>
+        <div class="how"><b>Where the code comes from:</b> the commander's phone shows it on the start screen under <b>"I'm the incident commander"</b>, or in ⚙ Settings → Incident. On that phone this page signs in by itself. Data is held for 24 hours after the last update, then deleted. For a TV in the command post, use <b>Wall display</b> (or add <b>/wall</b> to the link) and the ⛶ button for full screen.</div>
     </div>
 
     <div id="dash" class="hidden">
@@ -593,6 +600,16 @@
             </span>
         </div>
         <div class="pt-body" id="pt-body"></div>
+    </div>
+</div>
+<div class="modal" id="ask-modal" role="alertdialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-msg">
+    <div class="modal-box ask-box">
+        <h3 id="ask-title"></h3>
+        <p id="ask-msg"></p>
+        <div class="row ask-btns">
+            <button type="button" class="btn sec" id="ask-cancel" data-act="askAnswer" data-ok="0">Cancel</button>
+            <button type="button" class="btn" id="ask-ok" data-act="askAnswer" data-ok="1">OK</button>
+        </div>
     </div>
 </div>
 <footer>Major Incident Triage — commander view. Training and exercise use only; not for use with real patients. Not a clinical record: the phones keep the audit trail. <a href="accessibility.html">Accessibility statement</a></footer>
