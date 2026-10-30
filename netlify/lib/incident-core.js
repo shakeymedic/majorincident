@@ -114,6 +114,10 @@ function createCore(opts) {
     const keyPol = (code, what) => `i/${code}/pol/${what}`;    // v0.19.8: one small document per decision field (p1hold, mitt)
     const keyDec = (code, id) => `i/${code}/dec/${id}`;        // v0.19.8: one document per decision-log entry, append only
     const DECISIONS_MAX = 200;
+    // Decision-log documents sort by their key: the time, then a per-server counter (keeps the order of entries
+    // written in the same millisecond), then a few random characters (two servers at once).
+    let decSeq = 0;
+    const decKey = (code, at) => keyDec(code, at.toString(36).padStart(9, '0') + '-' + String(++decSeq).padStart(6, '0') + '-' + crypto.randomBytes(2).toString('hex'));
     const keyMarks = (code) => `i/${code}/marks`;
     const keyClear = (code, id) => `i/${code}/dc/${id}`;
     const keyTomb = (code) => `t/${code}`;
@@ -255,8 +259,9 @@ function createCore(opts) {
     async function loadPolicy(code, meta, decKeys) {
         const f = await loadPolicyFields(code, meta);
         const keys = decKeys || entries(await store.list(`i/${code}/dec/`)).map(e => e.key);
-        const extra = keys.length ? await getMany(store, keys) : [];
-        const decisions = f.legacyDecisions.concat(extra).sort((a, b) => (a.at || 0) - (b.at || 0)).slice(-DECISIONS_MAX);
+        const extra = keys.length ? await getEach(store, keys) : [];
+        const fromDocs = keys.map((k, i) => ({ k, d: extra[i] })).filter(x => x.d).sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0).map(x => x.d);
+        const decisions = f.legacyDecisions.concat(fromDocs).slice(-DECISIONS_MAX);
         return { policy: f.policy, policyAt: f.policyAt, decisions };
     }
     async function loadMarks(code, meta) {
@@ -529,7 +534,7 @@ function createCore(opts) {
     // Every commander decision is kept with who made it and when (shown on the commander screen).
     async function addDecision(code, meta, d) {
         const at = now();
-        await store.set(keyDec(code, at.toString(36) + '-' + crypto.randomBytes(3).toString('hex')), Object.assign({ at }, d));
+        await store.set(decKey(code, at), Object.assign({ at }, d));
     }
 
     async function setMarks(code, pin, body, client, key) {
@@ -570,11 +575,11 @@ function createCore(opts) {
         const writes = [];
         if (p1By) {
             writes.push([keyPol(code, 'p1hold'), { on: !!body.p1Hold.on, at: t, by: p1By }]);
-            writes.push([keyDec(code, t.toString(36) + '-' + crypto.randomBytes(3).toString('hex')), { at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by: p1By }]);
+            writes.push([decKey(code, t), { at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by: p1By }]);
         }
         if (mittBy) {
             writes.push([keyPol(code, 'mitt'), { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by: mittBy, groups }]);
-            writes.push([keyDec(code, t.toString(36) + '-' + crypto.randomBytes(3).toString('hex')), { at: t, what: 'mitt', groups, by: mittBy }]);
+            writes.push([decKey(code, t), { at: t, what: 'mitt', groups, by: mittBy }]);
         }
         await setEach(store, writes);
         const out = lib.normalisePolicy((await loadPolicyFields(code, a.meta)).policy);
