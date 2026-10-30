@@ -179,7 +179,7 @@ async function refreshNow() {
             // The server says whether it was ended or expired; an ended incident was labelled "expired" (v0.19.7 stress test).
             setStatus('bad', r.status === 410 ? (why === 'expired' ? 'Incident expired' : 'Incident ended') : r.status === 404 ? 'Incident ended' : 'Access refused');
             // An ended incident must not look live: the old figures are greyed and labelled with when they were last received.
-            $('conn-warn').textContent = msg + (gone ? ` The incident has ended or expired. Everything below is the last copy this page received${lastOkAt ? ' at ' + time(lastOkAt) : ''}: it is NOT live.` : '');
+            $('conn-warn').textContent = msg + (gone ? ` Everything below is the last copy this page received${lastOkAt ? ' at ' + time(lastOkAt) : ''}: it is NOT live.` : '');
             $('conn-warn').classList.remove('hidden');
             document.body.classList.toggle('incident-gone', gone);
             if (gone) setUpdated(`Incident ended • last copy ${lastOkAt ? time(lastOkAt) : 'unknown'}`);
