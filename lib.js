@@ -11,7 +11,8 @@
 
     // ---------- Triage categories ----------
     // NHS England casualty labelling (2023): P1/P2/P3; "Not breathing" is TST only (silver);
-    // "Dead" is MITT only (black). "P1 Hold" (NARU / NHSE B0128) is a senior clinical decision.
+    // "Dead" is MITT only (black). "P1 Hold" is a senior clinical decision (no published source confirmed for the
+    // label; v0.19.9 stress test).
     const CATEGORIES = ['P1', 'P2', 'P3', 'NOT_BREATHING', 'DEAD', 'P1_HOLD'];
     const CATEGORY_INFO = {
         P1:            { short: 'P1', label: 'IMMEDIATE', colour: '#DA291C', text: '#FFFFFF' },
@@ -1445,12 +1446,21 @@
         return `${time} ${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`;
     }
     // Re-triage answers the questions again, so a casualty can rightly become less urgent. But a casualty recorded as
-    // Not breathing, Dead or P1 Hold must be reassessed by a healthcare professional (NHS England TST card), so a
+    // Not breathing, Dead or P1 Hold must be reassessed by a healthcare professional (the app's own rule from v0.19.8,
+    // signed off by Jake on 30 Oct 2026; not a quote from the NHS England TST card), so a
     // non-clinician cannot re-triage them out of it (v0.19.7 stress test: re-triage, "Walking? YES" gave P3).
     function canReTriage(role, from) {
         if (role === 'HCP') return { ok: true };
         if (from === 'NOT_BREATHING' || from === 'DEAD' || from === 'P1_HOLD') return { ok: false, why: `A casualty recorded as ${categoryShort(from)} must be reassessed by a healthcare professional. Ask a clinician to re-triage them.` };
         return { ok: true };
+    }
+    // "Change the last answer" fixes a mis-tap in the triage this phone has just saved. A non-clinician can use it only
+    // while that triage is still the casualty's latest entry; once anything else has been recorded for the casualty,
+    // moving them out of Not breathing, Dead or P1 Hold needs a clinician, as re-triage does (v0.19.9 stress test:
+    // a correction got round the re-triage block).
+    function canCorrect(role, from, stillLatest) {
+        if (role === 'HCP' || stillLatest) return { ok: true };
+        return canReTriage(role, from);
     }
     // MITT counting help: the breathing-rate and heart-rate cut-offs (NHS England MITT card, April 2023: breathing
     // rate 12-23 is the "yes" answer; heart rate 100 or more is the "yes" answer). The help only suggests: the
@@ -2333,7 +2343,7 @@
         BODYMAP_VIEWBOX, BULK_QR_SOFT_LIMIT, ALL_QR_CHUNK_SOFT_LIMIT, ALL_TRANSFER_SCHEMA_VERSION, ALL_PATIENT_FIELD_ORDER, REASSESS_INTERVALS, CATEGORY_RANK,
         escapeHTML, fnv1a, canonicalJSON, buildPatientPayload, decompressData,
         validatePatientWrapper, mergePatientRecords, buildAckPayload,
-        tstNext, mittNext, TST_UNDER2, canReTriage, todWithDate,
+        tstNext, mittNext, TST_UNDER2, canReTriage, canCorrect, todWithDate,
         classifyBodymapPoint, buildInjuryMark, injuriesToText, sanitiseInjuries,
         buildBulkPayload, validateBulkWrapper, bulkPayloadFits,
         clonePatientRecord, buildAllPatientsPayload, validateAllPatientsWrapper,

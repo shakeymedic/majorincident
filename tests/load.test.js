@@ -21,12 +21,12 @@ function rec(uid, id, category, t) {
     const store = memoryStore({ delay: DELAY });
     const core = createCore({ store, now: () => clock });
     const H = (pin) => ({ 'x-incident-pin': pin });
-    const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'CTRL00', triager: 'Control' }), '10.0.0.0')).body;
+    const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'CTRL00', triager: 'Control', keys: true }), '10.0.0.0')).body;
     console.log(`\nload: ${PHONES} phones x ${RECORDS} records, ${DELAY} ms per store operation`);
 
     // 1. Everyone joins at once.
     let t0 = Date.now();
-    const joins = await Promise.all(Array.from({ length: PHONES }, (_, i) => core.handle('POST', `/api/incident/${c.code}/join`, H(c.pin), JSON.stringify({ deviceId: 'LOAD' + String(i).padStart(2, '0'), triager: 'Phone ' + i }), '10.0.0.' + i)));
+    const joins = await Promise.all(Array.from({ length: PHONES }, (_, i) => core.handle('POST', `/api/incident/${c.code}/join`, H(c.pin), JSON.stringify({ deviceId: 'LOAD' + String(i).padStart(2, '0'), triager: 'Phone ' + i, keys: true }), '10.0.0.' + i)));
     assert.ok(joins.every(j => j.status === 200), 'every phone joined');
     console.log(`  ✓ ${PHONES} phones joined together in ${Date.now() - t0} ms`);
 

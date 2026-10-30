@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v48-2026-10-30-contact-email';
+const CACHE_NAME = 'mit-triage-v49-2026-10-30-stress2';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 // The printed-number reader (vendor/tesseract, ~10 MB, fetched on demand) is kept across app updates too,
@@ -105,19 +105,26 @@ self.addEventListener('fetch', event => {
         );
         return;
     }
-    // Opening the app (a page navigation): fetch the page and lib.js from the network first, as a pair, and use them
-    // if they arrive within a few seconds; otherwise use the stored pair at once (no signal, or a slow one). The first
-    // load after a release used to show the old version (v0.19.7 stress test).
+    // Opening the app or the commander screen (a page navigation): fetch both pages and their scripts from the network
+    // first, as one set, and use them if they arrive within a few seconds; otherwise use the stored set at once (no
+    // signal, or a slow one). The first load after a release used to show the old version (v0.19.7 stress test), and
+    // the commander screen stayed on the old version (v0.19.9 stress test). When the stored copy had to be used, the
+    // new set is stored a little later, so the page already showing cannot pick up a newer script than itself.
     if (url.origin === self.location.origin && isShellPath(url.pathname) && req.mode === 'navigate') {
-        const fresh = fetchShellPair();
-        event.waitUntil(fresh.catch(() => {}));
+        const isCommander = url.pathname === SCOPE_PATH + 'commander.html';
+        const fresh = fetchShellSet();
+        let servedStored = false;
         const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
-        event.respondWith(Promise.race([fresh.catch(() => null), timeout]).then(page => page
-            || caches.match(req).then(c => c || caches.match('./index.html')).then(c => c || fetch(req))));
+        event.respondWith(Promise.race([fresh.catch(() => null), timeout]).then(set => {
+            if (set) return storeShellSet(set).then(() => isCommander ? set[2] : set[0]);
+            servedStored = true;
+            return caches.match(req).then(c => c || caches.match(isCommander ? './commander.html' : './index.html')).then(c => c || fetch(req));
+        }));
+        event.waitUntil(fresh.then(set => servedStored ? wait(STORE_HOLD_MS).then(() => storeShellSet(set)) : null).catch(() => {}));
         return;
     }
-    // lib.js and other requests for the page: served from the cache at once, then fetched again in the background so
-    // a phone that opens the app once after a release already has the new files next time. Nothing reloads by itself.
+    // lib.js, commander.js and other requests for the pages: served from the cache at once, then the set is fetched
+    // again in the background so the next opening has the new files. Nothing reloads by itself.
     if (url.origin === self.location.origin && isShellPath(url.pathname)) {
         event.respondWith(caches.match(req).then(cached => {
             if (cached) { event.waitUntil(refreshShell()); return cached; }
@@ -144,26 +151,32 @@ self.addEventListener('fetch', event => {
 });
 
 const SCOPE_PATH = new URL('./', self.location.href).pathname;
-function isShellPath(p) { return p === SCOPE_PATH || p === SCOPE_PATH + 'index.html' || p === SCOPE_PATH + 'lib.js'; }
-// index.html and lib.js are stored as a pair or not at all, so a refresh cut short by a lost signal can never
-// leave a new page running with an old lib.js. At most once a minute.
+// The two pages and the scripts they share: always stored together, so a refresh cut short by a lost signal can
+// never leave a new page running with an old lib.js (or the reverse).
+const SHELL_FILES = ['./', './lib.js', './commander.html', './commander.js'];
+function isShellPath(p) { return p === SCOPE_PATH || p === SCOPE_PATH + 'index.html' || SHELL_FILES.slice(1).some(f => p === SCOPE_PATH + f.slice(2)); }
+const NAV_TIMEOUT_MS = 3000;
+const STORE_HOLD_MS = 15 * 1000;   // how long a page shown from the cache has to load its scripts before the set changes
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+// The network copy of the whole set, or a rejection if any one of them fails.
+function fetchShellSet() {
+    const get = (u) => fetch(u, { cache: 'no-cache' }).then(r => (r && r.status === 200 && r.type === 'basic' && !r.redirected) ? r : Promise.reject(new Error(u)));
+    return Promise.all(SHELL_FILES.map(get));
+}
+// Stores clones, so the responses themselves can still be given to the page.
 let lastShellRefresh = 0;
+function storeShellSet(set) {
+    return caches.open(CACHE_NAME).then(cache => Promise.all([
+        cache.put('./', set[0].clone()), cache.put('./index.html', set[0].clone()), cache.put('./lib.js', set[1].clone()),
+        cache.put('./commander.html', set[2].clone()), cache.put('./commander.js', set[3].clone()),
+    ])).then(() => { lastShellRefresh = Date.now(); });
+}
+// Background refresh after a page has loaded from the cache: at most once a minute, and only after the page has had
+// time to load the rest of its scripts.
 function refreshShell() {
     if (Date.now() - lastShellRefresh < 60 * 1000) return Promise.resolve();
     lastShellRefresh = Date.now();
-    const get = (u) => fetch(u, { cache: 'no-cache' }).then(r => (r && r.status === 200 && r.type === 'basic' && !r.redirected) ? r : Promise.reject(new Error(u)));
-    return Promise.all([get('./'), get('./lib.js')]).then(([page, lib]) => caches.open(CACHE_NAME).then(cache => Promise.all([
-        cache.put('./', page.clone()), cache.put('./index.html', page), cache.put('./lib.js', lib),
-    ]))).catch(() => {});
-}
-
-// The network copy of the page and lib.js, stored as a pair (see refreshShell). Resolves with the page response.
-const NAV_TIMEOUT_MS = 3000;
-function fetchShellPair() {
-    const get = (u) => fetch(u, { cache: 'no-cache' }).then(r => (r && r.status === 200 && r.type === 'basic' && !r.redirected) ? r : Promise.reject(new Error(u)));
-    return Promise.all([get('./'), get('./lib.js')]).then(([page, lib]) => caches.open(CACHE_NAME).then(cache => Promise.all([
-        cache.put('./', page.clone()), cache.put('./index.html', page.clone()), cache.put('./lib.js', lib),
-    ])).then(() => { lastShellRefresh = Date.now(); return page; }));
+    return wait(STORE_HOLD_MS).then(fetchShellSet).then(storeShellSet).catch(() => {});
 }
 
 function trimTileCache(cache) {

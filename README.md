@@ -164,6 +164,18 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.10 build 2026-10-30-stress2 — fixes from the v0.19.9 stress test (Jake, 30 October 2026)
+- **PIN guessing spread over many addresses is stopped.** Each incident now also counts wrong PINs over a day: after 500, only phones and screens that already hold the incident's key get in (a clean address no longer gets its one try). At most 500 guesses a day against 3 PINs out of 1,000,000 is about a 0.15% chance a day. Addresses in the same IPv6 /64 block count as one address.
+- **Phones on v0.19.7 or earlier are asked to update** instead of joining unkeyed ("Close the app fully and open it again to update it, then join again"), so nobody with the triagers' PIN can send under, rename or take over another phone's device code. Only a phone that has joined and holds its device key can send; a report from a device code that never joined is refused (and no longer creates an unlabelled phone on the commander screen).
+- **Clock skew of more than 2 seconds is corrected** (was 60 seconds), so a phone up to a minute slow no longer loses a genuine later update. Records are still only labelled with the skew when it is more than a minute.
+- **"Change the last answer"** still fixes a mis-tap in the triage just saved, but a non-clinician cannot use it to move a casualty out of Not breathing, Dead or P1 Hold once anything newer has been recorded for them (same rule as re-triage).
+- **Setting Dead by hand:** the time-of-death box says the category was set by hand (not the MITT airway wording), Back undoes the change (back to the previous category, logged as CATEGORY_CHANGE_UNDONE), and the "Share your position?" question waits until the box is answered.
+- **Map markings:** each marking is its own document and the commander screen sends only what changed, so two people marking the map at once both keep their edits. An older commander screen that sends the whole list still works (it replaces the list, as before).
+- **Fewer reads:** a phone's report only fetches the map markings when they have changed; incidents started from v0.19.10 skip the older single decision and markings documents; the decision log is pruned to its newest 200 entries.
+- **The commander screen updates like the app:** commander.html and commander.js are fetched from the network first with index.html and lib.js, all four stored as one set; when a stored copy has to be used, the new set is stored 15 seconds later so a page already loading cannot pick up newer scripts than itself.
+- **Source credits:** two unconfirmed credits removed from code comments ("NHS England TST card" for the healthcare-professional rule, and "NARU / NHSE B0128" for the P1 Hold label). The wording itself is unchanged. The v0.8.1 note below that the MITT reminder is "NHS England guidance" is likewise not confirmed against a published document.
+- Service worker cache v49. Web change only: no Android rebuild.
+
 ### v0.19.9 build 2026-10-30-wording — source wording (Jake, 30 October 2026)
 - **Not Breathing wording no longer credited to NARU.** "Must be reassessed by a healthcare responder as soon as possible" stays in the app, but the README and code no longer say it is a NARU quote (the tester could not find it in the NARU documents).
 - **MITT reassessment timers (P1 10, P2 30, P3 60 minutes) are labelled as suggested timings**, not taken from a published source, in Settings, the code and the README. Jake confirmed them for now as suggested timings.

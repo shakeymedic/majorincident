@@ -620,6 +620,11 @@ group('reassessment', () => {
         ['P1', 'P2', 'P3'].forEach(c => assert.strictEqual(lib.canReTriage('NON_HCP', c).ok, true, c));
         assert.strictEqual(lib.canReTriage('', 'NOT_BREATHING').ok, false, 'no role chosen counts as non-clinician');
     });
+    test('v0.19.10: "change the last answer" by a non-clinician follows the re-triage rule once anything newer is recorded', () => {
+        assert.strictEqual(lib.canCorrect('NON_HCP', 'NOT_BREATHING', true).ok, true, 'fixing a mis-tap in the triage just saved');
+        ['NOT_BREATHING', 'DEAD', 'P1_HOLD'].forEach(c => { assert.strictEqual(lib.canCorrect('NON_HCP', c, false).ok, false, c); assert.strictEqual(lib.canCorrect('HCP', c, false).ok, true, c); });
+        assert.strictEqual(lib.canCorrect('NON_HCP', 'P2', false).ok, true);
+    });
     test('v0.19.8: a typed time of death later than now is yesterday; otherwise today', () => {
         const at = new Date(2026, 9, 31, 0, 10).getTime();
         assert.strictEqual(lib.todWithDate('23:50', at), '23:50 30/10/2026');
