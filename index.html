@@ -931,8 +931,9 @@
         body.cmd-linked header img { display:none; }
         body.cmd-linked .header-controls { flex-wrap:nowrap; gap:5px; }
     }
-    /* "Not breathing" in the compact tally may wrap onto two lines rather than spill out of its box. */
-    .dashboard:not(.expanded) #dash-nb .dash-label { white-space:normal; line-height:1.05; text-align:center; }
+    /* "Not breathing" in full where it fits on one line; "No breath" on narrow phones (no unexplained abbreviation). */
+    #dash-nb .nb-short { display:none; }
+    @media (max-width: 420px) { .dashboard:not(.expanded) #dash-nb .nb-long { display:none; } .dashboard:not(.expanded) #dash-nb .nb-short { display:inline; } }
     #duress-btn.live { background:var(--nhs-red, #da291c); color:#fff; border-color:#fff; animation: duress-blink 1.2s ease-in-out infinite; }
     @keyframes duress-fill { from { width:0; } to { width:100%; } }
     @keyframes duress-blink { 0%, 100% { opacity:1; } 50% { opacity:0.55; } }
@@ -1762,7 +1763,7 @@
         <div class="dash-card dash-p1"><span class="dash-label">P1</span><span class="dash-num" id="count-p1">0 / 0</span><span class="dash-sub">(On scene / total)</span></div>
         <div class="dash-card dash-p2"><span class="dash-label">P2</span><span class="dash-num" id="count-p2">0 / 0</span><span class="dash-sub">(On scene / total)</span></div>
         <div class="dash-card dash-p3"><span class="dash-label">P3</span><span class="dash-num" id="count-p3">0 / 0</span><span class="dash-sub">(On scene / total)</span></div>
-        <div class="dash-card cat-bg-NOT_BREATHING" id="dash-nb"><span class="dash-label">Not breathing</span><span class="dash-num" id="count-nb">0 / 0</span><span class="dash-sub">(Needs clinician)</span></div>
+        <div class="dash-card cat-bg-NOT_BREATHING" id="dash-nb"><span class="dash-label"><span class="nb-long">Not breathing</span><span class="nb-short">No breath</span></span><span class="dash-num" id="count-nb">0 / 0</span><span class="dash-sub">(Needs clinician)</span></div>
         <div class="dash-card dash-dead"><span class="dash-label">DEAD</span><span class="dash-num" id="count-dead">0 / 0</span><span class="dash-sub">(On scene / total)</span></div>
         <div class="dash-card cat-bg-P1_HOLD" id="dash-hold" style="display:none;"><span class="dash-label">P1 Hold</span><span class="dash-num" id="count-hold">0 / 0</span><span class="dash-sub">(On scene / total)</span></div>
         <div class="dash-card dash-evac" style="display:none; font-size:0.9rem;" id="evac-summary">Evacuated: 0 | On Scene: 0</div>

@@ -1583,7 +1583,7 @@ async function test(name, fn) {
         // Dead is never flagged as deteriorating in the log
         await V.evaluate(() => { const e = incidentLog[0]; e.category = 'DEAD'; e.lastDeteriorationAt = Date.now(); showLog(); });
         assert.strictEqual(await V.evaluate(() => document.querySelectorAll('#log-screen .deteriorate-flag').length), 0);
-        assert.strictEqual(await V.evaluate(() => document.getElementById('dash-nb').querySelector('.dash-label').textContent), 'Not breathing');
+        assert.strictEqual(await V.evaluate(() => document.querySelector('#dash-nb .dash-label').innerText.trim()), 'No breath', 'plain words on a 390 px phone');
         await V._ctx.close();
     });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
