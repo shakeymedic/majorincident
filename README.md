@@ -52,7 +52,7 @@ tests/lib.test.js Node test suite for pure helpers
 - **TST:** Walking → P3; Severe bleeding → P1; Talking → penetrating injury to the torso (front or back)? P1 : P2; not talking → Breathing? P1 (recovery position) : **Not Breathing**.
 - **MITT:** Catastrophic bleeding → P1; Walking → P3; Breathing? no → **DEAD**; Responds to voice? no → P1; Aged over 2? no → P1; Breathing rate 12–23? no → P1; **Heart rate 100 or more?** yes → P1, no → P2.
 - Categories follow NHS England casualty labelling: P1, P2, P3, **Not Breathing (TST only, silver)**, **Dead (MITT only, black)**. **P1 Hold** is hidden unless the incident commander allows it for the incident (from v0.19.0), and then only for clinicians, as a senior decision. "Expectant" is not used.
-- Not Breathing casualties are flagged for **healthcare reassessment as soon as possible** (the app's own wording, not a quote from NARU). Dead does not require a time of death at triage ("declare when resources allow", NHSE B0128).
+- Not Breathing casualties are flagged for **healthcare reassessment as soon as possible** (the app's own wording, not a quote from NARU). Dead does not require a time of death at triage (it can be declared when resources allow).
 - TST labels/tags use a checked border; MITT uses solid colour (NHSE labelling guidance).
 - Care prompts are drawn from the NARU "clinical interventions in the CCP" list, not the in-hospital MPTT-24 page.
 - **Needs clinical sign-off:** the TST penetrating-injury wording ("torso — front or back") and the reassessment intervals (local defaults, configurable in ⚙ Settings) are not specified in the source documents.
@@ -164,6 +164,18 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.11 build 2026-10-31-retest — fixes from Jake's v0.19.10 retest (30 October 2026)
+- **One person can no longer lock new phones out.** An address with no wrong PINs of its own that day gets one try again, even past the incident's daily limit. Past that limit, those one-try addresses can only get 100 wrong between them that day, so guessing from many addresses stays capped: the incident limit is now 300 wrong a day (a calendar day, UTC), so at most 400 checked guesses a day (800 across midnight), about a 0.12% (0.24%) chance a day of hitting one of the 3 PINs.
+- **Wrong-PIN counts are atomic across server copies.** They are now counters the store adds to (Firestore increments), counted before the verdict is read back, so guesses sent together are all counted. (Netlify Blobs, used only before Firestore is set up, has no atomic increment.)
+- **A linked phone or screen is never held up by its address's wrong-PIN count** (another device behind the same mobile network address may have guessed wrong). Only requests without a key covering their PIN are counted and limited.
+- **Clock correction only above 10 seconds** (2 s in v0.19.10 treated a slow delivery as a wrong clock). A phone 30 or 45 seconds out is still corrected; one less than 10 seconds out is not.
+- **A full phone store no longer stops the app opening**: the page from the network is used even if storing it fails.
+- **Dead set by hand is held back** from the commander until its time-of-death box is answered, so an undone Dead is never seen. Reports and calls for help still go meanwhile.
+- **Map limit:** markings added at the same moment can no longer take the map past 30 (the later change is taken back with a message), so none is hidden.
+- **Decision log:** entries are no longer deleted; the commander screen shows the newest 200.
+- Two more unconfirmed source credits removed from the README ("NHS England guidance" on the MITT reminder and "NHSE B0128" on time of death), and one from a code comment. Wording unchanged.
+- Service worker cache v50. Web change only: no Android rebuild.
+
 ### v0.19.10 build 2026-10-30-stress2 — fixes from the v0.19.9 stress test (Jake, 30 October 2026)
 - **PIN guessing spread over many addresses is stopped.** Each incident now also counts wrong PINs over a day: after 500, only phones and screens that already hold the incident's key get in (a clean address no longer gets its one try). At most 500 guesses a day against 3 PINs out of 1,000,000 is about a 0.15% chance a day. Addresses in the same IPv6 /64 block count as one address.
 - **Phones on v0.19.7 or earlier are asked to update** instead of joining unkeyed ("Close the app fully and open it again to update it, then join again"), so nobody with the triagers' PIN can send under, rename or take over another phone's device code. Only a phone that has joined and holds its device key can send; a report from a device code that never joined is refused (and no longer creates an unlabelled phone on the commander screen).
@@ -173,7 +185,7 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - **Map markings:** each marking is its own document and the commander screen sends only what changed, so two people marking the map at once both keep their edits. An older commander screen that sends the whole list still works (it replaces the list, as before).
 - **Fewer reads:** a phone's report only fetches the map markings when they have changed; incidents started from v0.19.10 skip the older single decision and markings documents; the decision log is pruned to its newest 200 entries.
 - **The commander screen updates like the app:** commander.html and commander.js are fetched from the network first with index.html and lib.js, all four stored as one set; when a stored copy has to be used, the new set is stored 15 seconds later so a page already loading cannot pick up newer scripts than itself.
-- **Source credits:** two unconfirmed credits removed from code comments ("NHS England TST card" for the healthcare-professional rule, and "NARU / NHSE B0128" for the P1 Hold label). The wording itself is unchanged. The v0.8.1 note below that the MITT reminder is "NHS England guidance" is likewise not confirmed against a published document.
+- **Source credits:** two unconfirmed credits removed from code comments ("NHS England TST card" for the healthcare-professional rule, and "NARU / NHSE B0128" for the P1 Hold label). The wording itself is unchanged.
 - Service worker cache v49. Web change only: no Android rebuild.
 
 ### v0.19.9 build 2026-10-30-wording — source wording (Jake, 30 October 2026)
@@ -403,7 +415,7 @@ Changes taken from a review of comparable products (Pulsara, Peak Response, KatA
 - **Question first:** the question card comes first, with the instruction under it in plain text, then the "Not sure?" hint.
 - **Header on one row:** Night mode and Blackout moved into ⚙ Settings with labels (Blackout shows "Tap to wake").
 - **MITT counting help:** on the breathing-rate and heart-rate questions, a 15-second timer with an optional tap counter, or a typed rate. It suggests YES or NO; the clinician still answers. Measured rates are added to the result's action text (e.g. "Measured: RR 28/min").
-- **MITT this patient now:** clinicians get a one-tap button on any TST result to run MITT on the same record, and TST results remind clinicians to reassess with MITT as soon as possible (NHS England guidance).
+- **MITT this patient now:** clinicians get a one-tap button on any TST result to run MITT on the same record, and TST results remind clinicians to reassess with MITT as soon as possible.
 - **Handover:** the "Handover details look thin" confirmation now appears only for a clinician's MITT patient, not for every TST handover.
 - **Non-clinical role:** ATMIST, thoracostomy, TXA and IO access buttons are hidden for non-clinical users. Reassess is available to every role (a non-clinical responder records the check and is told to ask a clinician if the category needs changing).
 - **Readability:** the role is shown as a white-on-colour pill before the user name; the counters show patients still on scene with a one-line legend (totals remain in the Patient log).

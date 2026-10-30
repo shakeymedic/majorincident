@@ -1,12 +1,14 @@
 // Incident commander backend, independent of Netlify so it can be tested in plain Node.
-// The store is any object with get(key) -> value | null, set(key, value), delete(key), list(prefix) -> [entries].
+// The store is any object with get(key) -> value | null, set(key, value), delete(key), list(prefix) -> [entries],
+// incr(key, { field: n }) (adds atomically) and counts(keys) -> [{ field: n } | null].
 // list() returns either plain keys or { key, etag } objects (Netlify Blobs gives an etag per blob; the in-memory
 // store derives one from the content). The etags are what tell a commander screen whether anything changed.
 // Every value is a plain JSON object. Keys: i/<CODE>/meta, i/<CODE>/r/<uid>, i/<CODE>/d/<deviceId>,
 // i/<CODE>/policy and i/<CODE>/marks (commander decisions, kept apart from the meta so a phone's report can never
 // write an older copy back over them; from v0.19.8 i/<CODE>/pol/<field> and i/<CODE>/dec/<entry>, and from v0.19.10
 // i/<CODE>/mk/<markId> with i/<CODE>/pol/marks for when they last changed), i/<CODE>/dc/<deviceId> (a call for help cleared by the commander),
-// t/<CODE> (an ended incident's tombstone), rl/<client>, rc/<client> (incidents created), rk/<CODE> (wrong PINs per incident).
+// t/<CODE> (an ended incident's tombstone), rc/<client> (incidents created), and the wrong-PIN counters rl/<client>/<day>
+// and rk/<CODE>/<day> (store.incr / store.counts: { field: n }, added to atomically).
 'use strict';
 const crypto = require('crypto');
 const lib = require('../../lib.js');
@@ -28,15 +30,17 @@ const EXPIRED_MSG = 'This incident has expired (24 hours with no new information
 const TOMBSTONE_MS = 48 * 60 * 60 * 1000;
 const RATE_MAX_FAILURES = 25;                 // wrong PINs per client per window
 const CODE_MAX_FAILURES = 100;                // wrong PINs per incident per window, from anyone without that incident's key
-// Wrong PINs per incident per day, from anywhere. Past this only phones and screens already holding the incident's
-// key get in (v0.19.9 stress test: with one try per clean address, guesses spread over many addresses were never
-// stopped). 500 guesses a day against 3 PINs out of 1,000,000 is at most a 0.15% chance a day of hitting one.
-const CODE_DAY_MAX_FAILURES = 500;
+// Wrong PINs per incident per day (a calendar day, UTC), from anywhere. Past this, an address with no wrong PINs of
+// its own that day still gets one try, but those addresses may only get CODE_CLEAN_MAX_FAILURES wrong between them.
+// At most 400 a day, or 800 across midnight, against 3 PINs out of 1,000,000: about a 0.12% (0.24%) chance.
+const CODE_DAY_MAX_FAILURES = 300;
+const CODE_CLEAN_MAX_FAILURES = 100;
 const CODE_DAY_MS = 24 * 60 * 60 * 1000;
 const CREATE_WINDOW_MS = 60 * 60 * 1000;
 const CREATE_MAX = 10;                        // incidents created per client per hour
-const CLOCK_FIX_MS = 2 * 1000;                // phone clocks further out than this are corrected (v0.19.9 stress test:
-                                              // a phone up to 60 s slow could lose a genuine update)
+const CLOCK_FIX_MS = 10 * 1000;               // phone clocks further out than this are corrected. 60 s let a phone up to a
+                                              // minute slow lose a genuine update (v0.19.9 stress test); 2 s treated a
+                                              // slow delivery as a wrong clock (v0.19.10 retest). 10 s is past most delays.
 const CLOCK_SKEW_MS = 60 * 1000;              // ...and further out than this, the record is labelled with the skew
 const STALE_DEVICE_MS = 5 * 60 * 1000;
 const READ_BATCH = 25;                        // blobs fetched at once when the commander screen reads
@@ -171,53 +175,35 @@ function createCore(opts) {
     function reply(status, body, headers) { return { status, body, headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, headers || {}) }; }
     function error(status, code, message) { return reply(status, { error: code, message }); }
 
-    // Wrong-PIN lock-out lives in the store, so it survives a cold start and is shared by every server copy.
-    // A store failure never locks anyone out, and never lets a flood through either: the in-memory copy is the fallback.
-    const failures = new Map(); // client -> { count, since }
-    async function readFailures(client) {
-        let f = failures.get(client) || null;
-        try { const s = await store.get(keyRate(client)); if (s && (!f || (s.count || 0) > f.count)) f = { count: s.count || 0, since: s.since || 0 }; } catch (e) {}
-        if (f && now() - f.since > RATE_WINDOW_MS) f = null;
-        return f;
+    // Wrong-PIN counts live in the store, so they survive a cold start and are shared by every server copy. They are
+    // counters the store adds to atomically (Firestore increments), in one document per address and one per incident
+    // for each day, with a field per 15-minute window. A wrong PIN is added before the verdict is read back, so
+    // guesses sent together are all counted, whichever server copy takes them (v0.19.10 retest: with a read, then a
+    // write, only 60 of 1,200 guesses sent at once were counted). A store failure never locks anyone out and never
+    // lets a flood through: the copy in this server's memory is used instead.
+    const memCounts = new Map(); // counter key -> { field: n }
+    function addMem(key, fields) {
+        if (memCounts.size > 5000) memCounts.clear();
+        const m = Object.assign({}, memCounts.get(key) || {});
+        Object.keys(fields).forEach(f => { m[f] = (m[f] || 0) + fields[f]; });
+        memCounts.set(key, m);
+        return m;
     }
-    // The count goes up in memory before anything is awaited, so guesses sent in parallel are all counted.
-    function noteFailureNow(map, id) {
-        const cur = map.get(id);
-        const f = cur && now() - cur.since <= RATE_WINDOW_MS ? { count: cur.count + 1, since: cur.since } : { count: 1, since: now() };
-        map.set(id, f);
-        return f;
+    function maxOf(a, b) { const out = Object.assign({}, a || {}); Object.keys(b || {}).forEach(f => { out[f] = Math.max(out[f] || 0, b[f] || 0); }); return out; }
+    async function readCounts(keys) {
+        let vals = null;
+        try { vals = await store.counts(keys); } catch (e) {}
+        return keys.map((k, i) => maxOf(vals && vals[i], memCounts.get(k)));
     }
-    async function noteFailure(client) {
-        const f = noteFailureNow(failures, client);
-        try { await store.set(keyRate(client), f); } catch (e) {}
+    async function bump(key, fields) {
+        const m = addMem(key, fields);
+        try { await store.incr(key, fields); const [v] = await store.counts([key]); return maxOf(v, m); } catch (e) { return m; }
     }
-    const codeFailures = new Map(); // incident code -> { count, since, dayCount, daySince }
+    const dayOf = (t) => Math.floor(t / CODE_DAY_MS);
+    const winOf = (t) => 'w' + Math.floor(t / RATE_WINDOW_MS);
+    const clientKey = (client, t) => keyRate(client) + '/' + dayOf(t);
+    const incidentKey = (code, t) => keyCodeFail(code) + '/' + dayOf(t);
     const creates = new Map();      // rc/<client> -> { count, since }
-    // Per incident: wrong PINs in the last 15 minutes (count) and in the last day (dayCount), each with its own start.
-    function freshCodeCount(f) {
-        if (!f) return null;
-        const t = now();
-        const out = { count: f.count || 0, since: f.since || 0, dayCount: f.dayCount || 0, daySince: f.daySince || 0 };
-        if (t - out.since > RATE_WINDOW_MS) { out.count = 0; out.since = 0; }
-        if (t - out.daySince > CODE_DAY_MS) { out.dayCount = 0; out.daySince = 0; }
-        return out.count || out.dayCount ? out : null;
-    }
-    async function readCodeFailures(code) {
-        let f = freshCodeCount(codeFailures.get(code));
-        try {
-            const s = freshCodeCount(await store.get(keyCodeFail(code)));
-            if (s) f = f ? { count: Math.max(f.count, s.count), since: f.count >= s.count ? f.since : s.since, dayCount: Math.max(f.dayCount, s.dayCount), daySince: f.dayCount >= s.dayCount ? f.daySince : s.daySince } : s;
-        } catch (e) {}
-        if (f) codeFailures.set(code, f); else codeFailures.delete(code);
-        return f;
-    }
-    function noteCodeFailureNow(code) {
-        const t = now();
-        const cur = freshCodeCount(codeFailures.get(code)) || { count: 0, since: 0, dayCount: 0, daySince: 0 };
-        const f = { count: cur.count + 1, since: cur.count ? cur.since : t, dayCount: cur.dayCount + 1, daySince: cur.dayCount ? cur.daySince : t };
-        codeFailures.set(code, f);
-        return f;
-    }
 
     async function deleteIncident(code, why) {
         // The tombstone first, so phones and screens are told the incident ended even if the delete is interrupted.
@@ -241,48 +227,50 @@ function createCore(opts) {
     async function authed(code, pin, client, need, key) {
         need = need || 'member';
         const refused = () => error(401, 'bad_access', BAD_ACCESS_MSG);
+        const tooManyHere = () => error(429, 'rate_limited', 'Too many wrong codes or PINs from here. Try again in 15 minutes.');
         if (!code) return refused();
-        await readFailures(client).then(f => { if (f) failures.set(client, f); });
-        const mine = failures.get(client);
-        if (mine && now() - mine.since <= RATE_WINDOW_MS && mine.count >= RATE_MAX_FAILURES) return error(429, 'rate_limited', 'Too many wrong codes or PINs from here. Try again in 15 minutes.');
+        const t = now(), win = winOf(t), ck = clientKey(client, t), ik = incidentKey(code, t);
+        const [mine] = await readCounts([ck]);
         const meta = await loadMeta(code);
         if (meta === 'expired') return error(410, 'expired', EXPIRED_MSG);
         if (!meta) {
             const tomb = await store.get(keyTomb(code));
             if (tomb && now() - (tomb.at || 0) <= TOMBSTONE_MS) return error(410, tomb.why === 'expired' ? 'expired' : 'ended', tomb.why === 'expired' ? EXPIRED_MSG : ENDED_MSG);
-            await noteFailure(client);
+            if ((mine[win] || 0) >= RATE_MAX_FAILURES) return tooManyHere();
+            await bump(ck, { d: 1, [win]: 1 });
             return refused();
         }
-        await readCodeFailures(code);
-        // From here to the verdict nothing is awaited, so parallel guesses cannot all slip past the counts.
-        const mineNow = failures.get(client);
-        if (mineNow && now() - mineNow.since <= RATE_WINDOW_MS && mineNow.count >= RATE_MAX_FAILURES) return error(429, 'rate_limited', 'Too many wrong codes or PINs from here. Try again in 15 minutes.');
         const h = pin ? hashPin(meta.salt, pin) : '';
         let level = '';
         if (h && meta.cmdHash && safeEqual(h, meta.cmdHash)) level = 'commander';
         else if (h && safeEqual(h, meta.pinHash)) level = meta.cmdHash ? 'member' : 'commander';
         else if (h && meta.viewHash && safeEqual(h, meta.viewHash)) level = 'view';
-        // Incident-wide lock-out after many wrong PINs from anywhere. Still let through: a phone or screen whose key
-        // covers the PIN it presents, and, until the day's limit is reached, an address with no wrong PINs of its own
-        // in this window (so strangers' guesses cannot keep a new commander screen or a re-joining phone out; each
-        // address then gets one try). Past the day's limit only the key gets in, however many addresses are guessing.
-        const cf = freshCodeCount(codeFailures.get(code));
-        const dayLocked = !!cf && cf.dayCount >= CODE_DAY_MAX_FAILURES;
-        if (cf && (cf.count >= CODE_MAX_FAILURES || dayLocked)) {
-            const kl = keyLevel(meta, key);
-            const keyCovers = !!kl && !!level && LEVEL_RANK[level] <= LEVEL_RANK[kl];
-            const cleanAddress = !dayLocked && (!mineNow || now() - mineNow.since > RATE_WINDOW_MS || !mineNow.count);
-            if (!keyCovers && !cleanAddress) return error(429, 'rate_limited', dayLocked
-                ? 'Too many wrong PINs have been tried for this incident today. Phones and screens already linked carry on. To add another phone, pass the casualties on with Hand over, or start a new incident.'
-                : 'Too many wrong PINs have been tried for this incident. Phones already linked carry on; others can try again in 15 minutes.');
+        // A phone or screen whose key covers the PIN it presents is never held up by the counts, not even its own
+        // address's (another device behind the same mobile network address may have guessed wrong).
+        const kl = keyLevel(meta, key);
+        const keyCovers = !!kl && !!level && LEVEL_RANK[level] <= LEVEL_RANK[kl];
+        if (!keyCovers) {
+            // A wrong PIN is counted first (for this address and this incident), then the counts are read back; own is
+            // this attempt's part of them. A right PIN is only read, so it costs nothing.
+            let cc, ic;
+            if (level) { cc = mine; [ic] = await readCounts([ik]); }
+            else { [cc, ic] = await Promise.all([bump(ck, { d: 1, [win]: 1 }), bump(ik, { d: 1, [win]: 1 })]); }
+            const own = level ? 0 : 1;
+            if ((cc[win] || 0) - own >= RATE_MAX_FAILURES) return tooManyHere();
+            // Incident-wide lock-out: 100 wrong PINs in a 15-minute window, or 300 in a day, from anywhere. An address
+            // with no wrong PINs of its own that day still gets one try, so one person guessing cannot keep new phones
+            // and screens out (v0.19.10 retest). Past the day's limit those one-try addresses may only get another 100
+            // wrong between them that day, so guesses spread over many addresses stay capped too (v0.19.9 stress test).
+            const dayLocked = (ic.d || 0) - own >= CODE_DAY_MAX_FAILURES;
+            if (dayLocked || (ic[win] || 0) - own >= CODE_MAX_FAILURES) {
+                let ok = (cc.d || 0) - own === 0;
+                if (ok && dayLocked) ok = level ? (ic.c || 0) < CODE_CLEAN_MAX_FAILURES : ((await bump(ik, { c: 1 })).c || 0) - 1 < CODE_CLEAN_MAX_FAILURES;
+                if (!ok) return error(429, 'rate_limited', dayLocked
+                    ? 'Too many wrong PINs have been tried for this incident today. Phones and screens already linked carry on. To add another phone, pass the casualties on with Hand over, or start a new incident.'
+                    : 'Too many wrong PINs have been tried for this incident. Phones already linked carry on; others can try again in 15 minutes.');
+            }
         }
-        if (!level) {
-            // Every wrong PIN counts, whoever sends it and whatever key it carries.
-            noteFailureNow(failures, client);
-            const cfNow = noteCodeFailureNow(code);
-            try { await store.set(keyRate(client), failures.get(client)); await store.set(keyCodeFail(code), cfNow); } catch (e) {}
-            return refused();
-        }
+        if (!level) return refused();
         if (need === 'read') return { meta, level };
         if (level === 'view') return error(403, 'view_only', 'That is the view-only PIN. It can open the commander screen but not send or change anything.');
         if (need === 'commander' && level !== 'commander') return error(403, 'not_commander', 'That PIN lets phones send casualties but not change incident decisions. Use the commander PIN.');
@@ -579,10 +567,9 @@ function createCore(opts) {
         const clears = {};
         (await getMany(store, extra.filter(e => e.key.indexOf('/dc/') > -1).map(e => e.key))).forEach(c => { if (c && c.deviceId) clears[c.deviceId] = c; });
         const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return o; });
-        const decKeys = extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key).sort();
-        // The decision log keeps its newest entries; older ones are removed once there are well over that many
-        // (v0.19.9 stress test: the log was never pruned). Only the commander PIN's reads prune.
-        if (a.level === 'commander' && decKeys.length > DECISIONS_MAX + 50) { const old = decKeys.splice(0, decKeys.length - DECISIONS_MAX); try { await deleteEach(store, old); } catch (e) {} }
+        // Only the newest entries of the decision log are read and shown; none is ever deleted before the incident is
+        // (v0.19.10 retest: pruning removed decisions from the record), so the cost of a read stays bounded.
+        const decKeys = extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key).sort().slice(-DECISIONS_MAX);
         const [pol, mk] = await Promise.all([loadPolicy(code, meta, decKeys), loadMarks(code, meta, extra.filter(e => e.key.indexOf('/mk/') > -1).map(e => e.key))]);
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
@@ -655,6 +642,13 @@ function createCore(opts) {
         const toWrite = migrate ? Array.from(after.values()) : add;
         await setEach(store, toWrite.map(m => [keyMark(code, m.id), m]));
         if (remove.length) await deleteEach(store, remove.map(id => keyMark(code, id)));
+        // Two screens adding at the same moment could each see room for one more and together pass the limit (v0.19.10
+        // retest: the extra markings were then hidden). Checked again after writing: if over, this change is taken back.
+        const newIds = add.map(m => m.id).filter(id => !cur.marks.some(m => m.id === id));
+        if (newIds.length && entries(await store.list(`i/${code}/mk/`)).length > lib.MAP_MARKS_MAX) {
+            await deleteEach(store, newIds.map(id => keyMark(code, id)));
+            return error(409, 'too_many_marks', `The map can hold at most ${lib.MAP_MARKS_MAX} markings. Remove one first.`);
+        }
         await store.set(keyPol(code, 'marks'), olderIncident ? { at: t, by, migrated: true } : { at: t, by });
         await addDecision(code, meta, { what: 'marks', count: after.size, added: add.length, removed: remove.length, by });
         await touchMeta(code);
@@ -743,8 +737,9 @@ function createCore(opts) {
             await each(async () => { keys2 = entries(await store.list(pre)).map(e => e.key); });
             for (const k of keys2) {
                 await each(async () => {
-                    const f = await store.get(k);
-                    const gone = !f || (pre === 'rk/' ? !freshCodeCount(f) : now() - (f.since || 0) > (pre === 'rc/' ? CREATE_WINDOW_MS : RATE_WINDOW_MS));
+                    let gone;
+                    if (pre === 'rc/') { const f = await store.get(k); gone = !f || now() - (f.since || 0) > CREATE_WINDOW_MS; }
+                    else { const day = Number(k.split('/')[2]); gone = !(day >= dayOf(now()) - 1); } // counts from before yesterday (or an older format)
                     if (gone) { await store.delete(k); locks++; }
                 });
             }
@@ -805,6 +800,9 @@ function memoryStore(opts) {
         async get(k) { await wait(); return m.has(k) ? JSON.parse(m.get(k)) : null; },
         async set(k, v) { await wait(); m.set(k, JSON.stringify(v)); },
         async delete(k) { await wait(); m.delete(k); },
+        // Counters: added to atomically (nothing is awaited between the read and the write here).
+        async incr(k, fields) { await wait(); const cur = m.has(k) ? JSON.parse(m.get(k)) : { n: {} }; const n = cur.n || {}; Object.keys(fields).forEach(f => { n[f] = (n[f] || 0) + fields[f]; }); m.set(k, JSON.stringify({ n })); },
+        async counts(keys) { await wait(); return keys.map(k => m.has(k) ? (JSON.parse(m.get(k)).n || null) : null); },
         async list(prefix) { await wait(); return Array.from(m.keys()).filter(k => k.startsWith(prefix)).sort().map(k => ({ key: k, etag: crypto.createHash('sha1').update(m.get(k)).digest('hex').slice(0, 12) })); },
         size() { return m.size; },
         ops() { return ops; },

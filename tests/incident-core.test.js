@@ -366,7 +366,7 @@ function rec(uid, id, category, extra) {
             assert.ok(seen.includes('a' + round) && seen.includes('b' + round), `round ${round}`);
         }
     });
-    await test('the wrong-PIN lock-out survives a server restart and is cleared by the sweep after 15 minutes', async () => {
+    await test('the wrong-PIN lock-out survives a server restart, lifts in the next 15-minute window and is swept two days later', async () => {
         const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         for (let i = 0; i < 25; i++) await core.handle('GET', `/api/incident/${c.code}`, H('000000'), '', '8.8.8.8');
         const fresh = createCore({ store, now: () => clock });   // a cold start with an empty memory and the same storage
@@ -374,11 +374,14 @@ function rec(uid, id, category, extra) {
         assert.strictEqual((await fresh.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).status, 200);
         assert.ok((await store.list('rl/')).length >= 1);
         assert.strictEqual(JSON.stringify(await store.list('rl/')).indexOf('8.8.8.8'), -1, 'the address itself is not stored');
-        clock += 15 * 60 * 1000 + 1;
+        clock = (Math.floor(clock / (15 * 60 * 1000)) + 1) * 15 * 60 * 1000 + 1;   // the next 15-minute window
+        assert.strictEqual((await fresh.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '8.8.8.8')).status, 200);
+        // The day's counts are kept until the day after (so the daily limit holds), then swept.
+        clock += 2 * 24 * 60 * 60 * 1000;
         const sw = await fresh.cleanup();
         assert.ok(sw.removedLocks >= 1);
         assert.strictEqual((await store.list('rl/')).length, 0);
-        assert.strictEqual((await fresh.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '8.8.8.8')).status, 200);
+        assert.strictEqual((await store.list('rk/')).length, 0);
     });
     await test('a store that only returns plain keys (no etags) still works and still notices changes', async () => {
         const plain = makeStore();
@@ -667,25 +670,47 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(r.status, 500);
     });
     console.log('\nincident-core: v0.19.9 stress test fixes (v0.19.10)');
-    await test('guesses spread over many addresses (one try each) stop at 500 a day; linked phones still get in', async () => {
-        let t0 = clock;
+    // Starts each of these tests at 01:00 UTC, so a whole run of guesses falls in one calendar day.
+    const dayStart = (t) => (Math.floor(t / 864e5) + 1) * 864e5 + 3600e3;
+    await test('v0.19.11: guesses spread over many addresses stop at 400 a day; then new addresses are refused but linked phones carry on', async () => {
+        let t0 = dayStart(clock);
         const c = createCore({ store: makeStore(), now: () => t0 });
         const inc = await mk(c);
         const j = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'DEVB' }), '3.3.3.3');
         let checked = 0;
-        const start = t0;
-        // 600 guesses, each from a new address, spread over 2 hours so the 15-minute counts keep resetting.
         for (let i = 0; i < 600; i++) {
             t0 += 12 * 1000;
             const r = await c.handle('GET', `/api/incident/${inc.code}`, H(String(200000 + i)), '', '30.' + Math.floor(i / 250) + '.' + Math.floor(i / 250) + '.' + (i % 250));
             if (r.status === 401) checked++;
         }
-        assert.ok(checked <= 500, `${checked} guesses were checked`);
-        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '31.1.1.1')).status, 429, 'past the day limit a clean address does not get its one try');
+        assert.ok(checked <= 400, `${checked} guesses were checked`);
+        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '31.1.1.1')).status, 429, 'once the one-try addresses have used up their 100, a new address waits too');
         const linked = await c.handle('PUT', `/api/incident/${inc.code}/records`, Object.assign(H(inc.pin), { 'x-incident-key': j.body.accessKey }), JSON.stringify({ deviceId: 'DEVB', records: [rec('l1', 'L-1', 'P2', { updatedAt: t0 })] }), '3.3.3.3');
         assert.strictEqual(linked.status, 200, 'a linked phone carries on');
-        t0 = start + 24 * 60 * 60 * 1000 + 13 * 1000;
-        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '31.1.1.1')).status, 200, 'a day later the count has gone');
+        t0 = dayStart(t0);
+        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '31.1.1.1')).status, 200, 'the next day the counts start again');
+    });
+    await test('v0.19.11: one address guessing all day cannot keep a new phone or commander screen out', async () => {
+        let t0 = dayStart(clock);
+        const c = createCore({ store: makeStore(), now: () => t0 });
+        const inc = await mk(c);
+        const linked = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'SAME' }), '40.1.1.1');
+        // 25 wrong PINs every 15 minutes from one address for 5 hours: 500 wrong, past the day's 300.
+        for (let w = 0; w < 20; w++) { for (let i = 0; i < 25; i++) await c.handle('GET', `/api/incident/${inc.code}`, H(String(300000 + w * 25 + i)), '', '40.1.1.1'); t0 += 15 * 60 * 1000; }
+        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.pin), '', '40.1.1.1')).status, 429, 'the guessing address is held up even with the right PIN');
+        const sameAddr = await c.handle('PUT', `/api/incident/${inc.code}/records`, Object.assign(H(inc.pin), { 'x-incident-key': linked.body.accessKey }), JSON.stringify({ deviceId: 'SAME', records: [] }), '40.1.1.1');
+        assert.strictEqual(sameAddr.status, 200, 'a linked phone behind the same address (e.g. a mobile network) carries on');
+        assert.strictEqual((await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'NEW1' }), '41.1.1.1')).status, 200, 'a new phone joins');
+        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '42.1.1.1')).status, 200, 'a new commander screen opens');
+    });
+    await test('v0.19.11: 1,200 wrong PINs sent at once through two server copies are all counted', async () => {
+        const t0 = dayStart(clock);
+        const store = makeStore({ jitter: 5 });
+        const a = createCore({ store, now: () => t0 }), b = createCore({ store, now: () => t0 });
+        const inc = await mk(a);
+        const st = (await Promise.all(Array.from({ length: 1200 }, (_, i) => (i % 2 ? a : b).handle('GET', `/api/incident/${inc.code}`, H(String(400000 + i)), '', '50.' + Math.floor(i / 250) + '.1.' + (i % 250))))).map(r => r.status);
+        const checked = st.filter(x => x === 401).length;
+        assert.ok(checked <= 400, `${checked} of 1,200 guesses were checked`);
     });
     await test('addresses in the same IPv6 /64 block share one wrong-PIN count', async () => {
         const c = createCore({ store: makeStore(), now: () => clock });
@@ -708,6 +733,19 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(g.body.records[0].category, 'P1');
         assert.ok(!g.body.records[0].clockSkewMs, 'a skew under a minute is corrected but not labelled');
     });
+    await test('v0.19.11: a report delivered 5 seconds late is not taken as a wrong clock, so it does not overwrite a later change', async () => {
+        const c = createCore({ store: makeStore(), now: () => clock });
+        const inc = await mk(c);
+        await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'DEVB' }), '3.3.3.3');
+        const sentAt = clock;          // phone A (right clock) records P3 and sends it; the network holds it up
+        clock += 2000;                 // phone B (right clock) records P1 two seconds later; it arrives at once
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVB', clientNow: clock, records: [rec('n1', 'N-1', 'P1', { updatedAt: clock })] }), '3.3.3.3');
+        clock += 3000;                 // phone A's report arrives 5 seconds after it was sent
+        const a = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', clientNow: sentAt, records: [rec('n1', 'N-1', 'P3', { updatedAt: sentAt })] }), '1.1.1.1');
+        assert.strictEqual(a.body.kept, 1);
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '2.2.2.2');
+        assert.strictEqual(g.body.records.find(r => r.uid === 'n1').category, 'P1');
+    });
     await test('two commander screens adding and removing map markings at the same moment keep every change', async () => {
         const c = createCore({ store: makeStore({ jitter: 10 }), now: () => clock });
         const inc = await mk(c);
@@ -726,6 +764,19 @@ function rec(uid, id, category, extra) {
         await c.handle('POST', `/api/incident/${inc.code}/marks`, CH, JSON.stringify({ by: 'Old screen', marks: [{ id: 'm3', type: 'hazard', lat: 52.42, lng: -1.9 }] }), '2.2.2.2');
         const g2 = await c.handle('GET', `/api/incident/${inc.code}`, CH, '', '2.2.2.2');
         assert.deepStrictEqual(g2.body.marks.map(m => m.id), ['m3']);
+    });
+    await test('v0.19.11: markings added at the same moment never take the map past its limit', async () => {
+        const store = makeStore({ jitter: 10 });
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        const CH = H(inc.commanderPin);
+        for (let i = 0; i < 28; i++) await c.handle('POST', `/api/incident/${inc.code}/marks`, CH, JSON.stringify({ by: 'Silver', add: [{ id: 'f' + i, type: 'hazard', lat: 52 + i / 100, lng: -1.9 }] }), '2.2.2.2');
+        const st = (await Promise.all(Array.from({ length: 6 }, (_, i) => c.handle('POST', `/api/incident/${inc.code}/marks`, CH, JSON.stringify({ by: 'Silver', add: [{ id: 'x' + i, type: 'rvp', lat: 53 + i / 100, lng: -1.9 }] }), '2.2.2.' + (10 + i))))).map(r => r.status);
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, CH, '', '2.2.2.2');
+        const stored = (await store.list(`i/${inc.code}/mk/`)).length;
+        assert.ok(stored <= 30, `${stored} markings stored`);
+        assert.strictEqual(g.body.marks.length, stored, 'none is hidden');
+        assert.ok(st.filter(x => x === 409).length >= 4, JSON.stringify(st));
     });
     await test('a phone that already has the markings is not sent them again; a change is sent', async () => {
         const c = createCore({ store: makeStore(), now: () => clock });
@@ -758,7 +809,7 @@ function rec(uid, id, category, extra) {
         assert.deepStrictEqual(g.body.marks.map(m => m.id), ['old2']);
         assert.strictEqual(g.body.decisions.length, 2);
     });
-    await test('the decision log is pruned to its newest 200 entries', async () => {
+    await test('v0.19.11: the commander screen gets the newest 200 decisions; none is deleted', async () => {
         const store = makeStore();
         const c = createCore({ store, now: () => clock });
         const inc = await mk(c);
@@ -767,7 +818,7 @@ function rec(uid, id, category, extra) {
         const g = await c.handle('GET', `/api/incident/${inc.code}`, CH, '', '2.2.2.2');
         assert.strictEqual(g.body.decisions.length, 200);
         assert.strictEqual(g.body.decisions[199].by, 'Dr 259');
-        assert.strictEqual((await store.list(`i/${inc.code}/dec/`)).length, 200);
+        assert.strictEqual((await store.list(`i/${inc.code}/dec/`)).length, 260);
     });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);

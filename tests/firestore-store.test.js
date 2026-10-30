@@ -47,7 +47,12 @@ function fakeFirestore() {
                     if (/[/]/.test(id) || id === '.' || id === '..' || /^__.*__$/.test(id)) throw new Error('invalid document id ' + id);
                     return {
                         async get() { return snap(docs.has(id) ? JSON.parse(docs.get(id)) : null); },
-                        async set(data) { docs.set(id, JSON.stringify(data)); },
+                        // set(data, { merge: true }) merges maps and applies increment sentinels, as the real client does.
+                        async set(data, o) {
+                            if (!(o && o.merge)) { docs.set(id, JSON.stringify(data)); return; }
+                            const merge = (cur, add) => { const out = Object.assign({}, cur || {}); Object.keys(add).forEach(f => { const v = add[f]; if (v && typeof v === 'object' && '__inc' in v) out[f] = ((typeof out[f] === 'number' ? out[f] : 0) + v.__inc); else if (v && typeof v === 'object' && !Array.isArray(v)) out[f] = merge(out[f], v); else out[f] = v; }); return out; };
+                            docs.set(id, JSON.stringify(merge(docs.has(id) ? JSON.parse(docs.get(id)) : {}, data)));
+                        },
                         async delete() { docs.delete(id); },
                     };
                 },
@@ -68,7 +73,8 @@ if (emulator) {
 } else {
     db = fakeFirestore();
 }
-const fresh = () => firestoreStore(db, { collection: 't_' + crypto.randomBytes(6).toString('hex') });
+const fakeFieldValue = { increment: (n) => ({ __inc: n }) };
+const fresh = () => firestoreStore(db, { collection: 't_' + crypto.randomBytes(6).toString('hex'), FieldValue: emulator ? undefined : fakeFieldValue });
 
 let passed = 0, failed = 0;
 async function test(name, fn) {
@@ -125,6 +131,15 @@ async function test(name, fn) {
         await s.set('i/BBB/r/1', { x: 99 });
         assert.notStrictEqual((await s.list('i/BBB/r/'))[0].etag, before);
         assert.deepStrictEqual(await s.list('nothing/'), []);
+    });
+    await test('counters add up when increments arrive together, and are read back in order', async () => {
+        const s = fresh();
+        await Promise.all(Array.from({ length: 50 }, () => s.incr('rk/AAA/1', { d: 1, w5: 1 })));
+        await s.incr('rk/AAA/1', { c: 2 });
+        const [a, missing] = await s.counts(['rk/AAA/1', 'rk/none/1']);
+        assert.deepStrictEqual(a, { d: 50, w5: 50, c: 2 });
+        assert.strictEqual(missing, null);
+        assert.deepStrictEqual((await s.list('rk/')).map(e => e.key), ['rk/AAA/1']);
     });
     await test('bulk read, write and delete keep the order and cross the batch limits (700 keys)', async () => {
         const s = fresh();

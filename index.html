@@ -2232,8 +2232,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.10';
-    const APP_BUILD = '2026-10-30-stress2';
+    const APP_VERSION = '0.19.11';
+    const APP_BUILD = '2026-10-31-retest';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -6358,7 +6358,10 @@
         if (!cmdActive()) return;
         if (CMD.inflight) { cmdSchedule(CMD_PUSH_DEBOUNCE_MS); return; }
         if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { CMD.lastError = 'offline'; cmdRenderStatus(); if (manual) showToast('No connection. Changes are queued and will be sent when signal returns.'); return; }
-        const uids = Array.from(CMD.dirty);
+        // A casualty set to Dead by hand is held back while its time-of-death box is open, so the commander never sees a
+        // Dead that is then undone (v0.19.10 retest). Reports and calls for help still go meanwhile.
+        const held = pendingDeadEntry && pendingDeadEntry.overrideUid;
+        const uids = Array.from(CMD.dirty).filter(u => u !== held);
         const batch = uids.map(u => incidentLog[indexByUid(u)]).filter(Boolean).slice(0, CMD_BATCH).map(e => { const c = MITTLib.clonePatientRecord(e); c.uid = e.uid; return c; });
         uids.forEach(u => { if (indexByUid(u) === -1) CMD.dirty.delete(u); });
         CMD.inflight = true;
@@ -6383,7 +6386,7 @@
                 CMD.failStreak = 0; CMD.lastError = '';
                 if (batch.length) logAudit('COMMANDER_PUSH', '-', `${batch.length} record(s) sent to commander ${CMD.cfg.code}: ${r.body.accepted || 0} accepted, ${r.body.kept || 0} already newer, ${(r.body.rejected || []).length} rejected`, Date.now(), { uids: batch.map(x => x.uid) });
                 if (manual) showToast(batch.length ? `Sent ${batch.length} record(s) to the commander.` : 'Commander is up to date.');
-                if (CMD.dirty.size) cmdSchedule(300);
+                if (Array.from(CMD.dirty).some(u => u !== held)) cmdSchedule(300);
             } else if (r.status === 410) {
                 // Only a clear "ended" or "expired" from the server unlinks the phone. A server or storage error
                 // (5xx) is retried: it used to read as "not found" and unlinked every phone (v0.19.5 test).

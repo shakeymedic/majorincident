@@ -1374,8 +1374,8 @@
     }
 
     // ---------- Reassessment scheduling ----------
-    // MITT P1/P2/P3 10/30/60 min are suggested timings, not from a published source (NHSE B0128 says "reassess
-    // regularly"); Jake confirmed them as suggested timings on 30 Oct 2026. Users can change them in Settings.
+    // MITT P1/P2/P3 10/30/60 min are suggested timings, not from a published source; Jake confirmed them as
+    // suggested timings on 30 Oct 2026. Users can change them in Settings.
     // Not Breathing (TST) is due immediately: reassessment by a healthcare responder as soon as possible (app wording,
     // not a quoted source; Jake confirmed 30 Oct 2026).
     // TST: NARU TST supplementary information (v1.0, April 2023) — re-triage "approximately every 15 minutes is a

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v49-2026-10-30-stress2';
+const CACHE_NAME = 'mit-triage-v50-2026-10-31-retest';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 // The printed-number reader (vendor/tesseract, ~10 MB, fetched on demand) is kept across app updates too,
@@ -116,7 +116,8 @@ self.addEventListener('fetch', event => {
         let servedStored = false;
         const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
         event.respondWith(Promise.race([fresh.catch(() => null), timeout]).then(set => {
-            if (set) return storeShellSet(set).then(() => isCommander ? set[2] : set[0]);
+            // A full phone store must not stop the app opening (v0.19.10 retest): the page is used even if storing fails.
+            if (set) return storeShellSet(set).catch(() => {}).then(() => isCommander ? set[2] : set[0]);
             servedStored = true;
             return caches.match(req).then(c => c || caches.match(isCommander ? './commander.html' : './index.html')).then(c => c || fetch(req));
         }));
