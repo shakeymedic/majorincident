@@ -1603,7 +1603,7 @@
 <div id="tod-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tod-title">
     <div class="modal-box">
         <h3 id="tod-title" style="margin-top:0;">MITT outcome: DEAD</h3>
-        <p>Not breathing after the airway was opened. Record the triage outcome now. Time of death is optional here — it can be declared when resources allow.</p>
+        <p id="tod-text">Not breathing after the airway was opened. Record the triage outcome now. Time of death is optional here — it can be declared when resources allow.</p>
         <div class="input-group">
             <label for="tod-input">Time of death (optional, 24h)</label>
             <input type="time" id="tod-input">
@@ -1612,7 +1612,7 @@
             <button class="btn btn-danger" onclick="confirmDeath('now')">Record DEAD — time now</button>
             <button class="btn btn-danger" onclick="confirmDeath('entered')">Record DEAD — time entered</button>
             <button class="btn btn-secondary" onclick="confirmDeath('none')">Record DEAD — no time yet</button>
-            <button class="btn btn-secondary" onclick="closeTodModal()">Back — change answer</button>
+            <button class="btn btn-secondary" id="tod-back" onclick="closeTodModal()">Back — change answer</button>
         </div>
     </div>
 </div>
@@ -2232,8 +2232,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.9';
-    const APP_BUILD = '2026-10-30-wording';
+    const APP_VERSION = '0.19.10';
+    const APP_BUILD = '2026-10-30-stress2';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2315,7 +2315,7 @@
     let idMode = 'AUTO';
     let pendingReTriageUid = null;   // re-triage of an existing record (updated in place)
     let pendingCorrectionUid = null; // "change last answer" (updated in place)
-    let lastTriagePath = null;       // { uid, tool, path } for "change last answer"
+    let lastTriagePath = null;       // { uid, tool, path, ts } for "change last answer"
     let cachedCcsLocation = null;
     let reassessIntervals = {};
     let toolMode = 'TST';
@@ -3554,8 +3554,7 @@
     function logResult(category, action, reason, lastAnswer) {
         if (category === 'DEAD') {
             pendingDeadEntry = { category, action, reason, lastAnswer };
-            $('tod-input').value = '';
-            $('tod-modal').style.display = 'flex';
+            openTodModal();
             return;
         }
         completeLogResult({ category, action, reason });
@@ -3585,10 +3584,35 @@
         }
         completeLogResult({ category: p.category, action: p.action + (tod ? ` Time of death ${tod}.` : ' Time of death not yet recorded.'), reason: p.reason, tod });
     }
+    // The time-of-death box. From the MITT questions it follows "not breathing after the airway was opened"; after
+    // Dead is chosen by hand it says so instead, and Back undoes the change (v0.19.9 stress test: the MITT wording was
+    // shown, and Back left the casualty Dead with no time and nothing in the audit trail).
+    function openTodModal(byHand) {
+        $('tod-input').value = '';
+        setText('tod-title', byHand ? `${byHand.id}: category set to DEAD` : 'MITT outcome: DEAD');
+        setText('tod-text', byHand ? 'Category set by hand. Record the time of death if you know it. It is optional here — it can be declared when resources allow.' : 'Not breathing after the airway was opened. Record the triage outcome now. Time of death is optional here — it can be declared when resources allow.');
+        setText('tod-back', byHand ? `Back — undo, keep ${catShort(byHand.prev.category)}` : 'Back — change answer');
+        $('tod-modal').style.display = 'flex';
+    }
     function closeTodModal() {
         $('tod-modal').style.display = 'none';
-        if (pendingDeadEntry && !pendingDeadEntry.overrideUid && stepHistory.length) stepHistory.pop(); // stay on the breathing question
+        const p = pendingDeadEntry;
         pendingDeadEntry = null;
+        if (p && p.overrideUid) { undoManualDead(p); return; }
+        if (p && stepHistory.length) stepHistory.pop(); // stay on the breathing question
+    }
+    function undoManualDead(p) {
+        const i = indexByUid(p.overrideUid);
+        if (i < 0) return;
+        const entry = incidentLog[i];
+        if (entry.category !== 'DEAD') return;
+        const prev = p.prev;
+        Object.assign(entry, { category: prev.category, action: prev.action, reason: prev.reason, tod: prev.tod, lastReassessed: prev.lastReassessed, reassessOutcome: prev.reassessOutcome, lastDeteriorationAt: prev.lastDeteriorationAt });
+        entry.triageHistory = (entry.triageHistory || []).concat([{ ts: Date.now(), category: prev.category, reason: 'Manual change to Dead undone', tool: entry.tool, by: triagerName, kind: 'override' }]);
+        touch(entry, ['category', 'action', 'reason', 'tod']);
+        logAudit('CATEGORY_CHANGE_UNDONE', entry.id, `Manual change to Dead undone: back to ${catShort(prev.category)}`, Date.now(), { uid: entry.uid });
+        saveState(); updateDashboard();
+        if (entry === currentEntry()) renderResultScreen(entry, { keepDetailsOpen: true });
     }
     function completeLogResult({ category, action, reason, tod }) {
         const now = Date.now();
@@ -3605,7 +3629,7 @@
             const prev = entry.category;
             // Whatever route led here (scanned tag, typed ID, log), a non-clinician cannot re-triage a casualty out
             // of Not breathing, Dead or P1 Hold.
-            const rt = kind === 'retriage' ? MITTLib.canReTriage(userRole, prev) : { ok: true };
+            const rt = kind === 'retriage' ? MITTLib.canReTriage(userRole, prev) : MITTLib.canCorrect(userRole, prev, correctionStillLatest(entry));
             if (!rt.ok && category !== prev) {
                 logAudit('RETRIAGE_REFUSED', entry.id, `${currentTool}: ${catShort(prev)} -> ${catShort(category)} not saved (needs a healthcare professional)`, now, { uid: entry.uid });
                 currentLogIndex = idx;
@@ -3624,7 +3648,7 @@
             logAudit(kind === 'correction' ? 'TRIAGE_CORRECTED' : 'RETRIAGE_COMPLETE', entry.id, `${currentTool}: ${catShort(prev)} -> ${catShort(category)} (${reason})${kind === 'correction' ? ' — operator changed last answer' : ''}`, now, { uid: entry.uid });
             // Correcting a mis-tap is not the casualty getting worse, so it is not flagged as deteriorating (v0.19.5 test).
             if (kind !== 'correction' && MITTLib.categoryWorsened(prev, category)) { entry.lastDeteriorationAt = now; logAudit('DETERIORATION', entry.id, `Worsened ${catShort(prev)} -> ${catShort(category)}`, now, { uid: entry.uid }); triggerHaptic('alert'); }
-            lastTriagePath = { uid: entry.uid, tool: currentTool, path: stepHistory.slice() };
+            lastTriagePath = { uid: entry.uid, tool: currentTool, path: stepHistory.slice(), ts: now };
             saveState(); updateDashboard(); renderResultScreen(entry);
             return;
         }
@@ -3651,12 +3675,19 @@
         const used = MITTLib.nextAutoId(idPrefix(), currentTool, patientCounter, incidentLog.filter(e => e !== entry).map(e => e.id));
         if (idMode === 'AUTO' && used.id === entry.id) patientCounter = used.counter + 1;
         logAudit('TRIAGE_COMPLETE', entry.id, `${currentTool}: ${catShort(category)} (${reason})${pos ? '' : '; no fresh GPS'}${tod ? '; time of death ' + tod : ''}`, now, { uid });
-        lastTriagePath = { uid, tool: currentTool, path: stepHistory.slice() };
+        lastTriagePath = { uid, tool: currentTool, path: stepHistory.slice(), ts: now };
         saveState(); updateDashboard(); renderResultScreen(entry);
+    }
+    // Is the triage this phone last saved still the casualty's latest entry (nothing recorded for them since)?
+    function correctionStillLatest(entry) {
+        const h = (entry && entry.triageHistory) || [];
+        return !!lastTriagePath && lastTriagePath.uid === entry.uid && !!h.length && h[h.length - 1].ts === lastTriagePath.ts && !((entry.lastReassessed || 0) > lastTriagePath.ts);
     }
     function changeLastAnswer() {
         const entry = currentEntry();
         if (!entry || !lastTriagePath || lastTriagePath.uid !== entry.uid || !lastTriagePath.path.length) return;
+        const rt = MITTLib.canCorrect(userRole, entry.category, correctionStillLatest(entry));
+        if (!rt.ok) { showBlockingError('Clinician needed', rt.why); return; }
         currentTool = lastTriagePath.tool;
         stepHistory = lastTriagePath.path.slice(0, -1);
         const lastStep = lastTriagePath.path[lastTriagePath.path.length - 1];
@@ -3712,7 +3743,8 @@
         setText('tag-label', catLabel(entry.category) + (entry.tool ? ` • ${entry.tool}` : ''));
         applyCategoryStyle(tag, entry);
         $('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
-        // TST patients should be reassessed with MITT as soon as possible (NHS England); a reminder for clinicians.
+        // TST patients should be reassessed with MITT as soon as possible; a reminder for clinicians (app wording; the
+        // earlier "NHS England" credit was not confirmed against a published document, v0.19.9 stress test).
         const tstHcp = userRole === 'HCP' && entry.tool === 'TST' && entry.category !== 'DEAD';
         $('action-box').textContent = (entry.action || '') + (tstHcp ? ' Reassess with MITT as soon as possible.' : '');
         $('btn-mitt-now').style.display = tstHcp ? 'block' : 'none';
@@ -3910,6 +3942,7 @@
         const newCat = $('p-cat-override').value;
         const oldCat = entry.category;
         if (newCat === oldCat) return;
+        const before = { category: oldCat, action: entry.action, reason: entry.reason, tod: entry.tod || '', lastReassessed: entry.lastReassessed, reassessOutcome: entry.reassessOutcome, lastDeteriorationAt: entry.lastDeteriorationAt };
         if (newCat === 'P1_HOLD' && userRole === 'HCP' && !p1HoldAllowedHere()) { showBlockingError('P1 Hold not in use', 'P1 Hold is not nationally signed off. It can only be used once the incident commander allows it for this incident on the commander screen.'); $('p-cat-override').value = oldCat; return; }
         const perm = MITTLib.canChangeCategory(userRole, oldCat, newCat);
         if (!perm.ok) { showBlockingError('Clinician decision', perm.why); $('p-cat-override').value = oldCat; return; }
@@ -3936,7 +3969,7 @@
         } else logAudit('CATEGORY_CHANGE', entry.id, `Changed ${catShort(oldCat)} -> ${catShort(newCat)} (manual)`, Date.now(), { uid: entry.uid });
         saveState(); updateDashboard();
         renderResultScreen(entry, { keepDetailsOpen: true });
-        if (newCat === 'DEAD' && !entry.tod) { pendingDeadEntry = { overrideUid: entry.uid }; $('tod-input').value = ''; $('tod-modal').style.display = 'flex'; }
+        if (newCat === 'DEAD' && !entry.tod) { pendingDeadEntry = { overrideUid: entry.uid, prev: before }; openTodModal({ id: entry.id, prev: before }); }
     }
     function onHighRiskChange() {
         const entry = currentEntry();
@@ -6331,7 +6364,7 @@
         CMD.inflight = true;
         try {
             const duressSent = CMD.cfg.duress ? Object.assign({}, CMD.cfg.duress) : null;
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, clientNow: Date.now(), triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length - (CMD.cfg.skip ? incidentLog.filter(e => cmdHeld(e.uid)).length : 0), records: batch, sector: currentSector || '', userRole: userRole || undefined, commander: !!CMD.cfg.commander, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, clientNow: Date.now(), triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length - (CMD.cfg.skip ? incidentLog.filter(e => cmdHeld(e.uid)).length : 0), records: batch, sector: currentSector || '', userRole: userRole || undefined, commander: !!CMD.cfg.commander, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload(), marksAt: CMD.cfg.marksAt || 0 } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
                 cmdHandleDuressReply(r.body.duress, duressSent);
@@ -6622,6 +6655,9 @@
         cmdRenderStatus();
     }
     async function cmdAskPositionShare() {
+        if (ls('mit_share_pos_asked') === '1' || !cmdActive()) return;
+        // Not on top of the time-of-death box (v0.19.9 stress test): asked once that is answered.
+        while ($('tod-modal').style.display === 'flex') await new Promise(r => setTimeout(r, 1000));
         if (ls('mit_share_pos_asked') === '1' || !cmdActive()) return;
         const ok = await inAppConfirm({ title: 'Share your position with the commander?', message: `Your phone's position (not your patients') would go with each report, about once a minute, so the commander can see where each triager is on their map.\n\nOnly people with this incident's code and PIN can see it, and it is deleted with the incident. You can turn it on or off at any time in Settings → Share live.`, okLabel: 'Share my position', cancelLabel: 'Not now' });
         setPosShare(!!ok, ok ? 'asked when linking' : 'declined when linking');

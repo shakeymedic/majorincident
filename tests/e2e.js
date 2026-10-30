@@ -1745,11 +1745,28 @@ async function test(name, fn) {
         await N.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
         await N.click('#confirm-ok');
         assert.strictEqual(await N.evaluate((u) => incidentLog.find(e => e.uid === u).category, uid), 'NOT_BREATHING');
+        // v0.19.10: "Change the last answer" fixes this phone's own just-saved triage, but once anything newer is
+        // recorded for the casualty a non-clinician is refused, as for re-triage.
+        assert.strictEqual(await N.evaluate(() => correctionStillLatest(currentEntry())), true);
+        await N.evaluate(() => { currentEntry().lastReassessed = Date.now() + 1000; changeLastAnswer(); });
+        await N.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
+        assert.match(await N.textContent('#confirm-message'), /healthcare professional/);
+        await N.click('#confirm-ok');
+        assert.strictEqual(await N.evaluate(() => pendingCorrectionUid), null, 'no correction started');
         await N._ctx.close();
         // Clinician sets Dead by hand: asked for a time of death
         const M = await device('v0198b', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
         await setup(M, 'Dr Papa', 'HCP');
         await triage(M, 'TST', [false, false, false, false]);
+        await M.evaluate(() => { document.getElementById('p-cat-override').value = 'DEAD'; onCategoryOverride(); });
+        await page_visible(M, '#tod-modal');
+        // v0.19.10: the box says Dead was set by hand (not the MITT airway wording), and Back undoes the change
+        assert.match(await M.textContent('#tod-title'), /set to DEAD/);
+        assert.doesNotMatch(await M.textContent('#tod-text'), /airway/);
+        assert.match(await M.textContent('#tod-back'), /undo, keep Not/i);
+        await M.evaluate(() => closeTodModal());
+        assert.strictEqual(await M.evaluate(() => currentEntry().category), 'NOT_BREATHING');
+        assert.ok(await M.evaluate(() => auditLog.some(a => a.action === 'CATEGORY_CHANGE_UNDONE')));
         await M.evaluate(() => { document.getElementById('p-cat-override').value = 'DEAD'; onCategoryOverride(); });
         await page_visible(M, '#tod-modal');
         await M.evaluate(() => confirmDeath('now'));

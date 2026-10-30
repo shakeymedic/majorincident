@@ -4,7 +4,8 @@
 // store derives one from the content). The etags are what tell a commander screen whether anything changed.
 // Every value is a plain JSON object. Keys: i/<CODE>/meta, i/<CODE>/r/<uid>, i/<CODE>/d/<deviceId>,
 // i/<CODE>/policy and i/<CODE>/marks (commander decisions, kept apart from the meta so a phone's report can never
-// write an older copy back over them), i/<CODE>/dc/<deviceId> (a call for help cleared by the commander),
+// write an older copy back over them; from v0.19.8 i/<CODE>/pol/<field> and i/<CODE>/dec/<entry>, and from v0.19.10
+// i/<CODE>/mk/<markId> with i/<CODE>/pol/marks for when they last changed), i/<CODE>/dc/<deviceId> (a call for help cleared by the commander),
 // t/<CODE> (an ended incident's tombstone), rl/<client>, rc/<client> (incidents created), rk/<CODE> (wrong PINs per incident).
 'use strict';
 const crypto = require('crypto');
@@ -27,13 +28,23 @@ const EXPIRED_MSG = 'This incident has expired (24 hours with no new information
 const TOMBSTONE_MS = 48 * 60 * 60 * 1000;
 const RATE_MAX_FAILURES = 25;                 // wrong PINs per client per window
 const CODE_MAX_FAILURES = 100;                // wrong PINs per incident per window, from anyone without that incident's key
+// Wrong PINs per incident per day, from anywhere. Past this only phones and screens already holding the incident's
+// key get in (v0.19.9 stress test: with one try per clean address, guesses spread over many addresses were never
+// stopped). 500 guesses a day against 3 PINs out of 1,000,000 is at most a 0.15% chance a day of hitting one.
+const CODE_DAY_MAX_FAILURES = 500;
+const CODE_DAY_MS = 24 * 60 * 60 * 1000;
 const CREATE_WINDOW_MS = 60 * 60 * 1000;
 const CREATE_MAX = 10;                        // incidents created per client per hour
-const CLOCK_SKEW_MS = 60 * 1000;              // phone clocks further out than this are corrected
+const CLOCK_FIX_MS = 2 * 1000;                // phone clocks further out than this are corrected (v0.19.9 stress test:
+                                              // a phone up to 60 s slow could lose a genuine update)
+const CLOCK_SKEW_MS = 60 * 1000;              // ...and further out than this, the record is labelled with the skew
 const STALE_DEVICE_MS = 5 * 60 * 1000;
 const READ_BATCH = 25;                        // blobs fetched at once when the commander screen reads
 const METHANE_FIELD_MAX = 600;
 const MAX_LOOKUP_RESULTS = 5;
+// Phones on v0.19.7 or earlier do not use device keys, so anyone with the triagers' PIN could send or rename under
+// their device code (v0.19.9 stress test). From v0.19.10 they are asked to update instead of joining unkeyed.
+const OLD_APP_MSG = 'This phone has an old version of the app. Close the app fully and open it again (with signal) to update it, then join again.';
 const ORDER = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
 
 function randomCode(rng) {
@@ -67,6 +78,19 @@ function cleanPosition(p, t) {
     const acc = num(p.acc !== undefined ? p.acc : p.accuracy);
     if (acc !== null && acc >= 0) out.acc = Math.round(acc);
     return out;
+}
+// The address used for the wrong-PIN counts. An IPv6 user is usually given a whole /64 block, so the block is
+// counted as one address (v0.19.9 stress test); IPv4 addresses (also when written as ::ffff:a.b.c.d) count singly.
+function rateClient(ip) {
+    const s = String(ip || 'unknown').trim().toLowerCase();
+    const v4 = /^(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s);
+    if (v4) return v4[1];
+    if (s.indexOf(':') === -1) return s;
+    const [head, tail] = s.split('::');
+    const h = head ? head.split(':') : [];
+    const t = tail !== undefined && tail ? tail.split(':') : [];
+    const full = tail === undefined ? h : h.concat(Array(Math.max(0, 8 - h.length - t.length)).fill('0'), t);
+    return full.slice(0, 4).map(x => (x || '0').replace(/^0+(?=.)/, '')).join(':') + '::/64';
 }
 function shortHash(s) { return crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 16); }
 // list() entries as { key, etag } whatever the store returned.
@@ -118,7 +142,8 @@ function createCore(opts) {
     // written in the same millisecond), then a few random characters (two servers at once).
     let decSeq = 0;
     const decKey = (code, at) => keyDec(code, at.toString(36).padStart(9, '0') + '-' + String(++decSeq).padStart(6, '0') + '-' + crypto.randomBytes(2).toString('hex'));
-    const keyMarks = (code) => `i/${code}/marks`;
+    const keyMarks = (code) => `i/${code}/marks`;               // pre-v0.19.10 incidents: every marking in one document
+    const keyMark = (code, id) => `i/${code}/mk/${id}`;         // v0.19.10: one document per marking (two screens at once lose nothing)
     const keyClear = (code, id) => `i/${code}/dc/${id}`;
     const keyTomb = (code) => `t/${code}`;
     const keyCodeFail = (code) => `rk/${code}`;
@@ -166,13 +191,31 @@ function createCore(opts) {
         const f = noteFailureNow(failures, client);
         try { await store.set(keyRate(client), f); } catch (e) {}
     }
-    const codeFailures = new Map(); // incident code -> { count, since }
+    const codeFailures = new Map(); // incident code -> { count, since, dayCount, daySince }
     const creates = new Map();      // rc/<client> -> { count, since }
+    // Per incident: wrong PINs in the last 15 minutes (count) and in the last day (dayCount), each with its own start.
+    function freshCodeCount(f) {
+        if (!f) return null;
+        const t = now();
+        const out = { count: f.count || 0, since: f.since || 0, dayCount: f.dayCount || 0, daySince: f.daySince || 0 };
+        if (t - out.since > RATE_WINDOW_MS) { out.count = 0; out.since = 0; }
+        if (t - out.daySince > CODE_DAY_MS) { out.dayCount = 0; out.daySince = 0; }
+        return out.count || out.dayCount ? out : null;
+    }
     async function readCodeFailures(code) {
-        let f = codeFailures.get(code) || null;
-        try { const s = await store.get(keyCodeFail(code)); if (s && (!f || (s.count || 0) > f.count)) f = { count: s.count || 0, since: s.since || 0 }; } catch (e) {}
-        if (f && now() - f.since > RATE_WINDOW_MS) f = null;
+        let f = freshCodeCount(codeFailures.get(code));
+        try {
+            const s = freshCodeCount(await store.get(keyCodeFail(code)));
+            if (s) f = f ? { count: Math.max(f.count, s.count), since: f.count >= s.count ? f.since : s.since, dayCount: Math.max(f.dayCount, s.dayCount), daySince: f.dayCount >= s.dayCount ? f.daySince : s.daySince } : s;
+        } catch (e) {}
         if (f) codeFailures.set(code, f); else codeFailures.delete(code);
+        return f;
+    }
+    function noteCodeFailureNow(code) {
+        const t = now();
+        const cur = freshCodeCount(codeFailures.get(code)) || { count: 0, since: 0, dayCount: 0, daySince: 0 };
+        const f = { count: cur.count + 1, since: cur.count ? cur.since : t, dayCount: cur.dayCount + 1, daySince: cur.dayCount ? cur.daySince : t };
+        codeFailures.set(code, f);
         return f;
     }
 
@@ -220,19 +263,23 @@ function createCore(opts) {
         else if (h && safeEqual(h, meta.pinHash)) level = meta.cmdHash ? 'member' : 'commander';
         else if (h && meta.viewHash && safeEqual(h, meta.viewHash)) level = 'view';
         // Incident-wide lock-out after many wrong PINs from anywhere. Still let through: a phone or screen whose key
-        // covers the PIN it presents, and an address with no wrong PINs of its own in this window (so strangers'
-        // guesses cannot keep a new commander screen or a re-joining phone out; each address then gets one try).
-        const cf = codeFailures.get(code);
-        if (cf && now() - cf.since <= RATE_WINDOW_MS && cf.count >= CODE_MAX_FAILURES) {
+        // covers the PIN it presents, and, until the day's limit is reached, an address with no wrong PINs of its own
+        // in this window (so strangers' guesses cannot keep a new commander screen or a re-joining phone out; each
+        // address then gets one try). Past the day's limit only the key gets in, however many addresses are guessing.
+        const cf = freshCodeCount(codeFailures.get(code));
+        const dayLocked = !!cf && cf.dayCount >= CODE_DAY_MAX_FAILURES;
+        if (cf && (cf.count >= CODE_MAX_FAILURES || dayLocked)) {
             const kl = keyLevel(meta, key);
             const keyCovers = !!kl && !!level && LEVEL_RANK[level] <= LEVEL_RANK[kl];
-            const cleanAddress = !mineNow || now() - mineNow.since > RATE_WINDOW_MS || !mineNow.count;
-            if (!keyCovers && !cleanAddress) return error(429, 'rate_limited', 'Too many wrong PINs have been tried for this incident. Phones already linked carry on; others can try again in 15 minutes.');
+            const cleanAddress = !dayLocked && (!mineNow || now() - mineNow.since > RATE_WINDOW_MS || !mineNow.count);
+            if (!keyCovers && !cleanAddress) return error(429, 'rate_limited', dayLocked
+                ? 'Too many wrong PINs have been tried for this incident today. Phones and screens already linked carry on. To add another phone, pass the casualties on with Hand over, or start a new incident.'
+                : 'Too many wrong PINs have been tried for this incident. Phones already linked carry on; others can try again in 15 minutes.');
         }
         if (!level) {
             // Every wrong PIN counts, whoever sends it and whatever key it carries.
             noteFailureNow(failures, client);
-            const cfNow = noteFailureNow(codeFailures, code);
+            const cfNow = noteCodeFailureNow(code);
             try { await store.set(keyRate(client), failures.get(client)); await store.set(keyCodeFail(code), cfNow); } catch (e) {}
             return refused();
         }
@@ -247,7 +294,9 @@ function createCore(opts) {
     // transaction retries tried first took longer than a function is allowed). Older incidents' single document is
     // still read underneath.
     async function loadPolicyFields(code, meta) {
-        const [legacy, p1, mitt] = await getEach(store, [keyPolicy(code), keyPol(code, 'p1hold'), keyPol(code, 'mitt')]);
+        // Incidents made from v0.19.10 (meta.v 2) never have the older single document, so it is not read (fewer reads per report).
+        const fresh = (meta && meta.v) >= 2;
+        const [p1, mitt, legacy] = await getEach(store, fresh ? [keyPol(code, 'p1hold'), keyPol(code, 'mitt')] : [keyPol(code, 'p1hold'), keyPol(code, 'mitt'), keyPolicy(code)]);
         const base = legacy ? { policy: legacy.policy || {}, policyAt: legacy.policyAt || 0, decisions: legacy.decisions || [] } : { policy: meta.policy || {}, policyAt: meta.policyAt || 0, decisions: [] };
         const policy = Object.assign({}, base.policy);
         let policyAt = base.policyAt;
@@ -264,9 +313,32 @@ function createCore(opts) {
         const decisions = f.legacyDecisions.concat(fromDocs).slice(-DECISIONS_MAX);
         return { policy: f.policy, policyAt: f.policyAt, decisions };
     }
-    async function loadMarks(code, meta) {
+    // The map markings: one document per marking (v0.19.10) laid over the older single document, if there is one.
+    // When they last changed (and who changed them) is its own small document, so a phone's report only needs the
+    // markings themselves when that time differs from the one the phone already has.
+    async function loadMarksAt(code, meta) {
+        const st = await store.get(keyPol(code, 'marks'));
+        if (st) return { marksAt: st.at || 0, by: st.by || '' };
+        if ((meta && meta.v) >= 2) return { marksAt: 0, by: '' };
         const d = await store.get(keyMarks(code));
-        return d ? { marks: d.marks || [], marksAt: d.marksAt || 0, by: d.by || '' } : { marks: meta.marks || [], marksAt: meta.marksAt || 0, by: '' };
+        return d ? { marksAt: d.marksAt || 0, by: d.by || '' } : { marksAt: meta.marksAt || 0, by: '' };
+    }
+    async function loadMarks(code, meta, mkKeys) {
+        const fresh = (meta && meta.v) >= 2;
+        const keys = mkKeys || entries(await store.list(`i/${code}/mk/`)).map(e => e.key);
+        const vals = await getEach(store, [keyPol(code, 'marks')].concat(fresh ? [] : [keyMarks(code)], keys));
+        const st = vals[0];
+        const legacyDoc = fresh ? null : vals[1];
+        const own = vals.slice(fresh ? 1 : 2).filter(Boolean);
+        // Once an older incident's markings have been copied into their own documents, the older copy is ignored.
+        const older = (st && st.migrated) || fresh ? [] : (legacyDoc ? legacyDoc.marks || [] : meta.marks || []);
+        const byId = new Map();
+        older.forEach(m => { if (m && m.id) byId.set(m.id, m); });
+        own.forEach(m => { if (m && m.id) byId.set(m.id, m); });
+        const marks = lib.normaliseMapMarks(Array.from(byId.values()).sort((a, b) => ((a.at || 0) - (b.at || 0)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
+        const marksAt = st ? st.at || 0 : (legacyDoc ? legacyDoc.marksAt || 0 : (fresh ? 0 : meta.marksAt || 0));
+        const by = st ? st.by || '' : (legacyDoc ? legacyDoc.by || '' : '');
+        return { marks, marksAt, by };
     }
     // Meta changes are written onto a fresh copy, so two requests at once lose as little as possible.
     async function touchMeta(code, change) {
@@ -298,6 +370,7 @@ function createCore(opts) {
     async function create(body, client) {
         const deviceId = str(body.deviceId, 16);
         if (!deviceId) return error(400, 'bad_request', 'deviceId is required.');
+        if (body.keys !== true) return error(400, 'old_app', OLD_APP_MSG);
         // Anyone can start an incident (no account), so each client may create only a few an hour.
         const ck = `rc/${shortHash(rateSalt ? rateSalt + ':' + client : client)}`;
         let made = null;
@@ -320,9 +393,10 @@ function createCore(opts) {
         const [pin, commanderPin, viewPin] = pins;
         const salt = crypto.randomBytes(8).toString('hex');
         const t = now();
-        const meta = { code, salt, keySecret: crypto.randomBytes(16).toString('hex'), pinHash: hashPin(salt, pin), cmdHash: hashPin(salt, commanderPin), viewHash: hashPin(salt, viewPin), name: str(body.name, 80), incidentCode: lib.normaliseIncidentCode(body.incidentCode), training: !!body.training, createdAt: t, updatedAt: t, createdBy: { deviceId, triager: str(body.triager, 80) }, ccs: null, methane: null, seq: 1 };
+        // v: 2 marks an incident made from v0.19.10, which never has the older single decision or markings documents.
+        const meta = { v: 2, code, salt, keySecret: crypto.randomBytes(16).toString('hex'), pinHash: hashPin(salt, pin), cmdHash: hashPin(salt, commanderPin), viewHash: hashPin(salt, viewPin), name: str(body.name, 80), incidentCode: lib.normaliseIncidentCode(body.incidentCode), training: !!body.training, createdAt: t, updatedAt: t, createdBy: { deviceId, triager: str(body.triager, 80) }, ccs: null, methane: null, seq: 1 };
         await store.set(keyMeta(code), meta);
-        await store.set(keyDev(code, deviceId), Object.assign({ deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40) }, body.keys === true ? { keyed: true } : { oldApp: true }));
+        await store.set(keyDev(code, deviceId), Object.assign({ deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40), keyed: true }));
         log('created', code);
         return reply(201, { code, pin, commanderPin, viewPin, deviceKey: deviceKey(meta, deviceId), accessKey: accessKey(meta, 'commander'), createdAt: t, expiresAt: t + TTL_MS, ttlMs: TTL_MS });
     }
@@ -332,6 +406,7 @@ function createCore(opts) {
         if (a.status) return a;
         const deviceId = str(body.deviceId, 16);
         if (!deviceId) return error(400, 'bad_request', 'deviceId is required.');
+        if (body.keys !== true || !a.meta.keySecret) return error(400, 'old_app', OLD_APP_MSG);
         const existing = await store.get(keyDev(code, deviceId));
         if (!existing) {
             const devs = entries(await store.list(`i/${code}/d/`));
@@ -340,15 +415,12 @@ function createCore(opts) {
         const t = now();
         // A device code already used by a phone that holds its device key cannot be taken over by another phone.
         if (existing && existing.keyed && !(body.deviceKey && safeEqual(String(body.deviceKey), deviceKey(a.meta, deviceId)))) return error(409, 'device_taken', 'Another phone in this incident already uses this device code. Change the device code on this phone (⚙ Settings) and join again.');
-        // Phones on v0.19.5 or earlier do not know about device keys: they join unkeyed and are marked as an old app,
-        // so their casualties still arrive (they were all refused in the v0.19.7 stress test) and the commander
-        // screen can tell the user to update. A phone that sends keys: true gets a device key from now on.
-        const keyedNow = !!a.meta.keySecret && (body.keys === true || !!(existing && existing.keyed));
-        const devDoc = Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40) });
-        if (keyedNow) { devDoc.keyed = true; delete devDoc.oldApp; } else devDoc.oldApp = true;
+        // Every phone that joins gets a device key; a device code joined unkeyed before v0.19.10 is keyed from now on.
+        const devDoc = Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40), keyed: true });
+        delete devDoc.oldApp;
         await store.set(keyDev(code, deviceId), devDoc);
         log('joined', code, deviceId);
-        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, deviceKey: keyedNow ? deviceKey(a.meta, deviceId) : '', accessKey: accessKey(a.meta, a.level) });
+        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, deviceKey: deviceKey(a.meta, deviceId), accessKey: accessKey(a.meta, a.level) });
     }
 
     async function push(code, pin, body, client, key, devKey) {
@@ -358,11 +430,14 @@ function createCore(opts) {
         const deviceId = str(body.deviceId, 16);
         if (!deviceId) return error(400, 'bad_request', 'deviceId is required.');
         const devBefore = await store.get(keyDev(code, deviceId));
-        if (devBefore && devBefore.keyed && !(devKey && safeEqual(String(devKey), deviceKey(meta, deviceId)))) return error(403, 'device_key', 'This phone\'s link to the incident is out of date. Join the incident again.');
+        // Only a phone that has joined, and holds its device key, can send (v0.19.9 stress test: any device code,
+        // even one that never joined, could send or overwrite records; and a report without a join made an unlabelled phone).
+        if (!devBefore || !devBefore.keyed || !(devKey && safeEqual(String(devKey), deviceKey(meta, deviceId)))) return error(403, 'device_key', 'This phone\'s link to the incident is out of date. Join the incident again.');
         // Phone clocks can be wrong. updatedAt decides which copy of a record wins, so it is moved onto the
         // server's clock (by how far the phone's clock is out) and never allowed into the future.
         const skew = num(body.clientNow) !== null ? now() - num(body.clientNow) : 0;
-        const fixTime = (v) => { let x = num(v) || 0; if (Math.abs(skew) > CLOCK_SKEW_MS) x += skew; return Math.min(x, now()); };
+        const fixing = Math.abs(skew) > CLOCK_FIX_MS;
+        const fixTime = (v) => { let x = num(v) || 0; if (fixing) x += skew; return Math.min(x, now()); };
         const incoming = Array.isArray(body.records) ? body.records : [];
         if (incoming.length > MAX_RECORDS_PER_PUSH) return error(413, 'too_many_records', `Send at most ${MAX_RECORDS_PER_PUSH} records per request.`);
         const t = now();
@@ -377,7 +452,7 @@ function createCore(opts) {
             if (!rec) { rejected.push(raw && raw.uid ? String(raw.uid).slice(0, 64) : '?'); continue; }
             rec.updatedAt = fixTime(rec.updatedAt);
             // Triage and creation times are moved onto the server's clock too (v0.19.7 stress test).
-            if (Math.abs(skew) > CLOCK_SKEW_MS) { if (num(rec.timestamp)) rec.timestamp = fixTime(rec.timestamp); if (num(rec.createdAt)) rec.createdAt = fixTime(rec.createdAt); }
+            if (fixing) { if (num(rec.timestamp)) rec.timestamp = fixTime(rec.timestamp); if (num(rec.createdAt)) rec.createdAt = fixTime(rec.createdAt); }
             if (Math.abs(skew) > CLOCK_SKEW_MS) rec.clockSkewMs = Math.round(skew);
             if (seenUid.has(rec.uid)) { const i = cleaned.findIndex(x => x.uid === rec.uid); if ((rec.updatedAt || 0) >= (cleaned[i].updatedAt || 0)) cleaned[i] = rec; continue; }
             seenUid.add(rec.uid);
@@ -419,7 +494,7 @@ function createCore(opts) {
         }
         const methane = cleanMethane(body.methane);
         if (methane) { methane.sentAt = methane.timestamp; methane.timestamp = fixTime(methane.timestamp); }
-        const dev = (await store.get(keyDev(code, deviceId))) || devBefore || { deviceId, role: 'member', joinedAt: t, records: 0 };
+        const dev = (await store.get(keyDev(code, deviceId))) || devBefore;
         dev.triager = str(body.triager, 80) || dev.triager || '';
         dev.lastSeen = t;
         dev.app = str(body.app, 40) || dev.app || '';
@@ -465,9 +540,14 @@ function createCore(opts) {
                 if (newMethane && (!fresh.methane || newMethane.timestamp >= (fresh.methane.timestamp || 0))) fresh.methane = newMethane;
             })) || meta;
         }
-        const [pol, mk, clr] = await Promise.all([loadPolicyFields(code, m), loadMarks(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
-        // Map markings ride back on every push and heartbeat, so linked phones pick them up without another request.
-        return reply(200, { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: m.updatedAt + TTL_MS, marks: mk.marks, marksAt: mk.marksAt, policy: pol.policy, policyAt: pol.policyAt, duress: withClear(dev.duress, clr) || null, clockSkewMs: Math.round(skew) });
+        // Map markings ride back on reports and heartbeats, so linked phones pick them up without another request.
+        // A phone that says which markings it has (marksAt, from v0.19.10) gets them only when they have changed.
+        const phoneMarksAt = num(body.marksAt);
+        const [pol, mAt, clr] = await Promise.all([loadPolicyFields(code, m), loadMarksAt(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
+        const mk = phoneMarksAt !== null && phoneMarksAt === mAt.marksAt ? null : await loadMarks(code, m);
+        const out = { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: m.updatedAt + TTL_MS, marksAt: mk ? mk.marksAt : mAt.marksAt, policy: pol.policy, policyAt: pol.policyAt, duress: withClear(dev.duress, clr) || null, clockSkewMs: Math.round(skew) };
+        if (mk) out.marks = mk.marks;
+        return reply(200, out);
     }
 
     // What the commander screen has is identified by a fingerprint of the stored blobs (every record and device
@@ -485,7 +565,7 @@ function createCore(opts) {
         const all = entries(await store.list(`i/${code}/`));
         const recEntries = all.filter(e => e.key.startsWith(`i/${code}/r/`));
         const devEntries = all.filter(e => e.key.startsWith(`i/${code}/d/`));
-        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`) || e.key.startsWith(`i/${code}/pol/`) || e.key.startsWith(`i/${code}/dec/`));
+        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`) || e.key.startsWith(`i/${code}/pol/`) || e.key.startsWith(`i/${code}/dec/`) || e.key.startsWith(`i/${code}/mk/`));
         const seq = fingerprint(meta, recEntries, devEntries, extra) + (a.level === 'commander' ? 'c' : 'v');
         const etag = `"${seq}"`;
         // Netlify's edge rewrites the ETag it serves when it compresses the body ("2" becomes "2-df") and then drops an
@@ -499,7 +579,11 @@ function createCore(opts) {
         const clears = {};
         (await getMany(store, extra.filter(e => e.key.indexOf('/dc/') > -1).map(e => e.key))).forEach(c => { if (c && c.deviceId) clears[c.deviceId] = c; });
         const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return o; });
-        const [pol, mk] = await Promise.all([loadPolicy(code, meta, extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key)), loadMarks(code, meta)]);
+        const decKeys = extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key).sort();
+        // The decision log keeps its newest entries; older ones are removed once there are well over that many
+        // (v0.19.9 stress test: the log was never pruned). Only the commander PIN's reads prune.
+        if (a.level === 'commander' && decKeys.length > DECISIONS_MAX + 50) { const old = decKeys.splice(0, decKeys.length - DECISIONS_MAX); try { await deleteEach(store, old); } catch (e) {} }
+        const [pol, mk] = await Promise.all([loadPolicy(code, meta, decKeys), loadMarks(code, meta, extra.filter(e => e.key.indexOf('/mk/') > -1).map(e => e.key))]);
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         log('read', code);
@@ -537,16 +621,44 @@ function createCore(opts) {
         await store.set(decKey(code, at), Object.assign({ at }, d));
     }
 
+    // Commander screen: add or remove map markings (cordons, RVP, loading point...). Commander PIN only.
+    // From v0.19.10 the screen sends only what changed ({ add: [...] } or { remove: [ids] }) and each marking is its
+    // own document, so two people marking the map at once both keep their changes (v0.19.9 stress test). A screen
+    // still on an older version sends the whole list ({ marks: [...] }), which replaces what is there, as before.
     async function setMarks(code, pin, body, client, key) {
         const a = await authed(code, pin, client, 'commander', key);
         if (a.status) return a;
         const by = str(body.by, 80).trim();
         if (!by) return error(400, 'bad_request', 'Say who is changing the map markings.');
         const t = now();
-        const marks = lib.normaliseMapMarks(body.marks).map(m => Object.assign(m, { at: m.at || t }));
-        await store.set(keyMarks(code), { marks, marksAt: t, by });
-        await addDecision(code, a.meta, { what: 'marks', count: marks.length, by });
+        const meta = a.meta;
+        const cur = await loadMarks(code, meta);
+        // A marking sent without an id gets one; the list position is part of it, so markings sent together keep their order.
+        const withId = (m, i) => (m && typeof m === 'object' && !m.id) ? Object.assign({}, m, { id: 's' + t.toString(36) + String(i).padStart(2, '0') + crypto.randomBytes(3).toString('hex') }) : m;
+        let add = [], remove = [];
+        if (Array.isArray(body.add) || Array.isArray(body.remove)) {
+            add = lib.normaliseMapMarks((Array.isArray(body.add) ? body.add : []).map(withId));
+            remove = (Array.isArray(body.remove) ? body.remove : []).map(x => str(x, 24).replace(/[^A-Za-z0-9_-]/g, '')).filter(Boolean);
+        } else if (Array.isArray(body.marks)) {
+            add = lib.normaliseMapMarks(body.marks.map(withId));
+            const keep = new Set(add.map(m => m.id));
+            remove = cur.marks.filter(m => !keep.has(m.id)).map(m => m.id);
+        } else return error(400, 'bad_request', 'Nothing to change.');
+        add.forEach(m => { m.at = m.at || t; });
+        const gone = new Set(remove);
+        const after = new Map(cur.marks.filter(m => !gone.has(m.id)).map(m => [m.id, m]));
+        add.forEach(m => after.set(m.id, m));
+        if (after.size > lib.MAP_MARKS_MAX) return error(409, 'too_many_marks', `The map can hold at most ${lib.MAP_MARKS_MAX} markings. Remove one first.`);
+        // An older incident's markings move into their own documents the first time they are changed.
+        const olderIncident = !((meta.v || 0) >= 2);
+        const migrate = olderIncident && !((await store.get(keyPol(code, 'marks'))) || {}).migrated;
+        const toWrite = migrate ? Array.from(after.values()) : add;
+        await setEach(store, toWrite.map(m => [keyMark(code, m.id), m]));
+        if (remove.length) await deleteEach(store, remove.map(id => keyMark(code, id)));
+        await store.set(keyPol(code, 'marks'), olderIncident ? { at: t, by, migrated: true } : { at: t, by });
+        await addDecision(code, meta, { what: 'marks', count: after.size, added: add.length, removed: remove.length, by });
         await touchMeta(code);
+        const marks = (await loadMarks(code, meta)).marks;
         log('marks', code, marks.length);
         return reply(200, { ok: true, marks, marksAt: t });
     }
@@ -632,7 +744,8 @@ function createCore(opts) {
             for (const k of keys2) {
                 await each(async () => {
                     const f = await store.get(k);
-                    if (!f || now() - (f.since || 0) > (pre === 'rc/' ? CREATE_WINDOW_MS : RATE_WINDOW_MS)) { await store.delete(k); locks++; }
+                    const gone = !f || (pre === 'rk/' ? !freshCodeCount(f) : now() - (f.since || 0) > (pre === 'rc/' ? CREATE_WINDOW_MS : RATE_WINDOW_MS));
+                    if (gone) { await store.delete(k); locks++; }
                 });
             }
         }
@@ -650,7 +763,7 @@ function createCore(opts) {
     // Generic HTTP dispatcher: method, path (e.g. "/api/incident/ABC123/records"), headers (lower-case keys), body text, client id.
     async function handle(method, path, headers, bodyText, client) {
         headers = headers || {};
-        client = client || 'unknown';
+        client = rateClient(client || 'unknown');
         const parts = path.replace(/^\/api\/incident\/?/, '').split('/').filter(Boolean);
         const code = parts.length ? normaliseCode(parts[0]) : '';
         const action = parts[1] || '';

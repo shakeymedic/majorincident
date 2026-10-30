@@ -340,13 +340,15 @@ function startMarking() {
     $('btn-mark').textContent = marking ? 'Cancel' : 'Place on map';
     setText('mark-hint', marking ? 'Click the map where it goes.' : '');
 }
-async function saveMarks(marks) {
-    marks = MITTLib.normaliseMapMarks(marks);
+// Only the change is sent ({ add } or { remove }), so two people marking the map at the same moment both keep
+// their changes (v0.19.9 stress test: the whole list was sent, and one person's edits were lost).
+async function saveMarks(change) {
+    const marks = MITTLib.normaliseMapMarks(change.add ? (data.marks || []).concat(change.add) : (data.marks || []).filter(m => (change.remove || []).indexOf(m.id) === -1));
     if (demo) { demoMarks = marks; data.marks = marks; render(); return true; }
     const by = await whoDecides();
     if (!by) return false;
     try {
-        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/marks`, { method: 'POST', headers: hdrs(true), body: JSON.stringify({ marks, by }), cache: 'no-store' });
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/marks`, { method: 'POST', headers: hdrs(true), body: JSON.stringify(Object.assign({ by }, change.add ? { add: change.add } : { remove: change.remove })), cache: 'no-store' });
         const b = await r.json().catch(() => ({}));
         if (!r.ok) { tell(b.message || `Could not save the map markings (server replied ${r.status}).`); return false; }
         data.marks = b.marks || marks; data.marksAt = b.marksAt || Date.now();
@@ -359,11 +361,11 @@ function onMapClickMark(ev) {
     if (!marking) return;
     startMarking();
     const type = $('mark-type').value;
-    const mark = { id: 'm' + Date.now().toString(36), type, lat: ev.latlng.lat, lng: ev.latlng.lng, label: $('mark-label').value.trim(), radius: Number($('mark-radius').value) || undefined, at: Date.now() };
+    const mark = { id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), type, lat: ev.latlng.lat, lng: ev.latlng.lng, label: $('mark-label').value.trim(), radius: Number($('mark-radius').value) || undefined, at: Date.now() };
     $('mark-label').value = '';
-    saveMarks((data.marks || []).concat([mark]));
+    saveMarks({ add: [mark] });
 }
-function removeMark(id) { saveMarks((data.marks || []).filter(m => m.id !== id)); }
+function removeMark(id) { saveMarks({ remove: [id] }); }
 function renderMarks() {
     if (!map) return;
     if (!marksLayer) marksLayer = L.layerGroup().addTo(map);
