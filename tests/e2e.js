@@ -1493,7 +1493,8 @@ async function test(name, fn) {
     await test('v0.19.2 walk-through: plain role buttons, one-tap "where are you" on the link sheet, then a one-time how-to card', async () => {
         const W = await device('Walk', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
         assert.match(await W.textContent('#btn-role-responder'), /Police, fire or first aider/);
-        assert.match(await W.textContent('#btn-role-clinician'), /Doctor, nurse or paramedic/);
+        assert.match(await W.textContent('#btn-role-paramedic'), /Paramedic or ambulance medic/);
+        assert.match(await W.textContent('#btn-role-clinician'), /Doctor or nurse/);
         await W.fill('#intro-triager', 'PC Whiskey');
         await W.click('#btn-role-responder');
         await page_visible(W, '#cmd-link-modal');
@@ -1510,6 +1511,18 @@ async function test(name, fn) {
         await W.evaluate(() => renderHomeAlerts());
         assert.strictEqual(await W.evaluate(() => document.getElementById('home-coach')), null, 'stays hidden once dismissed');
         await W._ctx.close();
+    });
+    await test('v0.19.3: a paramedic button on the start screen gives the clinician role and a clinician how-to card that explains MITT', async () => {
+        const PM = await device('Paramedic', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+        await PM.fill('#intro-triager', 'Para 1');
+        await PM.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); } catch (e) {} });
+        await PM.click('#btn-role-paramedic');
+        assert.strictEqual(await PM.evaluate(() => userRole), 'HCP');
+        assert.ok(await PM.isVisible('#home-coach'));
+        const txt = await PM.textContent('#home-coach');
+        assert.match(txt, /Switch to MITT/);
+        assert.match(txt, /Ten Second Triage/);
+        await PM._ctx.close();
     });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
         const CI = await device('Cmd I');
