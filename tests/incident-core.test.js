@@ -2,7 +2,24 @@
 // Usage: node tests/incident-core.test.js
 // tests/firestore-store.test.js runs this same suite through the Firestore store by setting global.__makeIncidentStore.
 const assert = require('assert');
-const { createCore, memoryStore, TTL_MS, STALE_DEVICE_MS } = require('../netlify/lib/incident-core.js');
+const { createCore: createCoreRaw, memoryStore, TTL_MS, STALE_DEVICE_MS } = require('../netlify/lib/incident-core.js');
+// Phones send their device key with every report (v0.19.6). This wrapper plays that part: it keeps the keys
+// handed out by create and join, and adds the right one to each report, as the phone does.
+function createCore(o) {
+    const core = createCoreRaw(o);
+    const keys = {};
+    const handle = core.handle;
+    core.handle = async (method, path, headers, bodyText, client) => {
+        const m = /^\/api\/incident\/?([A-Za-z0-9]*)\/?([a-z-]*)/.exec(path) || [];
+        const code = String(m[1] || '').toUpperCase(), action = m[2] || '';
+        let body = {}; try { body = JSON.parse(bodyText || '{}') || {}; } catch (e) {}
+        if (action === 'records' && body && body.deviceId && keys[code + '/' + body.deviceId] && !(headers || {})['x-device-key']) headers = Object.assign({}, headers, { 'x-device-key': keys[code + '/' + body.deviceId] });
+        const r = await handle(method, path, headers, bodyText, client);
+        if (r.body && r.body.deviceKey && (r.body.code || code) && body.deviceId) keys[(r.body.code || code) + '/' + body.deviceId] = r.body.deviceKey;
+        return r;
+    };
+    return core;
+}
 
 // Each call must give an empty store. memoryStore's options (delay, jitter) only apply to the in-memory store.
 const makeStore = (opts) => (global.__makeIncidentStore ? global.__makeIncidentStore(opts) : memoryStore(opts));
@@ -22,14 +39,14 @@ function rec(uid, id, category, extra) {
     const store = makeStore();
     const core = createCore({ store, now: () => clock });
     const H = (pin) => ({ 'x-incident-pin': pin });
-    let code = '', pin = '';
+    let code = '', pin = '', cpin = '';
     await test('create returns a 6-char code and a 6-digit PIN', async () => {
         const r = await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA', triager: 'Medic A', name: 'Station fire', incidentCode: 'ex-1', app: '0.10.0' }), '1.1.1.1');
         assert.strictEqual(r.status, 201);
         assert.match(r.body.code, /^[A-HJ-NP-Z2-9]{6}$/);
         assert.match(r.body.pin, /^\d{6}$/);
         assert.strictEqual(r.body.expiresAt, clock + TTL_MS);
-        code = r.body.code; pin = r.body.pin;
+        code = r.body.code; pin = r.body.pin; cpin = r.body.commanderPin;
     });
     await test('create needs a deviceId', async () => {
         assert.strictEqual((await core.handle('POST', '/api/incident', {}, JSON.stringify({}), '1.1.1.1')).status, 400);
@@ -46,8 +63,12 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(r.body.devices[0].role, 'creator');
         assert.strictEqual(r.headers['Cache-Control'], 'no-store');
     });
-    await test('unknown code is 404 even with a PIN; code is case-insensitive', async () => {
-        assert.strictEqual((await core.handle('GET', '/api/incident/ZZZZZZ', H(pin), '', '2.2.2.2')).status, 404);
+    await test('an unknown code gets the same 401 as a wrong PIN (does not say whether it exists); code is case-insensitive', async () => {
+        const u = await core.handle('GET', '/api/incident/ZZZZZZ', H(pin), '', '2.2.2.2');
+        const w = await core.handle('GET', `/api/incident/${code}`, H('123450'), '', '2.2.2.2');
+        assert.strictEqual(u.status, 401);
+        assert.strictEqual(w.status, 401);
+        assert.strictEqual(u.body.message, w.body.message);
         assert.strictEqual((await core.handle('GET', `/api/incident/${code.toLowerCase()}`, H(pin), '', '2.2.2.2')).status, 200);
     });
     await test('a second phone joins and is listed', async () => {
@@ -131,27 +152,31 @@ function rec(uid, id, category, extra) {
         clock += 15 * 60 * 1000 + 1;
         assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, H(pin), '', '9.9.9.9')).status, 200);
     });
-    await test('close deletes everything; the code then reads as unknown', async () => {
-        const r = await core.handle('POST', `/api/incident/${code}/close`, H(pin), '', '1.1.1.1');
+    await test('close deletes everything; the code then reads as ended (410), not unknown', async () => {
+        const r = await core.handle('POST', `/api/incident/${code}/close`, H(cpin), '', '1.1.1.1');
         assert.strictEqual(r.status, 200);
         assert.ok(r.body.deleted >= 6);
         assert.strictEqual((await store.list('i/')).length, 0);
-        assert.strictEqual((await core.handle('GET', `/api/incident/${code}`, H(pin), '', '2.2.2.2')).status, 404);
+        const g = await core.handle('GET', `/api/incident/${code}`, H(pin), '', '2.2.2.2');
+        assert.strictEqual(g.status, 410);
+        assert.strictEqual(g.body.error, 'ended');
     });
     await test('an incident with no writes for 24 hours is deleted on access (410) and by the sweep', async () => {
         const c1 = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         const c2 = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         clock += TTL_MS - 1000;
-        await core.handle('PUT', `/api/incident/${c2.code}/records`, H(c2.pin), JSON.stringify({ deviceId: 'DEVA', records: [] }), '1.1.1.1'); // keeps c2 alive
+        await core.handle('PUT', `/api/incident/${c2.code}/records`, H(c2.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('k1', 'K-1', 'P3', { updatedAt: clock })] }), '1.1.1.1'); // new information keeps c2 alive
         clock += 2000;
         assert.strictEqual((await core.handle('GET', `/api/incident/${c1.code}`, H(c1.pin), '', '2.2.2.2')).status, 410);
         const c3 = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         clock += TTL_MS - 3000;
-        await core.handle('PUT', `/api/incident/${c2.code}/records`, H(c2.pin), JSON.stringify({ deviceId: 'DEVA', records: [] }), '1.1.1.1'); // keeps c2 alive again
+        await core.handle('PUT', `/api/incident/${c2.code}/records`, H(c2.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('k2', 'K-2', 'P3', { updatedAt: clock })] }), '1.1.1.1'); // keeps c2 alive again
         clock += 4000; // c3 is now past its 24 hours; c2 was written 4 s ago
         const sweep = await core.cleanup();
         assert.strictEqual(sweep.incidents, 2);
-        assert.strictEqual((await core.handle('GET', `/api/incident/${c3.code}`, H(c3.pin), '', '2.2.2.2')).status, 404);
+        const g3 = await core.handle('GET', `/api/incident/${c3.code}`, H(c3.pin), '', '2.2.2.2');
+        assert.strictEqual(g3.status, 410);
+        assert.strictEqual(g3.body.error, 'expired');
         assert.strictEqual((await core.handle('GET', `/api/incident/${c2.code}`, H(c2.pin), '', '2.2.2.2')).status, 200);
     });
     await test('unknown endpoints are 404 and never leak the PIN hash', async () => {
@@ -163,14 +188,15 @@ function rec(uid, id, category, extra) {
     });
 
     console.log('\nincident-core: v0.14.0 reliability');
-    await test('the view-only PIN can read but not join, push or close; the right PIN still does everything', async () => {
+    await test('the view-only PIN can read but not join, push or close; the commander PIN still does everything', async () => {
         const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA', triager: 'Medic A' }), '1.1.1.1')).body;
         assert.match(c.viewPin, /^\d{6}$/);
         assert.notStrictEqual(c.viewPin, c.pin);
         const g = await core.handle('GET', `/api/incident/${c.code}`, H(c.viewPin), '', '2.2.2.2');
         assert.strictEqual(g.status, 200);
         assert.strictEqual(g.body.viewOnly, true);
-        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.viewOnly, false);
+        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2')).body.viewOnly, false);
+        assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.viewOnly, true, 'the triagers\' PIN opens the screen view only');
         assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/join`, H(c.viewPin), JSON.stringify({ deviceId: 'DEVB' }), '3.3.3.3')).status, 403);
         assert.strictEqual((await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.viewPin), JSON.stringify({ deviceId: 'DEVA', records: [rec('v1', 'A-1', 'P1')] }), '1.1.1.1')).status, 403);
         assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/close`, H(c.viewPin), '', '1.1.1.1')).status, 403);
@@ -237,11 +263,13 @@ function rec(uid, id, category, extra) {
         // View-only PIN cannot acknowledge
         const viewOnly = await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.viewPin), JSON.stringify({ deviceId: 'DEVA' }), '3.3.3.3');
         assert.strictEqual(viewOnly.status, 403);
-        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.pin), JSON.stringify({ deviceId: 'NOPE' }), '3.3.3.3')).status, 404);
-        const ack = await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.pin), JSON.stringify({ deviceId: 'DEVA' }), '3.3.3.3');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', by: 'X' }), '3.3.3.3')).status, 403, 'the triagers\' PIN cannot');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.commanderPin), JSON.stringify({ deviceId: 'DEVA' }), '3.3.3.3')).status, 400, 'a name is required');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.commanderPin), JSON.stringify({ deviceId: 'NOPE', by: 'X' }), '3.3.3.3')).status, 404);
+        const ack = await core.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.commanderPin), JSON.stringify({ deviceId: 'DEVA', by: 'Silver, Insp Kaur' }), '3.3.3.3');
         assert.strictEqual(ack.status, 200);
         assert.ok(ack.body.duress.clearedAt > 0);
-        assert.strictEqual(ack.body.duress.clearedBy, 'commander');
+        assert.strictEqual(ack.body.duress.clearedBy, 'Silver, Insp Kaur');
         // The phone's next heartbeat (still repeating the same duress) sees it cleared and does not re-raise it
         const r2 = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: { at: 1700000000000 } }), '1.1.1.1');
         assert.ok(r2.body.duress.clearedAt > 0, 'phone is told the commander cleared it');
@@ -271,14 +299,16 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(g.body.devices[0].commander, undefined);
         const seq1 = g.headers['X-Incident-Seq'];
         assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.viewPin), JSON.stringify({ p1Hold: { on: true, by: 'X' } }), '3.3.3.3')).status, 403, 'view-only PIN cannot');
-        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: true } }), '3.3.3.3')).status, 400, 'a name is required');
-        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ mitt: { groups: ['junk'] } }), '3.3.3.3')).status, 400, 'groups are required');
-        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({}), '3.3.3.3')).status, 400);
-        const p1 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: true, by: 'Dr Medic, MERIT' } }), '3.3.3.3');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ p1Hold: { on: true } }), '3.3.3.3')).status, 400, 'a name is required');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ mitt: { groups: ['junk'], by: 'X' } }), '3.3.3.3')).status, 400, 'groups are required');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ mitt: { groups: ['hcp'] } }), '3.3.3.3')).status, 400, 'a name is required for a MITT prompt');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: true, by: 'X' } }), '3.3.3.3')).status, 403, 'the triagers\' PIN cannot');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({}), '3.3.3.3')).status, 400);
+        const p1 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ p1Hold: { on: true, by: 'Dr Medic, MERIT' } }), '3.3.3.3');
         assert.strictEqual(p1.status, 200);
         assert.strictEqual(p1.body.policy.p1Hold.on, true);
         assert.strictEqual(p1.body.policy.p1Hold.by, 'Dr Medic, MERIT');
-        const p2 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ mitt: { groups: ['sector:Casualty Clearing'] } }), '3.3.3.3');
+        const p2 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ mitt: { groups: ['sector:Casualty Clearing'], by: 'Silver' } }), '3.3.3.3');
         assert.strictEqual(p2.body.policy.p1Hold.on, true, 'the P1 Hold decision is kept');
         assert.deepStrictEqual(p2.body.policy.mitt.groups, ['sector:Casualty Clearing']);
         assert.ok(p2.body.policy.mitt.id);
@@ -289,10 +319,13 @@ function rec(uid, id, category, extra) {
         assert.notStrictEqual(g.headers['X-Incident-Seq'], seq1);
         assert.strictEqual(g.body.policy.p1Hold.on, true);
         assert.strictEqual(g.body.devices[0].sector, 'Casualty Clearing', 'a report without a sector keeps the last one');
-        const p3 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ mitt: { groups: ['hcp'] } }), '3.3.3.3');
+        const p3 = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ mitt: { groups: ['hcp'], by: 'Silver' } }), '3.3.3.3');
         assert.notStrictEqual(p3.body.policy.mitt.id, p2.body.policy.mitt.id, 'every prompt is new');
-        const off = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.pin), JSON.stringify({ p1Hold: { on: false } }), '3.3.3.3');
+        assert.strictEqual((await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ p1Hold: { on: false } }), '3.3.3.3')).status, 400, 'a withdrawal needs a name too');
+        const off = await core.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ p1Hold: { on: false, by: 'Dr Medic, MERIT' } }), '3.3.3.3');
         assert.strictEqual(off.body.policy.p1Hold.on, false);
+        const dec = (await core.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2')).body.decisions;
+        assert.deepStrictEqual(dec.map(d => d.what + ':' + d.by), ['p1hold-on:Dr Medic, MERIT', 'mitt:Silver', 'mitt:Silver', 'p1hold-off:Dr Medic, MERIT']);
     });
     await test('a push of 250 records lands in one go; a uid sent twice in one push keeps the newer copy', async () => {
         const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
@@ -304,7 +337,7 @@ function rec(uid, id, category, extra) {
         const g = await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
         assert.strictEqual(g.body.records.length, 249);
         assert.strictEqual(g.body.records.find(x => x.uid === 'b0').category, 'P1');
-        const closed = await core.handle('POST', `/api/incident/${c.code}/close`, H(c.pin), '{}', '1.1.1.1');
+        const closed = await core.handle('POST', `/api/incident/${c.code}/close`, H(c.commanderPin), '{}', '1.1.1.1');
         assert.strictEqual(closed.body.deleted, 251);
     });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
@@ -362,7 +395,7 @@ function rec(uid, id, category, extra) {
         const g1 = await core4.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2');
         assert.deepStrictEqual(g1.body.marks, []);
         clock += 1000;
-        const m = await core4.handle('POST', `/api/incident/${c.code}/marks`, H(c.pin), JSON.stringify({ marks: [{ type: 'inner', lat: 52.45, lng: -1.9, radius: 150 }, { type: 'rvp', lat: 52.46, lng: -1.91, label: 'Main gate' }, { type: 'nonsense', lat: 1, lng: 1 }, { type: 'hazard', lat: 999, lng: 1 }] }), '2.2.2.2');
+        const m = await core4.handle('POST', `/api/incident/${c.code}/marks`, H(c.commanderPin), JSON.stringify({ by: 'Silver', marks: [{ type: 'inner', lat: 52.45, lng: -1.9, radius: 150 }, { type: 'rvp', lat: 52.46, lng: -1.91, label: 'Main gate' }, { type: 'nonsense', lat: 1, lng: 1 }, { type: 'hazard', lat: 999, lng: 1 }] }), '2.2.2.2');
         assert.strictEqual(m.status, 200);
         assert.deepStrictEqual(m.body.marks.map(x => x.type), ['inner', 'rvp']);
         assert.strictEqual(m.body.marks[0].radius, 150);
@@ -412,6 +445,128 @@ function rec(uid, id, category, extra) {
         const ka = (await plainStore.list('rl/')).map(e => e.key || e), kb = (await saltStore.list('rl/')).map(e => e.key || e);
         assert.strictEqual(ka.length, 1); assert.strictEqual(kb.length, 1);
         assert.notStrictEqual(ka[0], kb[0]);
+    });
+    console.log('\nincident-core: v0.19.6 (findings from the v0.19.5 test)');
+    const mk = async (coreX, ip) => (await coreX.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA', triager: 'Medic A' }), ip || '1.1.1.1')).body;
+    await test('three different PINs: triagers can join and send but not end, decide, mark or clear a call for help', async () => {
+        const c8 = createCore({ store: makeStore(), now: () => clock });
+        const c = await mk(c8);
+        assert.strictEqual(new Set([c.pin, c.commanderPin, c.viewPin]).size, 3);
+        assert.strictEqual((await c8.handle('POST', `/api/incident/${c.code}/join`, H(c.pin), JSON.stringify({ deviceId: 'DEVB', triager: 'Fire 3' }), '3.3.3.3')).status, 200);
+        assert.strictEqual((await c8.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVB', records: [rec('x1', 'B-1', 'P2', { updatedAt: clock })] }), '3.3.3.3')).status, 200);
+        for (const [action, body] of [['close', {}], ['policy', { p1Hold: { on: false, by: 'X' } }], ['marks', { marks: [], by: 'X' }], ['duress-clear', { deviceId: 'DEVA', by: 'X' }]]) {
+            const r = await c8.handle('POST', `/api/incident/${c.code}/${action}`, H(c.pin), JSON.stringify(body), '3.3.3.3');
+            assert.strictEqual(r.status, 403, action);
+            assert.strictEqual(r.body.error, 'not_commander', action);
+        }
+        const g = await c8.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '3.3.3.3');
+        assert.strictEqual(g.body.viewOnly, true);
+        assert.strictEqual(g.body.access, 'triager');
+        assert.strictEqual((await c8.handle('POST', `/api/incident/${c.code}/close`, H(c.commanderPin), '{}', '1.1.1.1')).status, 200);
+    });
+    await test('a phone report sent while the commander changes P1 Hold never undoes the decision', async () => {
+        const slow = makeStore({ jitter: 4 });
+        const c9 = createCore({ store: slow, now: () => clock });
+        const c = await mk(c9);
+        for (let i = 0; i < 12; i++) {
+            clock += 1000;
+            const on = i % 2 === 0;
+            const reports = [0, 1, 2].map(k => c9.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('r' + i + k, 'A-' + i + k, 'P3', { updatedAt: clock })], ccs: { lat: 52.4 + i / 1000, lng: -1.9 } }), '1.1.1.1'));
+            const dec = c9.handle('POST', `/api/incident/${c.code}/policy`, H(c.commanderPin), JSON.stringify({ p1Hold: { on, by: 'Dr A' } }), '2.2.2.2');
+            const [d] = await Promise.all([dec, ...reports]);
+            assert.strictEqual(d.status, 200);
+            const g = await c9.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+            assert.strictEqual(g.body.policy.p1Hold.on, on, `round ${i}`);
+        }
+    });
+    await test('a call for help cleared while the phone is reporting stays cleared', async () => {
+        const slow = makeStore({ jitter: 4 });
+        const c10 = createCore({ store: slow, now: () => clock });
+        const c = await mk(c10);
+        await c10.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: { at: 1700000000000 } }), '1.1.1.1');
+        const beat = c10.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], duress: { at: 1700000000000 } }), '1.1.1.1');
+        const clr = c10.handle('POST', `/api/incident/${c.code}/duress-clear`, H(c.commanderPin), JSON.stringify({ deviceId: 'DEVA', by: 'Silver' }), '2.2.2.2');
+        await Promise.all([beat, clr]);
+        const g = await c10.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.ok(g.body.devices[0].duress.clearedAt > 0);
+        assert.strictEqual(g.body.devices[0].duress.clearedBy, 'Silver');
+    });
+    await test('a phone clock a year fast cannot block a later real change', async () => {
+        const c11 = createCore({ store: makeStore(), now: () => clock });
+        const c = await mk(c11);
+        const YEAR = 365 * 24 * 3600e3;
+        // Phone A (clock a year fast) records P3; phone B (right clock) later changes the same casualty to P1
+        await c11.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', clientNow: clock + YEAR, records: [rec('w1', 'A-1', 'P3', { updatedAt: clock + YEAR })] }), '1.1.1.1');
+        clock += 5000;
+        await c11.handle('POST', `/api/incident/${c.code}/join`, H(c.pin), JSON.stringify({ deviceId: 'DEVB' }), '3.3.3.3');
+        const b = await c11.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVB', clientNow: clock, records: [rec('w1', 'A-1', 'P1', { updatedAt: clock })] }), '3.3.3.3');
+        assert.strictEqual(b.body.accepted, 1);
+        let g = await c11.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.strictEqual(g.body.records[0].category, 'P1');
+        // Phone A sends its old P3 copy again (e.g. after a reload): still older, so P1 stays
+        clock += 5000;
+        const a2 = await c11.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', clientNow: clock + YEAR, records: [rec('w1', 'A-1', 'P3', { updatedAt: clock - 10000 + YEAR })] }), '1.1.1.1');
+        assert.strictEqual(a2.body.kept, 1);
+        g = await c11.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.strictEqual(g.body.records[0].category, 'P1');
+        // A phone that does not say its clock still cannot write into the future
+        const x = await c11.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('w2', 'A-2', 'P3', { updatedAt: clock + YEAR })] }), '1.1.1.1');
+        assert.strictEqual(x.status, 200);
+        g = await c11.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.ok(g.body.records.find(r => r.uid === 'w2').updatedAt <= clock);
+    });
+    await test('200 wrong PINs sent in parallel are locked out after 25', async () => {
+        const c12 = createCore({ store: makeStore({ jitter: 3 }), now: () => clock });
+        const c = await mk(c12);
+        const guesses = Array.from({ length: 200 }, (_, i) => c12.handle('GET', `/api/incident/${c.code}`, H(String(100000 + i)), '', '6.6.6.6'));
+        const st = (await Promise.all(guesses)).map(r => r.status);
+        assert.ok(st.filter(x => x === 401).length <= 25, `${st.filter(x => x === 401).length} guesses checked`);
+        assert.ok(st.filter(x => x === 429).length >= 175);
+    });
+    await test('100 wrong PINs for one incident from many addresses lock out strangers; linked phones carry on with their key', async () => {
+        const c13 = createCore({ store: makeStore(), now: () => clock });
+        const c = await mk(c13);
+        const j = await c13.handle('POST', `/api/incident/${c.code}/join`, H(c.pin), JSON.stringify({ deviceId: 'DEVB' }), '3.3.3.3');
+        for (let i = 0; i < 100; i++) await c13.handle('GET', `/api/incident/${c.code}`, H('000001'), '', '10.0.' + Math.floor(i / 20) + '.' + i);
+        assert.strictEqual((await c13.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '11.1.1.1')).status, 429, 'a stranger with the right PIN must wait');
+        const linked = await c13.handle('PUT', `/api/incident/${c.code}/records`, Object.assign(H(c.pin), { 'x-incident-key': j.body.accessKey }), JSON.stringify({ deviceId: 'DEVB', records: [] }), '3.3.3.3');
+        assert.strictEqual(linked.status, 200);
+    });
+    await test('a phone cannot report under another phone\'s device code', async () => {
+        const c14 = createCore({ store: makeStore(), now: () => clock });
+        const c = await mk(c14);
+        const r = await c14.handle('PUT', `/api/incident/${c.code}/records`, Object.assign(H(c.pin), { 'x-device-key': 'not-the-key' }), JSON.stringify({ deviceId: 'DEVA', triager: 'Impostor', duress: null }), '6.6.6.6');
+        assert.strictEqual(r.status, 403);
+        const j = await c14.handle('POST', `/api/incident/${c.code}/join`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', triager: 'Impostor' }), '6.6.6.6');
+        assert.strictEqual(j.status, 409);
+        const g = await c14.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.strictEqual(g.body.devices[0].triager, 'Medic A');
+    });
+    await test('a heartbeat with nothing new does not keep the incident for ever', async () => {
+        const c15 = createCore({ store: makeStore(), now: () => clock });
+        const c = await mk(c15);
+        clock += TTL_MS - 1000;
+        await c15.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [] }), '1.1.1.1');
+        clock += 2000;
+        assert.strictEqual((await c15.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).status, 410);
+    });
+    await test('starting incidents is limited to 10 an hour from one address', async () => {
+        const c16 = createCore({ store: makeStore(), now: () => clock });
+        for (let i = 0; i < 10; i++) assert.strictEqual((await c16.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'D' + i }), '5.5.5.5')).status, 201);
+        assert.strictEqual((await c16.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'D11' }), '5.5.5.5')).status, 429);
+        assert.strictEqual((await c16.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'D12' }), '5.5.5.6')).status, 201);
+        clock += 60 * 60 * 1000 + 1;
+        assert.strictEqual((await c16.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'D13' }), '5.5.5.5')).status, 201);
+    });
+    await test('a storage error is a server error (500), never "incident ended"', async () => {
+        const st = makeStore();
+        const c17 = createCore({ store: st, now: () => clock });
+        const c = await mk(c17);
+        const get = st.get;
+        st.get = async () => { throw new Error('UNAVAILABLE'); };
+        const r = await c17.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [] }), '1.1.1.1');
+        st.get = get;
+        assert.strictEqual(r.status, 500);
     });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);

@@ -37,6 +37,7 @@
     #hdr-incident { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; font-size:0.95rem; }
     #hdr-incident .inc-name { font-weight:800; font-size:1.05rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:38vw; }
     .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:0.78rem; font-weight:700; background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.22); white-space:nowrap; letter-spacing:0.02em; }
+    .dec-log { margin:4px 0 0 1.1rem; padding:0; font-size:0.85rem; }
     .chip-view { background:#FFB81C; color:#212b32; border-color:#FFB81C; }
     .chip b { font-family:var(--mono); letter-spacing:0.12em; font-weight:700; }
     .hdr-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-left:auto; }
@@ -477,15 +478,19 @@
 <main>
     <div class="card" id="signin">
         <h2>Open an incident</h2>
-        <p class="muted lead">Enter the code and PIN shown on the commander's phone. The page refreshes every 30 seconds while open. The view-only PIN (also on that phone) opens the same screen for a hospital or observer.</p>
+        <p class="muted lead">Enter the incident code and the <b>commander PIN</b> shown on the phone that started the incident. The page refreshes every 30 seconds while open. The triagers' PIN and the view-only PIN open the same screen to watch only.</p>
         <div class="fields">
             <div>
                 <label for="in-code">Incident code</label>
                 <input type="text" id="in-code" autocomplete="off" autocapitalize="characters" maxlength="6" placeholder="K7M2QX">
             </div>
             <div>
-                <label for="in-pin">PIN</label>
+                <label for="in-pin">Commander PIN</label>
                 <input type="password" id="in-pin" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="••••••">
+            </div>
+            <div>
+                <label for="in-by">Your name and role</label>
+                <input type="text" id="in-by" autocomplete="name" maxlength="80" placeholder="Silver, Insp A Kaur">
             </div>
         </div>
         <div class="danger hidden" id="signin-error" style="margin-top:0.8rem;"></div>
@@ -607,6 +612,7 @@
     <div class="modal-box ask-box">
         <h3 id="ask-title"></h3>
         <p id="ask-msg"></p>
+        <input type="text" id="ask-input" maxlength="80" autocomplete="off" aria-label="Your answer" style="display:none; width:100%; margin-bottom:0.8rem;">
         <div class="row ask-btns">
             <button type="button" class="btn sec" id="ask-cancel" data-act="askAnswer" data-ok="0">Cancel</button>
             <button type="button" class="btn" id="ask-ok" data-act="askAnswer" data-ok="1">OK</button>

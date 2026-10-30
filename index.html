@@ -618,6 +618,8 @@
         color: white;
         border: 1px solid rgba(255,255,255,0.6);
     }
+    /* Never over YES / NO / Back during triage (v0.19.5 test): the banner waits until the questions are done. */
+    body[data-screen="question-screen"] #sw-update-banner { display: none !important; }
     body.one-hand #sw-update-banner { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
 
     /* Reassessment pill */
@@ -1001,7 +1003,7 @@
     #intro-screen .input-group { margin-bottom: 0.7rem; }
     body:not(.gloved) #intro-screen > .btn { padding: 0.8rem 1rem !important; margin-bottom: 0.6rem; font-size: 1.1rem; }
     #intro-screen .start-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.2rem; }
-    #intro-screen .demo-btn { width: auto; flex: 0 0 auto; margin: 0; background: #E87722; color: #fff; border: 0; border-radius: 999px; padding: 10px 20px; font-weight: 800; font-size: 1.05rem; min-height: 44px; cursor: pointer; white-space: nowrap; }
+    #intro-screen .demo-btn { width: auto; flex: 0 0 auto; margin: 0; background: #B85A12; color: #fff; border: 0; border-radius: 999px; padding: 10px 20px; font-weight: 800; font-size: 1.05rem; min-height: 44px; cursor: pointer; white-space: nowrap; }
     #exercise-modal .btn { padding: 0.5rem 0.8rem; margin-bottom: 6px; font-size: 1rem; line-height: 1.25; }
     #exercise-modal .qr-meta { margin: 0 0 6px; font-size: 0.85rem; }
     .exercise-guide h4 { margin: 12px 0 4px; }
@@ -1350,8 +1352,12 @@
         <div class="location-status-card good" style="text-align:center;">
             <div class="qr-meta">Incident code</div>
             <div id="cmd-code" style="font-size:2.2rem; font-weight:900; letter-spacing:0.15em; font-family:ui-monospace, Menlo, monospace;"></div>
-            <div class="qr-meta" style="margin-top:6px;">PIN</div>
+            <div class="qr-meta" style="margin-top:6px;">Triagers' PIN (to link phones)</div>
             <div id="cmd-pin" style="font-size:1.8rem; font-weight:900; letter-spacing:0.2em; font-family:ui-monospace, Menlo, monospace;"></div>
+            <div id="cmd-cmdpin-wrap" style="display:none; margin-top:6px; border-top:1px solid rgba(0,0,0,0.12); padding-top:6px;">
+                <div class="qr-meta">Commander PIN (commander screen on another device; can change decisions and end the incident; keep it to the command team)</div>
+                <div id="cmd-cmdpin" style="font-size:1.3rem; font-weight:900; letter-spacing:0.2em; font-family:ui-monospace, Menlo, monospace;"></div>
+            </div>
             <div id="cmd-view-wrap" style="display:none; margin-top:6px; border-top:1px solid rgba(0,0,0,0.12); padding-top:6px;">
                 <div class="qr-meta">View-only PIN (for a hospital or observer: sees the commander screen, cannot send or change anything)</div>
                 <div id="cmd-view-pin" style="font-size:1.3rem; font-weight:900; letter-spacing:0.2em; font-family:ui-monospace, Menlo, monospace;"></div>
@@ -1471,10 +1477,10 @@
             <summary>Reassessment timers <span class="rs-sum">TST, MITT P1, P2, P3</span></summary>
             <div class="menu-items">
                 <p class="qr-meta" style="text-align:left;">TST: every 15 minutes by default, from the national (NARU) TST guidance, whatever the colour. MITT P1, P2 and P3: local defaults, not set by NHS England. Agree them with your clinical lead.</p>
-                <div class="setting-row"><span><strong>TST</strong> (any colour)</span><select id="interval-TST" onchange="saveIntervalSettings()"><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
-                <div class="setting-row"><span><strong>MITT P1</strong></span><select id="interval-P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
-                <div class="setting-row"><span><strong>MITT P2</strong></span><select id="interval-P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
-                <div class="setting-row"><span><strong>MITT P3</strong></span><select id="interval-P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
+                <div class="setting-row"><span><strong>TST</strong> (any colour)</span><select id="interval-TST" aria-label="Reassessment interval, TST" onchange="saveIntervalSettings()"><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
+                <div class="setting-row"><span><strong>MITT P1</strong></span><select id="interval-P1" aria-label="Reassessment interval, MITT P1" onchange="saveIntervalSettings()"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option></select></div>
+                <div class="setting-row"><span><strong>MITT P2</strong></span><select id="interval-P2" aria-label="Reassessment interval, MITT P2" onchange="saveIntervalSettings()"><option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+                <div class="setting-row"><span><strong>MITT P3</strong></span><select id="interval-P3" aria-label="Reassessment interval, MITT P3" onchange="saveIntervalSettings()"><option value="30">30 min</option><option value="60">60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></div>
             </div>
         </details>
 
@@ -1730,7 +1736,7 @@
         <div class="header-controls">
             <!-- In the header, not the scrolling status strip, so it is always in view once linked (and in simple mode). -->
             <button type="button" id="duress-btn" class="gps-status" style="display:none;" title="Hold for 2 seconds to call the commander for help" aria-label="Call the commander for help: hold for 2 seconds"><span>🆘 <b class="d-long">Hold for help</b><b class="d-short">Hold</b></span></button>
-            <button class="icon-btn" onclick="resetToHome()" aria-label="Home">🏠</button>
+            <button class="icon-btn" onclick="homeButton()" aria-label="Home">🏠</button>
             <button class="icon-btn" onclick="openModesMenu()" aria-label="Settings and display modes" id="btn-modes" title="Settings">⚙</button>
         </div>
     </header>
@@ -1889,7 +1895,7 @@
                 <span>Patient <strong id="q-patient-id" class="editable-id" role="button" tabindex="0" aria-label="Patient ID, tap to edit" onclick="editPatientId()">...</strong></span>
                 <span id="q-progress" class="q-progress"></span>
             </div>
-            <div class="instruction-card" id="question-text">Question goes here?</div>
+            <div class="instruction-card" id="question-text" aria-live="polite" aria-atomic="true">Question goes here?</div>
             <div id="clinical-instruction-box" class="q-instruction" style="display:none;"></div>
             <div id="q-count" class="q-count" style="display:none;"></div>
             <div id="q-unsure" class="q-unsure"></div>
@@ -2226,13 +2232,13 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.5';
-    const APP_BUILD = '2026-10-30-retest';
+    const APP_VERSION = '0.19.6';
+    const APP_BUILD = '2026-10-30-findings';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
     const DB_NAME = TRAINING ? 'MITT_TRAINING_DB' : 'MITT_DB';
-    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander', 'mit_tally', 'mit_triage_open']);
+    const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander', 'mit_tally', 'mit_triage_open', 'mit_device_keys']);
     // Name, role, sector and ID prefix: training starts with the real-use values but keeps its own changes (the demo sets
     // them to the phone you play), so nothing typed in training is carried back into real use.
     const TRAINING_INHERIT_KEYS = new Set(['mit_triager', 'mit_device_prefix', 'mit_sector', 'mit_user_role']);
@@ -2623,9 +2629,16 @@
     }
 
     // ---------- Modals, Escape and the Android back button ----------
+    // Escape / Android Back close the dialog on top: the highest layer, then the one opened last (v0.19.5 test:
+    // with two dialogs on the same layer the earlier one in the page used to close).
+    let _modalSeq = 0;
+    try {
+        const mo = new MutationObserver(list => list.forEach(r => { const m = r.target; if (m.style.display && m.style.display !== 'none' && !m._shownSeq) m._shownSeq = ++_modalSeq; else if (m.style.display === 'none') m._shownSeq = 0; }));
+        document.querySelectorAll('.modal-overlay').forEach(m => mo.observe(m, { attributes: true, attributeFilter: ['style'] }));
+    } catch (e) {}
     function _topModal() {
         const modals = Array.from(document.querySelectorAll('.modal-overlay')).filter(m => getComputedStyle(m).display !== 'none');
-        modals.sort((a, b) => parseInt(getComputedStyle(b).zIndex || 0) - parseInt(getComputedStyle(a).zIndex || 0));
+        modals.sort((a, b) => (parseInt(getComputedStyle(b).zIndex || 0) - parseInt(getComputedStyle(a).zIndex || 0)) || ((b._shownSeq || 0) - (a._shownSeq || 0)));
         return modals[0] || null;
     }
     function closeTopModal() {
@@ -2708,14 +2721,22 @@
         $('confirm-modal').style.display = 'flex';
         setTimeout(() => ((input || requireText) ? inp : okBtn).focus(), 50);
     }
+    // One dialog at a time: a second one waits until the first is answered, instead of replacing it and silently
+    // answering it "Cancel" (v0.19.5 test).
+    let _confirmQueue = Promise.resolve();
+    function _queueConfirm(run) {
+        const p = _confirmQueue.then(run, run);
+        _confirmQueue = p.then(() => {}, () => {});
+        return p;
+    }
     function inAppConfirm(opts) {
-        return new Promise(resolve => { _openConfirm(opts || {}); _confirmResolver = resolve; });
+        return _queueConfirm(() => new Promise(resolve => { _openConfirm(opts || {}); _confirmResolver = resolve; }));
     }
     function inAppPrompt({ title = 'Enter value', message = '', defaultValue = '', label = true }) {
-        return new Promise(resolve => {
+        return _queueConfirm(() => new Promise(resolve => {
             _openConfirm({ title, message, input: label, defaultValue });
             _confirmResolver = (ok) => resolve(ok ? $('confirm-input').value : null);
-        });
+        }));
     }
     // Failures that matter (handover, storage, integrity) must be acknowledged, not a 3-second toast.
     function showBlockingError(title, message) {
@@ -3143,7 +3164,7 @@
         const roleEl = $('header-role');
         if (!roleEl) return;
         const cdr = typeof CMD !== 'undefined' && CMD.cfg && CMD.cfg.commander && CMD.cfg.code;
-        roleEl.textContent = cdr ? 'Incident commander' : userRole === 'HCP' ? 'Clinician' : 'Non-clinical';
+        roleEl.textContent = cdr ? 'Incident commander' : userRole === 'HCP' ? 'Clinician' : userRole === 'NON_HCP' ? 'Non-clinical' : '';
         roleEl.className = 'status-item role-pill ' + (userRole === 'HCP' ? 'role-hcp' : 'role-non');
     }
     function setUserRole(role, asCommander) {
@@ -3285,7 +3306,7 @@
         { id: 'bleeding', question: 'Severe bleeding?', instruction: 'If YES: pressure, tourniquet, packing.', unsure: 'YES', unsureText: 'Tap YES: treat it as severe bleeding.' },
         { id: 'talking', question: 'Talking?', instruction: '', unsure: 'NO', unsureText: 'Tap NO: treat them as not talking.' },
         // Question text stays as on the card; the instruction says what it means in plain words (Chrome test, 30 Oct 2026).
-        { id: 'penetrating', question: 'Penetrating injury to the torso — front or back?', instruction: 'Any stab, gunshot or other wound into the chest, belly or back? Check the front and the back.', unsure: 'YES', unsureText: 'Tap YES: treat it as a penetrating injury.' },
+        { id: 'penetrating', question: 'Penetrating injury to the torso — front or back?', instruction: 'Any stab, gunshot or other wound to the neck, chest, belly, back, armpits, groin or buttocks? Check the front and the back.', unsure: 'YES', unsureText: 'Tap YES: treat it as a penetrating injury.' },
         { id: 'breathing', question: 'Breathing?', instruction: 'Open the airway if able.', unsure: 'YES', unsureText: 'If you see any sign of breathing, tap YES.' },
     ];
     const mittFlow = [
@@ -3294,8 +3315,8 @@
         { id: 'breathing', question: 'Breathing?', instruction: 'Open the airway if required. Children (<12) not breathing: if resources allow, consider 5 rescue breaths if submersion / immersion / smoke inhalation.', unsure: 'YES', unsureText: 'If you see any sign of breathing, tap YES.' },
         { id: 'voice', question: 'Responds to voice?', instruction: '', unsure: 'NO' },
         { id: 'age', question: 'Aged over 2 years?', instruction: 'Estimate if unknown.', unsure: 'NO' },
-        { id: 'rr', question: 'Breathing rate 12 – 23?', instruction: 'Count breaths per minute.', unsure: 'NO', count: { what: 'breaths', label: 'RR', yesIf: r => r >= 12 && r <= 23 } },
-        { id: 'hr', question: 'Heart rate 100 or more?', instruction: 'Count the pulse.', unsure: 'YES', count: { what: 'beats', label: 'HR', yesIf: r => r >= 100 } },
+        { id: 'rr', question: 'Breathing rate 12 – 23?', instruction: 'Count breaths per minute.', unsure: 'NO', count: { what: 'breaths', label: 'RR', yesIf: MITTLib.MITT_COUNT.rr.yesIf } },
+        { id: 'hr', question: 'Heart rate 100 or more?', instruction: 'Count the pulse.', unsure: 'YES', count: { what: 'beats', label: 'HR', yesIf: MITTLib.MITT_COUNT.hr.yesIf } },
     ];
     // Longest possible path through each flow (TST ends after penetrating OR breathing).
     const FLOW_MAX_QUESTIONS = { TST: 4, MITT: 7 };
@@ -3363,7 +3384,7 @@
         currentLogIndex = -1; // a new triage never edits the previously open record
         const badge = $('mode-indicator');
         badge.textContent = tool; badge.style.display = 'inline-block';
-        badge.style.backgroundColor = tool === 'MITT' ? '#E87722' : '#007F3B';
+        badge.style.backgroundColor = tool === 'MITT' ? '#B85A12' : '#007F3B'; // darker orange: white text at 4.6:1
         if (pendingReTriageUid) {
             const idx = indexByUid(pendingReTriageUid);
             if (idx > -1) { currentPatientId = incidentLog[idx].id; startFlow(); return; }
@@ -3473,7 +3494,8 @@
     }
     function clearMeasured(stepObj) { delete measuredVals[stepObj.id]; setText('q-count-result', ''); }
     function showMeasured(stepObj, m) {
-        setText('q-count-result', `${m.label} ${m.value}/min${m.how === 'counted' ? ' (counted)' : ''}: suggests ${m.yes ? 'YES' : 'NO'}. Tap YES or NO to confirm.`);
+        const near = m.how === 'counted' && MITTLib.countNearCutoff(stepObj.id, m.value);
+        setText('q-count-result', `${m.label} ${m.value}/min${m.how === 'counted' ? ' (counted)' : ''}: suggests ${m.yes ? 'YES' : 'NO'}.${near ? ' Close to the cut-off: a 15-second count can be out by up to 4 a minute, so count for longer or type the rate if unsure.' : ''} Tap YES or NO to confirm.`);
     }
     function measuredSummary() {
         const parts = stepHistory.filter(id => measuredVals[id]).map(id => `${measuredVals[id].label} ${measuredVals[id].value}/min`);
@@ -3490,8 +3512,13 @@
             else { triggerHaptic('success'); stopCount(); logResult(outcome.category, (OUTCOME_ACTIONS[`${currentTool}|${outcome.reason}`] || '') + measuredSummary(), outcome.reason, answer); }
         } catch (err) { console.error(err); showBlockingError('Triage error', 'The answer could not be processed: ' + err.message); }
     }
+    // A second tap within 0.4 s is ignored, as for YES / NO, so a double tap cannot go back two questions.
+    let _lastBackTap = 0;
     function stepBack() {
         if (!stepHistory.length) return;
+        const nowTap = Date.now();
+        if (nowTap - _lastBackTap < 400) return;
+        _lastBackTap = nowTap;
         // Pop once, outside find(): popping inside the callback emptied the history (v0.19.4 retest).
         const prevId = stepHistory.pop();
         const prev = flowFor(currentTool).find(s => s.id === prevId);
@@ -3511,7 +3538,7 @@
     }
     async function confirmCancelCase() {
         const ok = await inAppConfirm({ title: 'Cancel this assessment?', message: 'Nothing is saved for this patient ID.', okLabel: 'Cancel assessment', cancelLabel: 'Continue assessment', danger: true });
-        if (ok) { pendingReTriageUid = null; pendingCorrectionUid = null; ls('mit_triage_open', null); resetToHome(); }
+        if (ok) { logAudit('TRIAGE_CANCELLED', currentPatientId || '-', `Assessment cancelled part-way (${currentTool}${pendingReTriageUid ? ', re-triage' : pendingCorrectionUid ? ', correction' : ''}); nothing saved`, Date.now()); pendingReTriageUid = null; pendingCorrectionUid = null; ls('mit_triage_open', null); resetToHome(); }
     }
     let pendingDeadEntry = null;
     function logResult(category, action, reason, lastAnswer) {
@@ -3527,8 +3554,10 @@
         const p = pendingDeadEntry;
         if (!p) { closeTodModal(); return; }
         let tod = '';
-        if (mode === 'now') tod = fmtTime(Date.now());
-        else if (mode === 'entered') { tod = $('tod-input').value; if (!tod) { showToast('Enter the time, or choose "time now" / "no time yet".', { alert: true }); return; } }
+        // With the date (v0.19.5 test), as "HH:MM DD/MM/YYYY"; a typed time is taken as today.
+        const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        if (mode === 'now') tod = `${fmtTime(Date.now())} ${today}`;
+        else if (mode === 'entered') { tod = $('tod-input').value; if (!tod) { showToast('Enter the time, or choose "time now" / "no time yet".', { alert: true }); return; } tod = `${tod} ${today}`; }
         pendingDeadEntry = null;
         $('tod-modal').style.display = 'none';
         completeLogResult({ category: p.category, action: p.action + (tod ? ` Time of death ${tod}.` : ' Time of death not yet recorded.'), reason: p.reason, tod });
@@ -3554,11 +3583,14 @@
             entry.triageHistory = (entry.triageHistory || []).concat([hist]);
             Object.assign(entry, { category, action, reason, tool: currentTool, time, timestamp: now, triager: triagerName });
             entry.lastReassessed = now; entry.reassessOutcome = kind === 'correction' ? 'triage corrected' : 're-triaged';
-            if (tod) entry.tod = tod;
+            const hadTod = entry.tod;
+            entry.tod = MITTLib.todAfterChange(category, tod, entry.tod);
+            if (hadTod && !entry.tod) logAudit('TOD_CLEARED', entry.id, `Time of death ${hadTod} cleared: now ${catShort(category)}`, now, { uid: entry.uid });
             touch(entry, ['category', 'action', 'reason', 'tool', 'tod']);
             currentLogIndex = idx;
             logAudit(kind === 'correction' ? 'TRIAGE_CORRECTED' : 'RETRIAGE_COMPLETE', entry.id, `${currentTool}: ${catShort(prev)} -> ${catShort(category)} (${reason})${kind === 'correction' ? ' — operator changed last answer' : ''}`, now, { uid: entry.uid });
-            if (MITTLib.categoryWorsened(prev, category)) { entry.lastDeteriorationAt = now; logAudit('DETERIORATION', entry.id, `Worsened ${catShort(prev)} -> ${catShort(category)}`, now, { uid: entry.uid }); triggerHaptic('alert'); }
+            // Correcting a mis-tap is not the casualty getting worse, so it is not flagged as deteriorating (v0.19.5 test).
+            if (kind !== 'correction' && MITTLib.categoryWorsened(prev, category)) { entry.lastDeteriorationAt = now; logAudit('DETERIORATION', entry.id, `Worsened ${catShort(prev)} -> ${catShort(category)}`, now, { uid: entry.uid }); triggerHaptic('alert'); }
             lastTriagePath = { uid: entry.uid, tool: currentTool, path: stepHistory.slice() };
             saveState(); updateDashboard(); renderResultScreen(entry);
             return;
@@ -3576,6 +3608,8 @@
             evacuated: false, evacDest: '', evacVehicle: '', hospitalId: '', handoverState: '', _rev: 1,
             atCcs: MITTLib.isCcsLabel(currentSector), ccsAt: MITTLib.isCcsLabel(currentSector) ? now : null,
         };
+        // Triaged during the demo or an exercise: practice, cleared with the demo casualties afterwards.
+        if (TRAINING && demoMode()) entry.demo = true;
         if (pos) Object.assign(entry, MITTLib.appendLocationHistory(entry, pos, { user: triagerName, source: 'gps-watch', reason: 'initial capture', confidence: entry.locationConfidence, sector: entry.sector }));
         else if (entry.sector) Object.assign(entry, MITTLib.appendLocationHistory(entry, { timestamp: now, source: 'sector-label' }, { user: triagerName, reason: 'initial sector label', source: 'sector-label', confidence: 'sector-only', sector: entry.sector }));
         incidentLog.push(entry);
@@ -3842,17 +3876,24 @@
         const oldCat = entry.category;
         if (newCat === oldCat) return;
         if (newCat === 'P1_HOLD' && userRole === 'HCP' && !p1HoldAllowedHere()) { showBlockingError('P1 Hold not in use', 'P1 Hold is not nationally signed off. It can only be used once the incident commander allows it for this incident on the commander screen.'); $('p-cat-override').value = oldCat; return; }
-        if ((newCat === 'DEAD' || newCat === 'P1_HOLD') && userRole !== 'HCP') { showBlockingError('Clinician decision', `${catShort(newCat)} can only be set by a healthcare professional.`); $('p-cat-override').value = oldCat; return; }
+        const perm = MITTLib.canChangeCategory(userRole, oldCat, newCat);
+        if (!perm.ok) { showBlockingError('Clinician decision', perm.why); $('p-cat-override').value = oldCat; return; }
         if (newCat === 'P1_HOLD') {
             // A senior clinical decision: confirm it, and say whose name it is recorded under (v0.19.4 retest).
             const ok = await inAppConfirm({ title: `Put ${entry.id} in P1 Hold?`, message: `P1 Hold is a senior clinical decision. It will be recorded as decided by ${triagerName || 'this phone\'s user'}.`, okLabel: 'Yes, P1 Hold', cancelLabel: 'No, keep ' + catShort(oldCat) });
             if (!ok || entry !== currentEntry() || entry.category !== oldCat) { $('p-cat-override').value = entry.category; return; }
         }
         entry.category = newCat;
+        // The old category's instruction no longer applies (v0.19.5 test: "P3 … NOT BREATHING — CPR if resources allow").
+        entry.action = `${catShort(newCat)} — category set by hand by ${triagerName || 'this phone\'s user'}.`;
+        entry.reason = 'Category changed manually';
+        const hadTod = entry.tod;
+        entry.tod = MITTLib.todAfterChange(newCat, '', entry.tod);
+        if (hadTod && !entry.tod) logAudit('TOD_CLEARED', entry.id, `Time of death ${hadTod} cleared: now ${catShort(newCat)}`, Date.now(), { uid: entry.uid });
         entry.lastReassessed = Date.now(); entry.reassessOutcome = 'category changed';
         entry.triageHistory = (entry.triageHistory || []).concat([{ ts: Date.now(), category: newCat, reason: 'Category changed manually', tool: entry.tool, by: triagerName, kind: 'override' }]);
         (entry.importConflicts || []).filter(c => c.field === 'category' && !c.resolved).forEach(c => { c.resolved = true; c.resolvedBy = triagerName; c.resolvedAt = Date.now(); });
-        touch(entry, ['category']);
+        touch(entry, ['category', 'action', 'reason', 'tod']);
         if (MITTLib.categoryWorsened(oldCat, newCat)) {
             entry.lastDeteriorationAt = Date.now();
             logAudit('DETERIORATION', entry.id, `Worsened ${catShort(oldCat)} -> ${catShort(newCat)} (manual change)`, Date.now(), { uid: entry.uid });
@@ -5663,6 +5704,8 @@
         initiateTriage(lastTriageTool || 'TST');
     }
     function resetToHome() { try { commitDirtyFields('Home'); } catch (e) {} showScreen('home-screen'); }
+    // 🏠 half-way through the questions asks first, like Cancel (v0.19.5 test: it left with no prompt and no record).
+    function homeButton() { if (document.body.dataset.screen === 'question-screen') confirmCancelCase(); else resetToHome(); }
 
     // ================= MAP =================
     // One map for the whole incident: every casualty with coordinates, colour-coded, clustered when
@@ -6037,6 +6080,12 @@
     // ================= SERVICE WORKER UPDATE UX =================
     let _swReg = null, _swUpdateDismissed = false, _swUpdateRequested = false;
     function showSwUpdateBanner() { if (_swUpdateDismissed) return; $('sw-update-banner').classList.add('show'); announce('A new version of Major Incident Triage is ready. Reload to update.', false); }
+    // A new version found while the app is still starting (first 15 s, nothing being triaged) is switched to at once,
+    // so the first reload after a release shows the new version (v0.19.5 test). Later, the banner asks first.
+    function swUpdateReady() {
+        const busy = document.body.dataset.screen === 'question-screen' || $('confirm-modal').style.display === 'flex';
+        if (!busy && performance.now() < 15000) applySwUpdate(); else showSwUpdateBanner();
+    }
     function dismissSwUpdate() { _swUpdateDismissed = true; $('sw-update-banner').classList.remove('show'); }
     function applySwUpdate() {
         commitDirtyFields('Update'); saveState();
@@ -6092,10 +6141,10 @@
                 if (!reg) throw new Error('registration unavailable');
                 _swReg = reg;
                 navigator.serviceWorker.ready.then(checkOfflineReady);
-                if (reg.waiting && navigator.serviceWorker.controller) showSwUpdateBanner();
+                if (reg.waiting && navigator.serviceWorker.controller) swUpdateReady();
                 reg.addEventListener('updatefound', () => {
                     const sw = reg.installing;
-                    if (sw) sw.addEventListener('statechange', () => { if (sw.state === 'installed' && navigator.serviceWorker.controller) showSwUpdateBanner(); });
+                    if (sw) sw.addEventListener('statechange', () => { if (sw.state === 'installed' && navigator.serviceWorker.controller) swUpdateReady(); });
                 });
                 // Check for a new version on every start and whenever the app comes back to the front (at most every
                 // 5 minutes), not only every 30 minutes: a plain reload could otherwise keep showing the old version.
@@ -6116,7 +6165,18 @@
     const CMD_PUSH_DEBOUNCE_MS = 3000, CMD_HEARTBEAT_MS = 60 * 1000, CMD_FETCH_TIMEOUT_MS = 15 * 1000, CMD_BATCH = 200;
     const CMD = { cfg: null, dirty: new Set(), seen: {}, timer: null, heartbeat: null, inflight: false, lastSentAt: 0, lastError: '', failStreak: 0, sentTotal: 0 };
     function cmdActive() { return !!(CMD.cfg && CMD.cfg.code && CMD.cfg.pin); }
-    function cmdSaveCfg() { ls('mit_commander', CMD.cfg ? JSON.stringify(CMD.cfg) : null); }
+    function cmdSaveCfg() { ls('mit_commander', CMD.cfg ? JSON.stringify(CMD.cfg) : null); if (CMD.cfg && CMD.cfg.deviceKey) cmdRememberDeviceKey(CMD.cfg.code, CMD.cfg.deviceKey); }
+    // This phone's device key for each incident it has linked to, kept after "Stop sharing", so it can join the
+    // same incident again under its own device code (another phone cannot take that code over).
+    function cmdKnownDeviceKey(code) { try { return (JSON.parse(ls('mit_device_keys') || '{}') || {})[code] || ''; } catch (e) { return ''; } }
+    function cmdRememberDeviceKey(code, key) {
+        let m = {};
+        try { m = JSON.parse(ls('mit_device_keys') || '{}') || {}; } catch (e) {}
+        if (m[code] === key) return;
+        m[code] = key;
+        const codes = Object.keys(m); if (codes.length > 20) delete m[codes[0]];
+        ls('mit_device_keys', JSON.stringify(m));
+    }
     // ---------- Battery (Android Chrome; Safari has no battery API, so the pill never shows there) ----------
     const BAT = { level: null, charging: null, warned: 0 };
     function batteryRender() {
@@ -6178,26 +6238,23 @@
     function cmdQueueAll() { CMD.seen = {}; cmdScanChanges(); incidentLog.forEach(e => { if (e && e.uid && !cmdHeld(e.uid)) CMD.dirty.add(e.uid); }); }
     // Casualties the user chose NOT to send to this incident (older ones already on the phone when it linked).
     function cmdHeld(uid) { return !!(CMD.cfg && Array.isArray(CMD.cfg.skip) && CMD.cfg.skip.indexOf(uid) > -1); }
-    // Linking sends what is on the phone. Casualties triaged just before linking belong to this incident and go
-    // without a question; older ones (over 3 hours, another incident code, or demo casualties outside the demo) are
-    // asked about, so a previous incident never lands on a new commander screen (Chrome retest, 30 Oct 2026).
+    // Linking asks before sending any casualty already on the phone, unless it is already marked with this
+    // incident's code (v0.19.5 test: 8 casualties from before joining appeared on a new commander screen).
+    // Demo casualties are always asked about outside the demo, and never sent without a yes.
     async function cmdAskAboutOlder(targetIncidentCode) {
-        const cutoff = Date.now() - 3 * 60 * 60 * 1000;
         const demoOn = !!demoMode();
-        // A record already marked with this incident's code belongs to it, however long the incident has run.
         const older = incidentLog.filter(r => r && r.uid && (
             (!demoOn && MITTLib.isDemoRecord(r)) ||
-            (!(targetIncidentCode && r.incidentCode === targetIncidentCode) && (
-                (r.createdAt || r.timestamp || 0) < cutoff ||
-                (targetIncidentCode && r.incidentCode && r.incidentCode !== targetIncidentCode)))));
+            !(targetIncidentCode && r.incidentCode === targetIncidentCode)));
         if (!older.length) return [];
         const first = Math.min.apply(null, older.map(r => r.createdAt || r.timestamp || Date.now()));
+        const otherCodes = Array.from(new Set(older.map(r => r.incidentCode).filter(c => c && c !== targetIncidentCode)));
         const send = await inAppConfirm({
-            title: `Send ${older.length} older casualt${older.length === 1 ? 'y' : 'ies'} too?`,
-            message: `This phone already holds ${older.length} casualt${older.length === 1 ? 'y' : 'ies'} that look${older.length === 1 ? 's' : ''} as if ${older.length === 1 ? 'it is' : 'they are'} from before this incident (the earliest triaged ${fmtDateTime(first)}${older.some(r => MITTLib.isDemoRecord(r)) ? ', including made-up demo patients' : ''}).\n\nOnly send them if they are part of this incident. Casualties you record from now on are always sent.`,
-            okLabel: 'Yes, send them too', cancelLabel: 'No, only new casualties'
+            title: `Send the ${older.length} casualt${older.length === 1 ? 'y' : 'ies'} already on this phone?`,
+            message: `This phone already holds ${older.length} casualt${older.length === 1 ? 'y' : 'ies'} (the earliest triaged ${fmtDateTime(first)}${otherCodes.length ? `; marked with incident ${otherCodes.join(', ')}` : ''}${older.some(r => MITTLib.isDemoRecord(r)) ? '; including made-up demo patients' : ''}).\n\nOnly send them if they are part of this incident. Casualties you record from now on are always sent.`,
+            okLabel: 'Yes, they are part of this incident', cancelLabel: 'No, only new casualties'
         });
-        logAudit('COMMANDER_OLDER_RECORDS', '-', `${older.length} older casualt${older.length === 1 ? 'y' : 'ies'} on this phone ${send ? 'sent' : 'NOT sent'} to the incident`, Date.now(), { uids: older.map(r => r.uid) });
+        logAudit('COMMANDER_OLDER_RECORDS', '-', `${older.length} casualt${older.length === 1 ? 'y' : 'ies'} already on this phone ${send ? 'sent' : 'NOT sent'} to the incident`, Date.now(), { uids: older.map(r => r.uid) });
         return send ? [] : older.map(r => r.uid);
     }
     function cmdSchedule(ms) { if (CMD.timer) clearTimeout(CMD.timer); CMD.timer = setTimeout(() => { CMD.timer = null; cmdPush(); }, ms); }
@@ -6207,6 +6264,10 @@
         const to = ctrl ? setTimeout(() => ctrl.abort(), CMD_FETCH_TIMEOUT_MS) : null;
         const headers = { 'Content-Type': 'application/json' };
         if (opts.pin) headers['x-incident-pin'] = opts.pin;
+        // Keys the server handed this phone when it linked: one lets it through the incident-wide wrong-PIN lock-out,
+        // the other ties its reports to its device code (v0.19.6).
+        if (opts.keys !== false && CMD.cfg && CMD.cfg.accessKey) headers['x-incident-key'] = CMD.cfg.accessKey;
+        if (opts.keys !== false && CMD.cfg && CMD.cfg.deviceKey) headers['x-device-key'] = CMD.cfg.deviceKey;
         try {
             const r = await fetch(path, { method: opts.method || 'GET', headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
             let body = null;
@@ -6224,7 +6285,7 @@
         CMD.inflight = true;
         try {
             const duressSent = CMD.cfg.duress ? Object.assign({}, CMD.cfg.duress) : null;
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length - (CMD.cfg.skip ? incidentLog.filter(e => cmdHeld(e.uid)).length : 0), records: batch, sector: currentSector || '', userRole: userRole || undefined, commander: !!CMD.cfg.commander, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, clientNow: Date.now(), triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length - (CMD.cfg.skip ? incidentLog.filter(e => cmdHeld(e.uid)).length : 0), records: batch, sector: currentSector || '', userRole: userRole || undefined, commander: !!CMD.cfg.commander, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload() } });
             if (r.status === 200) {
                 batch.forEach(x => CMD.dirty.delete(x.uid));
                 cmdHandleDuressReply(r.body.duress, duressSent);
@@ -6244,10 +6305,15 @@
                 if (batch.length) logAudit('COMMANDER_PUSH', '-', `${batch.length} record(s) sent to commander ${CMD.cfg.code}: ${r.body.accepted || 0} accepted, ${r.body.kept || 0} already newer, ${(r.body.rejected || []).length} rejected`, Date.now(), { uids: batch.map(x => x.uid) });
                 if (manual) showToast(batch.length ? `Sent ${batch.length} record(s) to the commander.` : 'Commander is up to date.');
                 if (CMD.dirty.size) cmdSchedule(300);
-            } else if (r.status === 401 || r.status === 404 || r.status === 410) {
-                const why = r.status === 410 ? 'the incident expired on the server (24 hours with no updates)' : r.status === 404 ? 'the incident was ended' : 'the PIN was refused';
+            } else if (r.status === 410) {
+                // Only a clear "ended" or "expired" from the server unlinks the phone. A server or storage error
+                // (5xx) is retried: it used to read as "not found" and unlinked every phone (v0.19.5 test).
+                const why = r.body && r.body.error === 'expired' ? 'the incident expired on the server (24 hours with no new information)' : 'the incident was ended';
                 cmdStopLocal(`Sharing stopped: ${why}.`);
                 showToast(`Live sharing stopped: ${why}.`, { alert: true, long: true });
+            } else if (r.status === 403 && r.body && r.body.error === 'device_key') {
+                cmdStopLocal('Sharing stopped: this phone\'s link is out of date.');
+                showBlockingError('Link to the commander is out of date', 'Join the incident again with the code and PIN. Your records are still on this phone and are sent again once you have joined.');
             } else {
                 throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
             }
@@ -6375,7 +6441,7 @@
             const r = await cmdFetch('/api/incident', { method: 'POST', body: { deviceId, triager: triagerName, name: '', incidentCode, training: TRAINING, app: APP_VERSION } });
             if (r.status !== 201 || !r.body.code) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
             const skip = await cmdAskAboutOlder(incidentCode);
-            CMD.cfg = { code: r.body.code, pin: r.body.pin, viewPin: r.body.viewPin || '', role: 'creator', commander: !!opts.commander, startedAt: Date.now(), skip };
+            CMD.cfg = { code: r.body.code, pin: r.body.pin, cmdPin: r.body.commanderPin || '', viewPin: r.body.viewPin || '', deviceKey: r.body.deviceKey || '', accessKey: r.body.accessKey || '', role: 'creator', commander: !!opts.commander, startedAt: Date.now(), skip };
             cmdSaveCfg();
             logAudit('COMMANDER_SHARE_START', '-', `Started live sharing: incident ${CMD.cfg.code} created by this phone${opts.commander ? ' (incident commander)' : ''}`, Date.now());
             cmdQueueAll();
@@ -6397,11 +6463,13 @@
         const pin = String(pinIn !== undefined ? pinIn : $('cmd-join-pin').value).replace(/\D/g, '').slice(0, 6);
         if (code.length !== 6 || pin.length !== 6) { showToast('The code is 6 letters or digits and the PIN is 6 digits.', { alert: true }); return false; }
         try {
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(code)}/join`, { method: 'POST', pin, body: { deviceId, triager: triagerName, app: APP_VERSION } });
+            const sameIncident = CMD.cfg && CMD.cfg.code === code;
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(code)}/join`, { method: 'POST', pin, keys: false, body: { deviceId, triager: triagerName, app: APP_VERSION, deviceKey: (sameIncident && CMD.cfg.deviceKey) || cmdKnownDeviceKey(code) || undefined } });
             if (r.status !== 200) { showBlockingError('Could not join', r.body && r.body.message ? r.body.message : `Server replied ${r.status}.`); return false; }
             if (!!r.body.training !== TRAINING) { showBlockingError('Training mismatch', r.body.training ? 'That incident is a training incident, and this phone is in real use. To join it, turn on Training mode at the top of ⚙ Settings, then join again.' : 'That incident is real, and this phone is in training mode. To join it, turn off Training mode at the top of ⚙ Settings, then join again.'); return false; }
             const skip = CMD.cfg && CMD.cfg.code === code && Array.isArray(CMD.cfg.skip) ? CMD.cfg.skip : await cmdAskAboutOlder(r.body.incidentCode || incidentCode);
-            CMD.cfg = { code, pin, role: 'member', startedAt: Date.now(), skip };
+            // Joined with the commander PIN: this phone may also end the incident.
+            CMD.cfg = { code, pin, cmdPin: r.body.level === 'commander' ? pin : '', deviceKey: r.body.deviceKey || '', accessKey: r.body.accessKey || '', role: 'member', startedAt: Date.now(), skip };
             cmdSaveCfg();
             logAudit('COMMANDER_JOINED', '-', `Joined live sharing for incident ${code}`, Date.now());
             if (r.body.incidentCode && !incidentCode) setIncidentCode(r.body.incidentCode, 'commander join');
@@ -6431,6 +6499,8 @@
         if (!cmdActive()) { openModesMenu(); return; }
         setText('cmd-code', CMD.cfg.code);
         setText('cmd-pin', CMD.cfg.pin);
+        $('cmd-cmdpin-wrap').style.display = CMD.cfg.cmdPin && CMD.cfg.cmdPin !== CMD.cfg.pin ? '' : 'none';
+        setText('cmd-cmdpin', CMD.cfg.cmdPin || '');
         $('cmd-view-wrap').style.display = CMD.cfg.viewPin ? '' : 'none';
         setText('cmd-view-pin', CMD.cfg.viewPin || '');
         const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}commander.html#${CMD.cfg.code}`;
@@ -6440,14 +6510,14 @@
         setText('cmd-detail-hint', CMD.cfg.role === 'creator'
             ? 'Triagers: on their start screen, pick a role, then "Scan the commander\'s code" and point the camera at this QR. The commander screen opens below on this phone with no sign-in; on a laptop or big screen, open the link and enter the PIN.'
             : 'Show this QR to another triager so they can link too. The commander screen opens below on this phone with no sign-in.');
-        $('cmd-end-btn').style.display = CMD.cfg.role === 'creator' ? '' : 'none';
+        $('cmd-end-btn').style.display = CMD.cfg.cmdPin ? '' : 'none';
         try { _renderQR($('cmd-qr'), JSON.stringify({ t: 'MIT_JOIN', c: CMD.cfg.code, p: CMD.cfg.pin }), Math.min(220, qrSize())); } catch (e) { clearChildren($('cmd-qr')); }
         cmdRenderStatus();
         closeModesMenu();
         $('cmd-modal').style.display = 'flex';
     }
     function closeCmdDetails() { $('cmd-modal').style.display = 'none'; }
-    function cmdCopyLink() { if (!cmdActive()) return; copyText(`Incident commander view: ${$('cmd-link').href}\nCode ${CMD.cfg.code}  PIN ${CMD.cfg.pin}${CMD.cfg.viewPin ? `\nView-only PIN ${CMD.cfg.viewPin}` : ''}`, 'Link, code and PIN copied.'); }
+    function cmdCopyLink() { if (!cmdActive()) return; copyText(`Incident ${CMD.cfg.code}\nTriagers' PIN (to link phones): ${CMD.cfg.pin}${CMD.cfg.cmdPin && CMD.cfg.cmdPin !== CMD.cfg.pin ? `\nCommander PIN (commander screen, can change decisions; keep it to the command team): ${CMD.cfg.cmdPin}` : ''}${CMD.cfg.viewPin ? `\nView-only PIN (watch only): ${CMD.cfg.viewPin}` : ''}\nCommander screen: ${$('cmd-link').href}`, 'Code, PINs and link copied.'); }
     function cmdStopLocal(reason) {
         const code = CMD.cfg ? CMD.cfg.code : '';
         CMD.cfg = null; cmdSaveCfg();
@@ -6470,8 +6540,9 @@
         const ok = await inAppConfirm({ title: 'End the incident for everyone?', message: `Deletes the server copy now. Every phone stops sending and the commander screen shows nothing more. Phones keep their own records.`, okLabel: 'End incident', danger: true });
         if (!ok) return;
         try {
-            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/close`, { method: 'POST', pin: CMD.cfg.pin, body: {} });
-            if (r.status !== 200 && r.status !== 404 && r.status !== 410) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
+            if (!CMD.cfg.cmdPin) { showBlockingError('Commander PIN needed', 'Only the commander PIN can end the incident for everyone.'); return; }
+            const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/close`, { method: 'POST', pin: CMD.cfg.cmdPin, body: {} });
+            if (r.status !== 200 && r.status !== 410) throw new Error(r.body && r.body.message ? r.body.message : `server replied ${r.status}`);
             logAudit('COMMANDER_ENDED', '-', `Ended incident ${CMD.cfg.code} on the server (${r.body.deleted || 0} items deleted)`, Date.now());
             closeCmdDetails();
             cmdStopLocal('Ended the incident for everyone');
@@ -6645,11 +6716,26 @@
         });
         $('demo-role-modal').style.display = 'flex';
     }
-    // "↩ Start page": leave the demo and go back to real use on the start screen, where ▶ Demo picks another role.
-    // No question asked: the demo reloads fresh each time. Practice records stay in training until deleted.
+    // "↩ Start page": leave the demo and go back to the start screen, where ▶ Demo picks another role. The phone
+    // goes back to the mode it was in before the demo: real use if the demo switched training on, otherwise it stays
+    // in training (v0.19.5 test). Demo casualties, and any triaged during the demo, are cleared either way.
     async function leaveDemo() {
         closeDemoGuide(); closeDemoPicker();
         if (!TRAINING || !demoMode()) { showScreen('intro-screen'); return; }
+        let fromReal = false;
+        try { fromReal = localStorage.getItem('mit_demo_from_real') === '1'; localStorage.removeItem('mit_demo_from_real'); } catch (e) {}
+        if (!fromReal) {
+            commitDirtyFields('Leaving demo');
+            ls('mit_demo_mode', null);
+            logAudit('DEMO_ENDED', '-', 'Left the demo incident; training mode stays on', Date.now());
+            dropDemoRecords('left the demo');
+            dropDemoSettings('left the demo');
+            renderDemoBanner(); updateDashboard();
+            await saveState();
+            showScreen('intro-screen');
+            showToast('Left the demo. Training mode is still on (practice only).', { long: true });
+            return;
+        }
         commitDirtyFields('Leaving demo');
         logAudit('TRAINING_MODE_OFF', '-', 'Left the demo incident', Date.now());
         ls('mit_demo_mode', null);
@@ -6684,10 +6770,11 @@
             commitDirtyFields('Demo incident');
             logAudit('TRAINING_MODE_ON', '-', 'Switched to training mode to open the demo incident', Date.now());
             await saveState();
-            try { localStorage.setItem('mit_training', '1'); localStorage.setItem('mit_demo_pending', mode); localStorage.setItem('mit_demo_pending_name', $('intro-triager').value.trim()); } catch (e) {}
+            try { localStorage.setItem('mit_training', '1'); localStorage.setItem('mit_demo_from_real', '1'); localStorage.setItem('mit_demo_pending', mode); localStorage.setItem('mit_demo_pending_name', $('intro-triager').value.trim()); } catch (e) {}
             location.reload();
             return;
         }
+        if (!demoMode()) { try { localStorage.removeItem('mit_demo_from_real'); } catch (e) {} }
         if (!dbReady) { showToast('Still loading. Try again in a moment.'); return; }
         // Only practice patients someone typed in themselves are worth a question; demo casualties reload fresh.
         const others = incidentLog.filter(r => !MITTLib.isDemoRecord(r)).length;

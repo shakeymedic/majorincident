@@ -33,7 +33,8 @@ function loadCfg() {
             ['mit_commander', 'trn_mit_commander'].forEach(k => {
                 if (cfg) return;
                 const app = JSON.parse(localStorage.getItem(k) || 'null');
-                if (app && app.code && app.pin && (!h || h === app.code)) cfg = { code: app.code, pin: app.pin, fromPhone: true };
+                // The phone that started the incident holds the commander PIN; a phone that joined only has the triagers' PIN (view only here).
+                if (app && app.code && app.pin && (!h || h === app.code)) cfg = { code: app.code, pin: app.cmdPin || app.pin, key: app.accessKey || '', by: (localStorage.getItem(k === 'trn_mit_commander' ? 'trn_mit_triager' : 'mit_triager') || localStorage.getItem('mit_triager') || '').slice(0, 80), fromPhone: true };
             });
         } catch (e) {}
     }
@@ -43,14 +44,28 @@ function loadCfg() {
     wallRequested = wall;
     if (cfg && cfg.code) { $('in-code').value = cfg.code; $('in-pin').value = cfg.pin || ''; }
 }
+function saveCfg() { try { sessionStorage.setItem('mit_commander', JSON.stringify(cfg)); } catch (e) {} }
+// Headers for every request: the PIN, plus the incident key the server handed back after the first good PIN
+// (it lets this screen through the incident-wide wrong-PIN lock-out that strangers' guesses can trigger).
+function hdrs(json) { const h = { 'x-incident-pin': cfg.pin }; if (cfg.key) h['x-incident-key'] = cfg.key; if (json) h['Content-Type'] = 'application/json'; return h; }
+// Every decision is recorded with who made it (v0.19.5 test: withdrawals and MITT prompts were saved with no name).
+async function whoDecides() {
+    if (demo) return 'Demo commander';
+    if (cfg && cfg.by) return cfg.by;
+    const v = await ask({ title: 'Your name and role', message: 'Every decision on this screen is recorded with the name of who made it. You are asked once.', input: 'e.g. Silver, Insp A Kaur', okLabel: 'Save' });
+    const by = typeof v === 'string' ? v.trim().slice(0, 80) : '';
+    if (!by) return '';
+    cfg.by = by; saveCfg();
+    return by;
+}
 function setStatus(cls, text) { const p = $('status-pill'); p.className = 'pill ' + cls; p.textContent = text; }
 function signIn() {
     const code = $('in-code').value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
     const pin = $('in-pin').value.replace(/\D/g, '').slice(0, 6);
     $('signin-error').classList.add('hidden');
     if (code.length !== 6 || pin.length !== 6) { $('signin-error').textContent = 'The code is 6 letters or digits and the PIN is 6 digits.'; $('signin-error').classList.remove('hidden'); return; }
-    cfg = { code, pin };
-    try { sessionStorage.setItem('mit_commander', JSON.stringify(cfg)); } catch (e) {}
+    cfg = { code, pin, by: ($('in-by') ? $('in-by').value : '').trim().slice(0, 80) };
+    saveCfg();
     start();
 }
 function signOut() {
@@ -82,7 +97,7 @@ function renderHeader() {
     if (data.incidentCode) bits.push(`<span class="chip">Incident <b>${esc(data.incidentCode)}</b></span>`);
     if (data.createdAt) bits.push(`<span class="chip">Running <b id="hdr-elapsed">${elapsedText(Date.now() - data.createdAt)}</b></span>`);
     // First and in amber, so an observer cannot miss that nothing here can be changed (v0.19.4 retest).
-    if (data.viewOnly) bits.unshift(`<span class="chip chip-view" title="Opened with the view-only PIN: you can watch but not change anything">👁 View only</span>`);
+    if (data.viewOnly) bits.unshift(data.access === 'triager' ? `<span class="chip chip-view" title="Opened with the triagers' PIN: you can watch but not change anything. Use the commander PIN to make decisions.">👁 View only (triagers' PIN)</span>` : `<span class="chip chip-view" title="Opened with the view-only PIN: you can watch but not change anything">👁 View only</span>`);
     $('hdr-incident').innerHTML = bits.join('');
 }
 function start() {
@@ -150,7 +165,7 @@ async function refreshNow() {
     try {
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const to = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
-        const headers = { 'x-incident-pin': cfg.pin };
+        const headers = hdrs();
         if (etag) headers['If-None-Match'] = etag;
         if (knownSeq) headers['X-Incident-Seq'] = knownSeq;
         const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}`, { headers, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
@@ -171,6 +186,7 @@ async function refreshNow() {
         }
         if (!r.ok) throw new Error('Server error ' + r.status);
         data = await r.json();
+        if (data.accessKey && data.accessKey !== cfg.key) { cfg.key = data.accessKey; saveCfg(); }
         document.body.classList.remove('incident-gone');
         etag = r.headers.get('ETag') || '';
         knownSeq = r.headers.get('X-Incident-Seq') || (data.seq !== undefined ? String(data.seq) : '');
@@ -326,8 +342,10 @@ function startMarking() {
 async function saveMarks(marks) {
     marks = MITTLib.normaliseMapMarks(marks);
     if (demo) { demoMarks = marks; data.marks = marks; render(); return true; }
+    const by = await whoDecides();
+    if (!by) return false;
     try {
-        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/marks`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify({ marks }), cache: 'no-store' });
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/marks`, { method: 'POST', headers: hdrs(true), body: JSON.stringify({ marks, by }), cache: 'no-store' });
         const b = await r.json().catch(() => ({}));
         if (!r.ok) { tell(b.message || `Could not save the map markings (server replied ${r.status}).`); return false; }
         data.marks = b.marks || marks; data.marksAt = b.marksAt || Date.now();
@@ -378,19 +396,23 @@ function renderDecisions() {
     const p = policyNow();
     const can = canMark();
     const hold = p.p1Hold && p.p1Hold.on ? p.p1Hold : null;
-    const holdHtml = `<div class="dec"><h3>P1 Hold</h3><div class="state">${hold ? `ALLOWED since ${hm(hold.at)} • decision by ${esc(hold.by || 'not recorded')}` : 'Not in use (default)'}${p.p1Hold && !hold && p.p1Hold.at ? ` <span class="muted">withdrawn ${hm(p.p1Hold.at)}</span>` : ''}</div>` +
+    const holdHtml = `<div class="dec"><h3>P1 Hold</h3><div class="state">${hold ? `ALLOWED since ${hm(hold.at)} • decision by ${esc(hold.by || 'not recorded')}` : 'Not in use (default)'}${p.p1Hold && !hold && p.p1Hold.at ? ` <span class="muted">withdrawn ${hm(p.p1Hold.at)}${p.p1Hold.by ? ' by ' + esc(p.p1Hold.by) : ''}</span>` : ''}</div>` +
         `<p class="muted" style="margin:4px 0">Not nationally signed off. While off, clinicians' phones do not offer it. Allow it only on a senior clinical decision, and record who made it.</p>` +
         (can ? (hold ? `<button type="button" class="btn small sec" data-act="setP1Hold" data-on="0">Withdraw P1 Hold</button>` : `<div class="row"><input type="text" id="p1hold-by" maxlength="80" placeholder="Decision by (name and role)" aria-label="P1 Hold decision by"><button type="button" class="btn small" data-act="setP1Hold" data-on="1">Allow P1 Hold</button></div>`) : '') + `</div>`;
     const m = p.mitt;
     const groups = sectorGroups();
     const opt = (g, label) => `<label><input type="checkbox" class="mitt-grp" value="${esc(g)}"> ${esc(label)} <span class="muted">(${phonesIn(g)} phone${phonesIn(g) === 1 ? '' : 's'})</span></label>`;
-    const mittHtml = `<div class="dec"><h3>MITT now in use</h3><div class="state">${m ? `Prompt sent ${hm(m.at)} to ${esc(m.groups.map(MITTLib.policyGroupLabel).join(', '))}` : 'No prompt sent. Phones use TST unless a clinician switches.'}</div>` +
+    const mittHtml = `<div class="dec"><h3>MITT now in use</h3><div class="state">${m ? `Prompt sent ${hm(m.at)} to ${esc(m.groups.map(MITTLib.policyGroupLabel).join(', '))}${m.by ? ' by ' + esc(m.by) : ''}` : 'No prompt sent. Phones use TST unless a clinician switches.'}</div>` +
         `<p class="muted" style="margin:4px 0">Sends a prompt to the phones you choose. Clinicians can switch their main button to MITT; non-clinical phones are told to carry on with TST. Anyone can also switch on their own phone without a prompt.</p>` +
         (can ? `<div class="groups">${opt('hcp', 'All clinicians')}${groups.map(g => opt('sector:' + g, g)).join('')}${opt('all', 'Every phone')}</div><button type="button" class="btn small" data-act="sendMittPrompt">Send MITT prompt</button> <span class="muted" id="mitt-hint"></span>` : '') + `</div>`;
     // Redrawn on every refresh, so keep what the commander has ticked or typed but not yet sent.
     const ticked = Array.from(box.querySelectorAll('.mitt-grp:checked')).map(x => x.value);
     const byEl = $('p1hold-by'), typed = byEl ? byEl.value : '', hadFocus = byEl && document.activeElement === byEl;
-    const html = holdHtml + mittHtml;
+    // Who decided what, newest first (kept on the server with every decision).
+    const DEC = { 'p1hold-on': 'P1 Hold allowed', 'p1hold-off': 'P1 Hold withdrawn', mitt: 'MITT prompt sent', marks: 'Map markings changed', 'duress-cleared': 'Call for help cleared' };
+    const log = (data.decisions || []).slice(-8).reverse();
+    const logHtml = log.length ? `<div class="dec"><h3>Decision log</h3><ul class="dec-log">${log.map(d => `<li>${hm(d.at)} ${esc(DEC[d.what] || d.what)}${d.what === 'duress-cleared' && d.triager ? ' (' + esc(d.triager) + ')' : ''} — ${esc(d.by || 'not recorded')}</li>`).join('')}</ul></div>` : '';
+    const html = holdHtml + mittHtml + logHtml;
     if (box._html === html) return;
     box._html = html;
     box.innerHTML = html;
@@ -407,7 +429,7 @@ async function savePolicy(change) {
         demoPolicy = MITTLib.normalisePolicy(p); data.policy = demoPolicy; render(); return true;
     }
     try {
-        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/policy`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify(change), cache: 'no-store' });
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/policy`, { method: 'POST', headers: hdrs(true), body: JSON.stringify(change), cache: 'no-store' });
         const b = await r.json().catch(() => ({}));
         if (!r.ok) { tell(b.message || `Could not save the decision (server replied ${r.status}).`); return false; }
         data.policy = b.policy || {}; data.policyAt = b.policyAt || Date.now();
@@ -418,7 +440,12 @@ async function savePolicy(change) {
 }
 async function setP1Hold(on) {
     if (!canMark()) return;
-    if (!on) { if (await ask({ title: 'Withdraw P1 Hold?', message: 'Clinicians\' phones stop offering it. Casualties already in P1 Hold keep it until a clinician changes them.', okLabel: 'Withdraw P1 Hold', danger: true })) savePolicy({ p1Hold: { on: false } }); return; }
+    if (!on) {
+        if (!await ask({ title: 'Withdraw P1 Hold?', message: 'Clinicians\' phones stop offering it. Casualties already in P1 Hold keep it until a clinician changes them.', okLabel: 'Withdraw P1 Hold', danger: true })) return;
+        const who = await whoDecides();
+        if (who) savePolicy({ p1Hold: { on: false, by: who } });
+        return;
+    }
     const by = (($('p1hold-by') || {}).value || '').trim();
     if (!by) { await tell('Type who made the P1 Hold decision (name and role) first.', 'Name needed'); if ($('p1hold-by')) $('p1hold-by').focus(); return; }
     if (await ask({ title: 'Allow P1 Hold for this incident?', message: `Decision by: ${by}\n\nClinicians' phones will offer P1 Hold from their next report.`, okLabel: 'Allow P1 Hold' })) savePolicy({ p1Hold: { on: true, by } });
@@ -429,7 +456,9 @@ async function sendMittPrompt() {
     if (!groups.length) { setText('mitt-hint', 'Tick who the prompt goes to first.'); return; }
     const n = promptTargets(groups).length;
     if (!await ask({ title: 'Send the MITT prompt?', message: `Tell ${groups.map(MITTLib.policyGroupLabel).join(', ')} that MITT is now in use?\n\n${n} phone${n === 1 ? '' : 's'} reporting now match. Phones that join later or change sector see it too if they match.`, okLabel: 'Send prompt' })) return;
-    savePolicy({ mitt: { groups } }).then(ok => { if (ok) setText('mitt-hint', 'Sent. Phones see it with their next report.'); });
+    const who = await whoDecides();
+    if (!who) return;
+    savePolicy({ mitt: { groups, by: who } }).then(ok => { if (ok) setText('mitt-hint', 'Sent. Phones see it with their next report.'); });
 }
 
 // ---------- Alerts: things the control room must not miss, with a sound ----------
@@ -545,8 +574,10 @@ async function clearDuress(deviceId) {
     if (!d || !sos(d)) return;
     if (!await ask({ title: `Clear the call for help from ${d.triager || deviceId}?`, message: 'Only do this once someone is going to them. Their phone is told it was cleared; they can call again if they still need help.', okLabel: 'Clear: help is on its way' })) return;
     if (demo) { d.duress = Object.assign({}, d.duress, { clearedAt: Date.now(), clearedBy: 'commander' }); render(); return; }
+    const by = await whoDecides();
+    if (!by) return;
     try {
-        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/duress-clear`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-incident-pin': cfg.pin }, body: JSON.stringify({ deviceId }), cache: 'no-store' });
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/duress-clear`, { method: 'POST', headers: hdrs(true), body: JSON.stringify({ deviceId, by }), cache: 'no-store' });
         const b = await r.json().catch(() => ({}));
         if (!r.ok) { tell(b.message || `Could not clear the call for help (server replied ${r.status}).`); return; }
         d.duress = b.duress || Object.assign({}, d.duress, { clearedAt: Date.now(), clearedBy: 'commander' });
@@ -770,17 +801,23 @@ function ask(opts) {
     ok.className = 'btn' + (o.danger ? ' danger' : '');
     cancel.textContent = o.cancelLabel || 'Cancel';
     cancel.style.display = o.alertOnly ? 'none' : '';
+    // With o.input, the dialog has a text box and answers with its text (or null on Cancel).
+    const inp = $('ask-input');
+    askWantsText = !!o.input;
+    inp.style.display = o.input ? '' : 'none';
+    inp.value = ''; inp.placeholder = typeof o.input === 'string' ? o.input : '';
     askReturnFocus = document.activeElement;
     $('ask-modal').classList.add('open');
-    try { (o.alertOnly ? ok : cancel).focus(); } catch (e) {}
+    try { (o.input ? inp : o.alertOnly ? ok : cancel).focus(); } catch (e) {}
     return new Promise(res => { askResolve = res; });
 }
+let askWantsText = false;
 function askAnswer(ok) {
     $('ask-modal').classList.remove('open');
     const res = askResolve; askResolve = null;
     const back = askReturnFocus; askReturnFocus = null;
     if (back && back.isConnected && back.focus) { try { back.focus(); } catch (e) {} }
-    if (res) res(!!ok);
+    if (res) res(askWantsText ? (ok ? $('ask-input').value : null) : !!ok);
 }
 function tell(message, title) { return ask({ title: title || '', message, alertOnly: true }); }
 
@@ -903,7 +940,7 @@ document.addEventListener('change', e => {
 document.addEventListener('keydown', e => {
     // Rows, alerts and timeline entries open with Enter or Space, as a button would.
     if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(button):not(a)')) { e.preventDefault(); e.target.click(); return; }
-    if (askResolve) { if (e.key === 'Escape') { e.preventDefault(); askAnswer(false); } return; }
+    if (askResolve) { if (e.key === 'Escape') { e.preventDefault(); askAnswer(false); } else if (e.key === 'Enter' && askWantsText) { e.preventDefault(); askAnswer(true); } return; }
     if (e.key === 'Escape' && openUid) { closePatient(); return; }
     if (e.key === 'Enter' && !$('signin').classList.contains('hidden')) signIn();
     if ((e.key === 'w' || e.key === 'W') && $('signin').classList.contains('hidden') && !/INPUT|TEXTAREA/.test((e.target && e.target.tagName) || '')) toggleWall();

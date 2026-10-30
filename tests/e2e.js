@@ -1173,9 +1173,11 @@ async function test(name, fn) {
         await answerDialog(CA, true);
         await CA.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
         await page_visible(CA, '#cmd-modal');
-        share = await CA.evaluate(() => ({ code: CMD.cfg.code, pin: CMD.cfg.pin, role: CMD.cfg.role, link: document.getElementById('cmd-link').href, qr: document.querySelector('#cmd-qr canvas, #cmd-qr img') !== null }));
+        share = await CA.evaluate(() => ({ code: CMD.cfg.code, pin: CMD.cfg.pin, cmdPin: CMD.cfg.cmdPin, role: CMD.cfg.role, link: document.getElementById('cmd-link').href, qr: document.querySelector('#cmd-qr canvas, #cmd-qr img') !== null }));
         assert.match(share.code, /^[A-HJ-NP-Z2-9]{6}$/);
         assert.match(share.pin, /^\d{6}$/);
+        assert.match(share.cmdPin, /^\d{6}$/);
+        assert.notStrictEqual(share.cmdPin, share.pin, 'v0.19.6: the commander PIN is not the triagers\' PIN');
         assert.strictEqual(share.role, 'creator');
         assert.ok(share.link.endsWith('/commander.html#' + share.code), share.link);
         assert.ok(share.qr, 'join QR drawn');
@@ -1196,8 +1198,9 @@ async function test(name, fn) {
         await CC.fill('#in-pin', '000000');
         await CC.click('#signin button');
         await page_visible(CC, '#signin-error');
-        assert.match(await CC.evaluate(() => document.getElementById('signin-error').textContent), /Wrong PIN/);
-        await CC.fill('#in-pin', share.pin);
+        assert.match(await CC.evaluate(() => document.getElementById('signin-error').textContent), /do not open a running incident/);
+        await CC.fill('#in-pin', share.cmdPin);
+        await CC.fill('#in-by', 'Silver, Insp Kaur');
         await CC.click('#signin button');
         await CC.waitForFunction(() => document.querySelectorAll('#rows tr').length === 1, null, { timeout: 8000 });
         assert.match(await CC.evaluate(() => document.getElementById('status-pill').textContent), /Live/);
@@ -1610,19 +1613,101 @@ async function test(name, fn) {
         const newId = await R.evaluate(() => currentEntry().id);
         assert.notStrictEqual(newId, openId, 'the unfinished ID is not reused');
         assert.strictEqual(await R.evaluate(() => localStorage.getItem('mit_triage_open')), null, 'cleared once saved');
-        // Older casualties: one from yesterday is held back when the phone says "only new"
+        // v0.19.6: every casualty already on the phone is asked about when linking (v0.19.5 test: 8 were sent unasked);
+        // "only new" holds them all back, and casualties triaged after linking are sent
         await R.evaluate(() => { const e = incidentLog[0]; incidentLog.push(Object.assign({}, e, { uid: MITTLib.makeUid(), id: 'OLD-001', createdAt: Date.now() - 26 * 3600e3, timestamp: Date.now() - 26 * 3600e3 })); saveState(); });
         await R.evaluate(() => { window._s = cmdStart({ quiet: true, commander: true }); });
+        await R.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
+        assert.match(await R.textContent('#confirm-title'), /2 casualties already on this phone/);
         await answerDialog(R, false);
         await R.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
-        const held = await R.evaluate(() => ({ skip: CMD.cfg.skip.map(u => incidentLog.find(r => r.uid === u).id), audit: auditLog.some(a => a.action === 'COMMANDER_OLDER_RECORDS') }));
-        assert.deepStrictEqual(held.skip, ['OLD-001']);
+        const held = await R.evaluate(() => ({ skip: CMD.cfg.skip.map(u => incidentLog.find(r => r.uid === u).id).sort(), audit: auditLog.some(a => a.action === 'COMMANDER_OLDER_RECORDS') }));
+        assert.deepStrictEqual(held.skip, ['OLD-001', newId].sort());
         assert.ok(held.audit);
-        await R.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
-        assert.strictEqual(await R.evaluate(() => CMD.sentTotal), 1, 'only the new casualty was sent');
+        await R.evaluate(() => closeCmdDetails());
+        await triage(R, 'TST', [true]);
+        await R.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0 && CMD.sentTotal > 0, null, { timeout: 10000 });
+        assert.strictEqual(await R.evaluate(() => CMD.sentTotal), 1, 'only the casualty triaged after linking was sent');
         // The commander phone's header says so
         assert.strictEqual(await R.evaluate(() => document.getElementById('header-role').textContent), 'Incident commander');
         await R._ctx.close();
+    });
+    await test('v0.19.6: non-clinicians cannot make a casualty less urgent by hand; time of death goes when a casualty breathes; 🏠 mid-triage asks; a correction is not "deteriorating"', async () => {
+        const N = await device('v0196', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(N, 'PC November', 'NON_HCP');
+        // TST not breathing, then try to set P3 by hand: refused, category and instruction unchanged
+        await triage(N, 'TST', [false, false, false, false]);
+        assert.strictEqual(await N.evaluate(() => currentEntry().category), 'NOT_BREATHING');
+        await N.evaluate(() => { document.getElementById('p-cat-override').value = 'P3'; onCategoryOverride(); });
+        await N.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
+        assert.match(await N.textContent('#confirm-message'), /healthcare professional/);
+        await N.click('#confirm-ok');
+        assert.strictEqual(await N.evaluate(() => currentEntry().category), 'NOT_BREATHING');
+        // 🏠 half-way through a triage asks first and logs the cancel
+        await N.evaluate(() => { initiateTriage('TST'); handleAnswer(false); homeButton(); });
+        await N.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
+        assert.match(await N.textContent('#confirm-title'), /Cancel this assessment/);
+        await N.click('#confirm-ok');
+        assert.ok(await N.evaluate(() => auditLog.some(a => a.action === 'TRIAGE_CANCELLED')));
+        await N._ctx.close();
+        // Clinician: MITT Dead with a time of death, then "Change the last answer" to breathing -> P1, no time of death,
+        // and not flagged as deteriorating
+        const M = await device('v0196b', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(M, 'Dr Mike', 'HCP');
+        await M.evaluate(() => { initiateTriage('MITT'); });
+        const steps = await M.evaluate(() => mittFlow.map(s => s.id));
+        // Answer down to the breathing question, then NO (not breathing) -> Dead
+        await M.evaluate(() => { while (document.getElementById('question-screen').dataset.stepId !== 'breathing') handleAnswer(false); handleAnswer(false); });
+        await page_visible(M, '#tod-modal');
+        await M.evaluate(() => confirmDeath('now'));
+        const dead = await M.evaluate(() => ({ cat: currentEntry().category, tod: currentEntry().tod }));
+        assert.strictEqual(dead.cat, 'DEAD', steps.join(','));
+        assert.match(dead.tod, /^\d\d:\d\d \d\d\/\d\d\/\d{4}$/, 'time of death with the date');
+        // Breathing YES leads on to more MITT questions: answer them until there is a result
+        await M.evaluate(() => { changeLastAnswer(); handleAnswer(true); let n = 0; while (document.body.dataset.screen === 'question-screen' && n++ < 10) handleAnswer(false); });
+        const after = await M.evaluate(() => ({ cat: currentEntry().category, tod: currentEntry().tod, det: !!currentEntry().lastDeteriorationAt }));
+        assert.notStrictEqual(after.cat, 'DEAD');
+        assert.strictEqual(after.tod, '', 'a living casualty has no time of death');
+        assert.strictEqual(after.det, false, 'a corrected mis-tap is not deterioration');
+        assert.ok(await M.evaluate(() => auditLog.some(a => a.action === 'TOD_CLEARED')));
+        await M._ctx.close();
+    });
+    await test('v0.19.6: the triagers\' PIN opens the commander screen view only; the commander PIN can decide, with a name in the decision log', async () => {
+        const A = await device('v0196c'); await setup(A, 'Medic Alfa');
+        await A.evaluate(() => { cmdStart(); });
+        await answerDialog(A, true);
+        await A.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        const sh = await A.evaluate(() => { closeCmdDetails(); return { code: CMD.cfg.code, pin: CMD.cfg.pin, cmdPin: CMD.cfg.cmdPin }; });
+        const T = await device('v0196t', { viewport: { width: 1280, height: 900 }, permissions: [] });
+        await T.goto(url.replace('index.html', 'commander.html#' + sh.code));
+        await T.fill('#in-pin', sh.pin);
+        await T.click('#signin button');
+        await T.waitForFunction(() => data && data.access === 'triager', null, { timeout: 8000 });
+        assert.match(await T.textContent('#hdr-incident'), /View only \(triagers' PIN\)/);
+        assert.strictEqual(await T.evaluate(() => canMark()), false);
+        await T._ctx.close();
+        const C = await device('v0196k', { viewport: { width: 1280, height: 900 }, permissions: [] });
+        await C.goto(url.replace('index.html', 'commander.html#' + sh.code));
+        await C.fill('#in-pin', sh.cmdPin);
+        await C.click('#signin button');
+        await C.waitForFunction(() => data && data.access === 'commander', null, { timeout: 8000 });
+        // No name typed at sign-in: the first decision asks for it once
+        await C.evaluate(() => { document.getElementById('p1hold-by').value = 'Dr A, MERIT'; setP1Hold(true); });
+        await C.waitForSelector('#ask-modal.open', { timeout: 5000 });
+        await C.click('#ask-ok');
+        await C.waitForFunction(() => data.policy && data.policy.p1Hold && data.policy.p1Hold.on, null, { timeout: 5000 });
+        await C.evaluate(() => { setP1Hold(false); });
+        await C.waitForSelector('#ask-modal.open', { timeout: 5000 });
+        await C.click('#ask-ok');                     // "Withdraw P1 Hold?"
+        await C.waitForSelector('#ask-input', { state: 'visible', timeout: 5000 });
+        await C.fill('#ask-input', 'Silver, Insp Kaur');
+        await C.click('#ask-ok');
+        await C.waitForFunction(() => data.policy && data.policy.p1Hold && data.policy.p1Hold.on === false, null, { timeout: 5000 });
+        await C.evaluate(() => refreshNow());
+        await C.waitForFunction(() => /P1 Hold withdrawn — Silver, Insp Kaur/.test(document.getElementById('decisions').textContent), null, { timeout: 8000 });
+        assert.match(await C.textContent('#decisions'), /withdrawn \d\d:\d\d by Silver, Insp Kaur/);
+        await C._ctx.close();
+        await A._ctx.close();
     });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
         const CI = await device('Cmd I');
@@ -1721,11 +1806,11 @@ async function test(name, fn) {
         await D.waitForFunction(() => document.querySelectorAll('#map-screen .leaflet-marker-icon').length > 0, null, { timeout: 8000 });
         await D.evaluate(() => showScreen('home-screen'));
         assert.ok(await D.$('#home-demo'), 'orange demo card on the home screen');
-        // A new casualty triaged during the demo joins it; restarting the demo asks first
+        // v0.19.6: a casualty triaged during the demo is practice too, so restarting the demo clears it without asking
         await triage(D, 'TST', [true]);
         assert.strictEqual(await D.evaluate(() => incidentLog.length), 25);
+        assert.strictEqual(await D.evaluate(() => MITTLib.isDemoRecord(currentEntry())), true);
         await D.evaluate(() => { demoChoose('all'); });
-        await answerDialog(D, true);
         await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
         // Back to real use: the real patient is still there and no demo record leaked into it
         await D.evaluate(() => { closeDemoGuide(); toggleTrainingMode(false); });
@@ -1961,7 +2046,7 @@ async function test(name, fn) {
         await P.evaluate(() => { cmdStart(); });
         await answerDialog(P, true);
         await P.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
-        const sh = await P.evaluate(() => { closeCmdDetails(); return { code: CMD.cfg.code, pin: CMD.cfg.pin }; });
+        const sh = await P.evaluate(() => { closeCmdDetails(); return { code: CMD.cfg.code, pin: CMD.cfg.pin, cmdPin: CMD.cfg.cmdPin }; });
         await triage(P, 'MITT', [true]);
         await P.evaluate(() => { const e = currentEntry(); e.cardNo = 'WM-9001'; touch(e, ['cardNo']); saveState(); });
         await P.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0 && !CMD.inflight, null, { timeout: 10000 });
@@ -1986,7 +2071,8 @@ async function test(name, fn) {
         // Commander marks the map; the phones receive it with their next report and show it.
         const CM = await device('Cmd16', { viewport: { width: 1280, height: 900 }, permissions: [] });
         await CM.goto(url.replace('index.html', 'commander.html#' + sh.code));
-        await CM.fill('#in-pin', sh.pin);
+        await CM.fill('#in-pin', sh.cmdPin);
+        await CM.fill('#in-by', 'Silver');
         await CM.click('#signin button');
         await CM.waitForFunction(() => document.querySelectorAll('#rows tr').length === 1, null, { timeout: 8000 });
         assert.notStrictEqual(await CM.evaluate(() => document.getElementById('mark-tools').style.display), 'none');
