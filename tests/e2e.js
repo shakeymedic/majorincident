@@ -1827,7 +1827,9 @@ async function test(name, fn) {
         await CE.evaluate(() => cmdPush(true));
         await CE.waitForFunction(() => !cmdActive(), null, { timeout: 8000 });
         await CC.evaluate(() => refreshNow());
-        await CC.waitForFunction(() => /refused|expired|No such/i.test(document.getElementById('conn-warn').textContent + document.getElementById('status-pill').textContent), null, { timeout: 8000 });
+        // v0.19.8: an ended incident is labelled "ended", never "expired"
+        await CC.waitForFunction(() => /Incident ended/.test(document.getElementById('status-pill').textContent) && /has ended/.test(document.getElementById('conn-warn').textContent), null, { timeout: 8000 });
+        assert.ok(!/expired/i.test(await CC.textContent('#conn-warn')));
         await CE._ctx.close();
     });
     await test('sharing survives a reload of the phone (settings are kept, records re-sent)', async () => {
