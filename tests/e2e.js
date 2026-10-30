@@ -1586,6 +1586,44 @@ async function test(name, fn) {
         assert.strictEqual(await V.evaluate(() => document.querySelector('#dash-nb .dash-label').innerText.trim()), 'No breath', 'plain words on a 390 px phone');
         await V._ctx.close();
     });
+    await test('v0.19.5 (retest): Back shows the previous question; an unfinished triage is reported after a reload and its ID is not reused; older casualties are only sent if the phone says so', async () => {
+        const R = await device('Retest', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(R, 'Medic Romeo', 'HCP');
+        // Back: walking NO, bleeding NO, then Back from "Talking?" shows "Bleeding?" as question 2
+        await R.evaluate(() => { initiateTriage('TST'); handleAnswer(false); handleAnswer(false); });
+        assert.strictEqual(await R.evaluate(() => document.getElementById('question-screen').dataset.stepId), 'talking');
+        await R.click('#btn-back');
+        const b = await R.evaluate(() => ({ step: document.getElementById('question-screen').dataset.stepId, prog: document.getElementById('q-progress').textContent, hist: stepHistory.slice() }));
+        assert.strictEqual(b.step, 'bleeding');
+        assert.match(b.prog, /^Question 2 of/);
+        assert.deepStrictEqual(b.hist, ['walking']);
+        // Reload part-way: a notice, an audit entry, and the next casualty gets a different ID
+        const openId = await R.evaluate(() => currentPatientId);
+        await R.reload();
+        await R.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        await R.waitForSelector('#confirm-modal', { state: 'visible', timeout: 5000 });
+        assert.match(await R.textContent('#confirm-modal'), new RegExp(openId + '[\\s\\S]*no record'));
+        await R.click('#confirm-ok');
+        assert.ok(await R.evaluate(id => auditLog.some(a => a.action === 'TRIAGE_NOT_FINISHED' && a.patientId === id), openId));
+        await R.evaluate(() => sessionStorage.setItem('mit_cmd_link_dismissed', '1'));
+        await triage(R, 'TST', [true]);
+        const newId = await R.evaluate(() => currentEntry().id);
+        assert.notStrictEqual(newId, openId, 'the unfinished ID is not reused');
+        assert.strictEqual(await R.evaluate(() => localStorage.getItem('mit_triage_open')), null, 'cleared once saved');
+        // Older casualties: one from yesterday is held back when the phone says "only new"
+        await R.evaluate(() => { const e = incidentLog[0]; incidentLog.push(Object.assign({}, e, { uid: MITTLib.makeUid(), id: 'OLD-001', createdAt: Date.now() - 26 * 3600e3, timestamp: Date.now() - 26 * 3600e3 })); saveState(); });
+        await R.evaluate(() => { window._s = cmdStart({ quiet: true, commander: true }); });
+        await answerDialog(R, false);
+        await R.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        const held = await R.evaluate(() => ({ skip: CMD.cfg.skip.map(u => incidentLog.find(r => r.uid === u).id), audit: auditLog.some(a => a.action === 'COMMANDER_OLDER_RECORDS') }));
+        assert.deepStrictEqual(held.skip, ['OLD-001']);
+        assert.ok(held.audit);
+        await R.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
+        assert.strictEqual(await R.evaluate(() => CMD.sentTotal), 1, 'only the new casualty was sent');
+        // The commander phone's header says so
+        assert.strictEqual(await R.evaluate(() => document.getElementById('header-role').textContent), 'Incident commander');
+        await R._ctx.close();
+    });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
         const CI = await device('Cmd I');
         await CI.fill('#intro-triager', 'Cdr India');

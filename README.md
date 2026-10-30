@@ -164,6 +164,20 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.5 build 2026-10-30-retest — fixes from Jake's retest of v0.19.4 (30 October 2026)
+- **↩ Back** on the question screen shows the previous question again (it used to leave the screen unchanged and upset the question counter; the final category was not affected in the case tested).
+- **Reload part-way through a triage**: the app now says the triage was not finished and nothing was saved for that ID, logs it (TRIAGE_NOT_FINISHED), and does not give that ID to the next casualty.
+- **Linking to a commander**: casualties already on the phone that look older (over 3 hours old with no matching incident code, another incident's code, or demo casualties outside the demo) are only sent if the phone says "Yes, send them too". Re-linking to the same incident keeps the earlier answer.
+- **Demo leftovers**: demo phones keep their own ID prefix (no more TRAIN-DEMO-FR-… IDs or duplicate IDs across phones). After leaving the demo, the DEMO-KESTREL incident code, DEMO prefixes, demo names and demo casualties are cleared; a different person setting up during the demo ends it.
+- **Commander's phone** header says "Incident commander", not "Clinician".
+- **Training mismatch** when joining now says what to do (turn Training mode on or off at the top of Settings, then join again).
+- **Start page**: "Patients already on this phone (N)" is a small button under the commander status instead of the biggest button; plainer subtitle and note (no "Ten Second Triage" / "MITT" jargon up front).
+- **P1 Hold** set from the patient screen asks for confirmation and says whose name the decision is recorded under.
+- **"How to use this"** card comes back when a different person sets up on the phone.
+- **Commander screen**: "View only" label is amber and first in the header.
+- **Messages**: a damaged or nonsense handover code says "That code isn't a valid handover… ask them to show it again" (the technical reason goes to the audit trail); a wrong or ended incident code gets one message, "No incident with that code. It may have ended, or the code may be mistyped." (the server cannot tell ended from never-existed, as ended incidents are deleted).
+- Service worker cache v43.
+
 ### v0.19.4 build 2026-10-30-chrome-test — fixes from the Claude in Chrome practice test of v0.19.3 (Jake, 30 October 2026)
 - **Join an incident** and **Show code, PIN and link** no longer open behind Settings (Settings closes, and every dialog now sits above Settings).
 - **Reassess → ↓ Worsened** goes straight into the triage questions again for the same casualty (clinicians choose TST or MITT). Until the re-triage is done (or the category is changed), the reassessment shows as due now, not "OK 15m". Not breathing has no questions to repeat: a clinician sets the new category.
