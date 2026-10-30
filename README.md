@@ -164,6 +164,21 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.4 build 2026-10-30-chrome-test — fixes from the Claude in Chrome practice test of v0.19.3 (Jake, 30 October 2026)
+- **Join an incident** and **Show code, PIN and link** no longer open behind Settings (Settings closes, and every dialog now sits above Settings).
+- **Reassess → ↓ Worsened** goes straight into the triage questions again for the same casualty (clinicians choose TST or MITT). Until the re-triage is done (or the category is changed), the reassessment shows as due now, not "OK 15m". Not breathing has no questions to repeat: a clinician sets the new category.
+- A patient reopened from the Patient log leads with a big **⏱ Reassess** button; Next Patient steps back. The result header shows the latest triage time, with the first one in brackets after a re-triage.
+- **🆘 Hold for help** sits in the header (always in view once linked, also in Simple mode), shortened to "🆘 Hold" on narrow phones.
+- Commander screen: every browser pop-up (MITT prompt, P1 Hold, clearing a call for help, error messages) is now an in-app dialog, so the page keeps refreshing. The commander's own phone is labelled "Incident commander" and not counted as a clinician for prompts. After an incident ends, the last figures are greyed and labelled as not live.
+- Plain words: "Not breathing (Needs clinician)" tally, "CLINICIAN NOW" instead of "HCP NOW", TST "Not sure?" lines say what the answer means, the penetrating question's instruction names stab and gunshot wounds to the chest, belly or back (question wording unchanged), police see "Simple yes/no questions" on START TRIAGE, "No, or not sure: carry on".
+- **Hand over patients** sheet leads with "Show the QR to the person taking over"; file export, audit trail and other technical options moved under "More options".
+- Training mode has its own line at the top of Settings. Leaving the demo with ↩ Start page now says "You are now in real use".
+- The "Two quick questions" link prompt comes back whenever someone goes back to the start page to set up; the home "Not linked" reminder stays (smaller) after "No".
+- The patient log no longer flags a Dead casualty as DETERIORATING.
+- The app checks for a new version on every start and when it comes back to the front (at most every 5 minutes).
+- Server: phones send `commander: true|false`; stored as `dev.commander`.
+- Service worker cache v42.
+
 ### v0.19.3 build 2026-10-30-paramedic — a paramedic button on the start screen (Jake, 30 October 2026)
 - "2. Who are you?" now has **🚑 Paramedic or ambulance medic** and **🩺 Doctor or nurse** side by side (both the clinician role), under **🚒 Police, fire or first aider**, with one line: clinicians start with Ten Second Triage and switch to MITT when the commander asks.
 - Clinicians get their own first-use "How to use this" card: START TRIAGE starts with TST, tag the casualty, use the MITT button when the commander asks (their card offers "Switch to MITT" to make it the big button), and reassess from the Patient log.

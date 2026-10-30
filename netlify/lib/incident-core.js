@@ -262,6 +262,8 @@ function createCore(opts) {
         // Sector / zone and clinician or not: lets the commander send a prompt to one group of phones (e.g. only the casualty clearing station).
         if (body.sector !== undefined) dev.sector = str(body.sector, 60).trim();
         if (body.userRole === 'HCP' || body.userRole === 'NON_HCP') dev.userRole = body.userRole;
+        // The incident commander's own phone: labelled as such on the commander screen and not counted as a clinician.
+        if (body.commander === true) dev.commander = true; else if (body.commander === false) delete dev.commander;
         if (num(body.battery) !== null) { dev.battery = Math.max(0, Math.min(100, Math.round(num(body.battery)))); dev.charging = !!body.charging; }
         // Triager position (opt-in on the phone): only the latest one is kept, and a phone that turns sharing off
         // sends null to remove it. Same 24-hour expiry as everything else in the incident.

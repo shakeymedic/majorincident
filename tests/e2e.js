@@ -72,6 +72,11 @@ async function test(name, fn) {
         if (text !== undefined) await page.fill('#confirm-input', text);
         await page.click(ok ? '#confirm-ok' : '#confirm-cancel');
     }
+    // The commander screen's in-app dialog (v0.19.4).
+    async function askAnswer(page, ok) {
+        await page.waitForSelector('#ask-modal.open', { timeout: 5000 });
+        await page.click(ok ? '#ask-ok' : '#ask-cancel');
+    }
     const triage = (page, tool, answers) => page.evaluate(([t, a]) => { initiateTriage(t); a.forEach(x => handleAnswer(x)); }, [tool, answers]);
     const qrText = (page) => page.evaluate(() => document.getElementById('qr-modal').dataset.qrText);
     const scan = (page, text) => page.evaluate(t => onScanSuccess(t), text);
@@ -1262,6 +1267,7 @@ async function test(name, fn) {
     });
     await test('v0.18.0: holding the 🆘 button for 2 seconds calls the commander for help; a short tap does not; the commander clears it and the phone is told', async () => {
         const btn = CB.locator('#duress-btn');
+        assert.ok(await CB.evaluate(() => !!document.getElementById('duress-btn').closest('header')), 'v0.19.4: in the header, not the scrolling status strip');
         await btn.waitFor({ state: 'visible', timeout: 5000 });
         assert.match(await btn.textContent(), /Hold for help/);
         // A short press does nothing
@@ -1294,8 +1300,8 @@ async function test(name, fn) {
         await CC.waitForTimeout(1500);
         assert.strictEqual(await CC.evaluate(() => ALERTS.list.filter(a => a.sos).length), 0);
         // The commander clears it; the phone learns on its next report
-        CC.once('dialog', d => d.accept());
-        await CC.evaluate(() => clearDuress(data.devices.find(d => d.triager === 'Medic Bravo').deviceId));
+        await CC.evaluate(() => { clearDuress(data.devices.find(d => d.triager === 'Medic Bravo').deviceId); });
+        await askAnswer(CC, true);   // v0.19.4: an in-app dialog, not the browser's confirm()
         await CC.waitForFunction(() => document.getElementById('sos').classList.contains('hidden'), null, { timeout: 8000 });
         assert.strictEqual(await CC.evaluate(() => document.querySelectorAll('.phone.sos').length), 0);
         await CB.evaluate(() => cmdPush(true));
@@ -1326,12 +1332,15 @@ async function test(name, fn) {
         await CC.waitForFunction(() => /Clinician/.test(document.getElementById('phones').textContent), null, { timeout: 8000 });
         assert.match(await CC.evaluate(() => document.getElementById('decisions').textContent), /Not in use \(default\)/);
         // No name: refused on the commander page
-        CC.once('dialog', d => d.accept());
-        await CC.evaluate(() => setP1Hold(true));
+        await CC.evaluate(() => { setP1Hold(true); });
+        await page_visible(CC, '#ask-modal');
+        assert.match(await CC.textContent('#ask-msg'), /Type who made the P1 Hold decision/);
+        assert.strictEqual(await CC.isVisible('#ask-cancel'), false, 'a message has only OK');
+        await askAnswer(CC, true);
         assert.match(await CC.evaluate(() => document.getElementById('decisions').textContent), /Not in use/);
         await CC.fill('#p1hold-by', 'Dr Medic, MERIT');
-        CC.once('dialog', d => d.accept());
         await CC.click('[data-act="setP1Hold"][data-on="1"]');
+        await askAnswer(CC, true);
         await CC.waitForFunction(() => /ALLOWED since/.test(document.getElementById('decisions').textContent), null, { timeout: 8000 });
         await CB.evaluate(() => cmdPush(true));
         await CB.waitForFunction(() => p1HoldAllowedHere(), null, { timeout: 10000 });
@@ -1339,8 +1348,10 @@ async function test(name, fn) {
         assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'P1_HOLD_ALLOWED' && /Dr Medic, MERIT/.test(a.details || a.detail || ''))));
         // MITT prompt to clinicians
         await CC.check('.mitt-grp[value="hcp"]');
-        CC.once('dialog', d => d.accept());
         await CC.click('[data-act="sendMittPrompt"]');
+        await page_visible(CC, '#ask-modal');
+        assert.match(await CC.textContent('#ask-title'), /Send the MITT prompt/);
+        await askAnswer(CC, true);
         await CC.waitForFunction(() => /Prompt sent/.test(document.getElementById('decisions').textContent), null, { timeout: 8000 });
         await CB.evaluate(() => { cmdPush(true); });
         await CB.waitForFunction(() => !!CMD.cfg.mittPending, null, { timeout: 10000 });
@@ -1488,6 +1499,14 @@ async function test(name, fn) {
         await CH.evaluate(() => cmdDismissLink());
         assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
         assert.strictEqual(await CH.evaluate(() => document.getElementById('home-cmd-link')), null, 'dismissed for this session');
+        // v0.19.4: a small "tap to link" button stays lower down, and going back to the start page asks again
+        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'small reminder after "No"');
+        await CH.click('#home-cmd-link-later');
+        await page_visible(CH, '#cmd-link-modal');
+        await CH.evaluate(() => cmdDismissLink());
+        await CH.evaluate(() => { showScreen('intro-screen'); setUserRole('NON_HCP'); });
+        await page_visible(CH, '#cmd-link-modal');
+        assert.match(await CH.textContent('#cmd-link-skip'), /carry on/);
         await CH._ctx.close();
     });
     await test('v0.19.2 walk-through: plain role buttons, one-tap "where are you" on the link sheet, then a one-time how-to card', async () => {
@@ -1523,6 +1542,49 @@ async function test(name, fn) {
         assert.match(txt, /Switch to MITT/);
         assert.match(txt, /Ten Second Triage/);
         await PM._ctx.close();
+    });
+    await test('v0.19.4 (Chrome test): Join opens above Settings; Worsened goes straight to re-triage and stays due; a patient reopened from the log leads with Reassess', async () => {
+        const V = await device('Chrome fixes', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await setup(V, 'PC Victor', 'NON_HCP');
+        // Join from Settings: the Join box is on top (it used to open behind Settings, so the screen just went dark)
+        await V.evaluate(() => openModesMenu());
+        await V.evaluate(() => { document.querySelector('#modes-modal details:has([onclick="cmdOpenJoin()"])').open = true; });
+        await V.click('#modes-modal [onclick="cmdOpenJoin()"]');
+        await page_visible(V, '#cmd-join-modal');
+        const top = await V.evaluate(() => { const b = document.getElementById('cmd-join-code').getBoundingClientRect(); const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { onTop: !!(t && t.closest('#cmd-join-modal')), settings: getComputedStyle(document.getElementById('modes-modal')).display }; });
+        assert.strictEqual(top.onTop, true, 'the Join box is the top layer');
+        assert.strictEqual(top.settings, 'none', 'Settings closed');
+        await V.evaluate(() => closeCmdJoin());
+        // Settings: training mode is its own line at the top
+        await V.evaluate(() => openModesMenu());
+        assert.ok(await V.isVisible('#mode-training'), 'training mode visible without opening a section');
+        await V.evaluate(() => closeModesMenu());
+        // P2 (walking NO, bleeding NO, talking YES, penetrating NO), then Reassess -> Worsened
+        await triage(V, 'TST', [false, false, true, false]);
+        assert.strictEqual(await V.evaluate(() => currentEntry().category), 'P2');
+        const uid = await V.evaluate(() => currentEntry().uid);
+        await V.evaluate(() => { openReassessModal(); submitReassessment('worsened'); });
+        const w = await V.evaluate(() => ({ screen: document.body.dataset.screen, pending: pendingReTriageUid, state: MITTLib.reassessmentStatus(incidentLog.find(r => r.uid === pendingReTriageUid), Date.now() + 1000, reassessIntervals).state }));
+        assert.strictEqual(w.screen, 'question-screen', 'straight into the questions');
+        assert.strictEqual(w.pending, uid, 'same casualty');
+        assert.strictEqual(w.state, 'overdue', 'not "OK 15m" while waiting to be re-triaged');
+        // Now not talking, breathing: P1 on the same record, timer reset by the re-triage
+        await V.evaluate(() => { [false, false, false, true].forEach(x => handleAnswer(x)); });
+        const r = await V.evaluate(u => { const e = incidentLog.find(x => x.uid === u); return { cat: e.category, n: incidentLog.length, state: MITTLib.reassessmentStatus(e, Date.now(), reassessIntervals).state, det: !!e.lastDeteriorationAt, head: document.getElementById('reassess-head').textContent }; }, uid);
+        assert.strictEqual(r.cat, 'P1'); assert.strictEqual(r.n, 1); assert.strictEqual(r.state, 'ok'); assert.ok(r.det);
+        assert.match(r.head, /^TST • \d\d:\d\d/);
+        // Reopened from the log: Reassess leads
+        await V.evaluate(() => { resetToHome(); showLog(); editEntry(0); });
+        assert.strictEqual(await V.evaluate(() => document.getElementById('result-screen').classList.contains('reopened')), true);
+        const order = await V.evaluate(() => { const a = document.getElementById('btn-reassess').getBoundingClientRect().top, b = document.querySelector('#result-screen .btn-next').getBoundingClientRect().top; return a < b; });
+        assert.ok(order, 'Reassess above Next Patient');
+        await V.evaluate(() => { openReassessModal(); submitReassessment('unchanged'); });
+        assert.strictEqual(await V.evaluate(() => document.getElementById('result-screen').classList.contains('reopened')), false, 'back to normal once reassessed');
+        // Dead is never flagged as deteriorating in the log
+        await V.evaluate(() => { const e = incidentLog[0]; e.category = 'DEAD'; e.lastDeteriorationAt = Date.now(); showLog(); });
+        assert.strictEqual(await V.evaluate(() => document.querySelectorAll('#log-screen .deteriorate-flag').length), 0);
+        assert.strictEqual(await V.evaluate(() => document.getElementById('dash-nb').querySelector('.dash-label').textContent), 'Not breathing');
+        await V._ctx.close();
     });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
         const CI = await device('Cmd I');

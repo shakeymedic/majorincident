@@ -1385,6 +1385,11 @@
         const tstColour = entry.tool === 'TST' && (entry.category === 'P1' || entry.category === 'P2' || entry.category === 'P3');
         const interval = tstColour && table.TST ? table.TST : table[entry.category];
         if (interval === null || interval === undefined) return null;
+        // "Worsened" at a reassessment means the category needs reviewing now: the timer stays due until the
+        // casualty is re-triaged or their category is changed (both replace reassessOutcome).
+        if (entry.reassessOutcome === 'worsened') {
+            return (entry.lastReassessed != null) ? entry.lastReassessed : (entry.timestamp != null) ? entry.timestamp : ((now != null) ? now : Date.now());
+        }
         if (entry.category === 'NOT_BREATHING' && entry.lastReassessed == null) {
             return (entry.timestamp != null) ? entry.timestamp : ((now != null) ? now : Date.now());
         }

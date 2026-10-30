@@ -625,6 +625,16 @@ group('reassessment', () => {
         const s = lib.reassessmentStatus(e, 60*60*1000);
         assert.strictEqual(s.state, 'overdue');
     });
+    test('v0.19.4: "worsened" keeps the reassessment due now until re-triaged or the category is changed', () => {
+        const e = { id: 'A', category: 'P2', tool: 'TST', timestamp: 0 };
+        const w = lib.applyReassessment(e, 'worsened', 60 * 1000);
+        assert.strictEqual(lib.nextReassessmentDue(w, 60 * 1000), 60 * 1000);
+        assert.strictEqual(lib.reassessmentStatus(w, 61 * 1000).state, 'overdue');
+        const u = lib.applyReassessment(e, 'unchanged', 60 * 1000);
+        assert.strictEqual(lib.reassessmentStatus(u, 61 * 1000).state, 'ok');
+        const retriaged = Object.assign({}, w, { lastReassessed: 120 * 1000, reassessOutcome: 're-triaged' });
+        assert.strictEqual(lib.reassessmentStatus(retriaged, 121 * 1000).state, 'ok');
+    });
     test('applyReassessment bumps lastReassessed and rev', () => {
         const e = { id: 'A', category: 'P1', timestamp: 1, _rev: 2 };
         const out = lib.applyReassessment(e, 'improved', 1000);
