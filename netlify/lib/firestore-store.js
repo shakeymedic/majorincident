@@ -7,6 +7,8 @@
 const crypto = require('crypto');
 
 const DEFAULT_COLLECTION = 'mi_kv';
+const GET_CHUNK = 300;     // documents per getAll call
+const WRITE_CHUNK = 400;   // writes per batch (Firestore allows 500)
 const PREFIX_END = ''; // sorts after every character a key can hold
 
 // Firestore document ids cannot contain '/', nor be '.', '..' or __x__, so every key is percent-encoded.
@@ -30,6 +32,36 @@ function firestoreStore(db, opts) {
             await col.doc(docId(key)).set({ k: String(key), v: text, e: etagOf(text) });
         },
         async delete(key) { await col.doc(docId(key)).delete(); },
+        // Many keys in one round trip each way (a commander read of 1,000 records took 6-8 s one document at a time).
+        async getMany(keys) {
+            const out = [];
+            for (let i = 0; i < keys.length; i += GET_CHUNK) {
+                const refs = keys.slice(i, i + GET_CHUNK).map(k => col.doc(docId(k)));
+                let snaps = [];
+                try { snaps = refs.length ? await db.getAll(...refs) : []; } catch (e) { snaps = []; }
+                refs.forEach((r, j) => {
+                    const sn = snaps[j];
+                    let v = null;
+                    try { const t = sn && sn.exists ? sn.get('v') : null; v = typeof t === 'string' ? JSON.parse(t) : null; } catch (e) { v = null; }
+                    out.push(v);
+                });
+            }
+            return out;
+        },
+        async setMany(entries) {
+            for (let i = 0; i < entries.length; i += WRITE_CHUNK) {
+                const batch = db.batch();
+                entries.slice(i, i + WRITE_CHUNK).forEach(([key, value]) => { const text = JSON.stringify(value); batch.set(col.doc(docId(key)), { k: String(key), v: text, e: etagOf(text) }); });
+                await batch.commit();
+            }
+        },
+        async deleteMany(keys) {
+            for (let i = 0; i < keys.length; i += WRITE_CHUNK) {
+                const batch = db.batch();
+                keys.slice(i, i + WRITE_CHUNK).forEach(k => batch.delete(col.doc(docId(k))));
+                await batch.commit();
+            }
+        },
         async list(prefix) {
             prefix = String(prefix || '');
             const snap = await col.where('k', '>=', prefix).where('k', '<', prefix + PREFIX_END).select('k', 'e').get();

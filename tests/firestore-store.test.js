@@ -29,6 +29,16 @@ function fakeFirestore() {
         };
     }
     return {
+        // Bulk read and batched writes, as the real client: getAll(...refs) keeps the order; a batch applies on commit.
+        async getAll(...refs) { if (refs.length > 500) throw new Error('too many'); return Promise.all(refs.map(r => r.get())); },
+        batch() {
+            const ops = [];
+            return {
+                set(ref, data) { ops.push(() => ref.set(data)); if (ops.length > 500) throw new Error('batch too big'); return this; },
+                delete(ref) { ops.push(() => ref.delete()); if (ops.length > 500) throw new Error('batch too big'); return this; },
+                async commit() { for (const op of ops) await op(); },
+            };
+        },
         collection(name) {
             if (!cols.has(name)) cols.set(name, new Map());
             const docs = cols.get(name);
@@ -115,6 +125,18 @@ async function test(name, fn) {
         await s.set('i/BBB/r/1', { x: 99 });
         assert.notStrictEqual((await s.list('i/BBB/r/'))[0].etag, before);
         assert.deepStrictEqual(await s.list('nothing/'), []);
+    });
+    await test('bulk read, write and delete keep the order and cross the batch limits (700 keys)', async () => {
+        const s = fresh();
+        const keys = Array.from({ length: 700 }, (_, i) => `i/BLK/r/${String(i).padStart(4, '0')}`);
+        await s.setMany(keys.map((k, i) => [k, { n: i }]));
+        const got = await s.getMany(keys.concat(['i/BLK/r/missing']));
+        assert.strictEqual(got.length, 701);
+        assert.ok(got.slice(0, 700).every((v, i) => v && v.n === i));
+        assert.strictEqual(got[700], null);
+        assert.strictEqual((await s.list('i/BLK/')).length, 700);
+        await s.deleteMany(keys);
+        assert.deepStrictEqual(await s.list('i/BLK/'), []);
     });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     if (failed) process.exit(1);
