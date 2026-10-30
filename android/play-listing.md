@@ -11,7 +11,7 @@ Checked against v0.17.5 on 18 October 2026.
 
 - **App name** (30 characters max): `Major Incident Triage` (21)
 - **Category:** Medical. **Contains ads:** no. **Free.**
-- **Contact email:** emevidence999@gmail.com. **Website:** https://majorincident.netlify.app
+- **Contact email:** hello@emevidence.org. **Website:** https://majorincident.netlify.app
 - **Privacy policy:** https://majorincident.netlify.app/privacy.html
 
 ## Short description (80 characters max)
