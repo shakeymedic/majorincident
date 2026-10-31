@@ -164,6 +164,22 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.22.1 build 2026-10-31-ftu — first-time-user fixes (Jake, 31 October 2026)
+
+From a walk-through as a first-time user with no training, and an edge-case test.
+
+- **Typed or counted rates that contradict the answer** (MITT breathing rate and pulse): the phone now asks before taking the answer ("RR 30/min means NO: Answer NO / Keep YES"). Keeping the answer is noted on the record and in the audit. Before, RR 30 + YES and HR 140 + NO gave P2 with "Measured: RR 30, HR 140" on the record.
+- **A quick second tap no longer skips the result.** "Next casualty" sits where YES was; taps in the first 0.8 s of the result screen (0.4 s on other screens) are ignored.
+- **No "Triage not finished" warning** after a reload when no question had been answered (for example Next casualty, then the phone locked).
+- **Linked demo link on a phone in real use** asks first and says how to get back (Settings → Training mode off); before, it switched to training mode silently.
+- **Start the commander screen**: says whether the incident will be marked as practice; the pop-up says to tap "Open the commander screen" (it said the screen "opens below") and uses the button names triagers actually see. The commander sign-in page says how to start a new incident.
+- **Reassess** says "next check in 15 min", "overdue 5 min" or "needs a clinician now" (was "OK 15m", "CLINICIAN NOW"); the reassess pop-up explains improved / unchanged / worsened.
+- **Commander screen**: Needs attention has one row per casualty with all its reasons, and counts casualties; at most 4 alerts shown at once ("Show N more"; calls for help always shown); the Evacuated tile says "of N casualties recorded"; "Overdue 0 min" reads "Due now"; the activity chart starts at the first casualty.
+- **Wording and layout**: iPhone "Add to Home Screen" note shortened (details under "Why?"); "Patient log" used throughout; Settings shows Paramedic / Doctor or nurse; result screen says "Patient" like the question screen; the log shows grid references; a missing name is a plain prompt, not a red warning; the last question says "(last)"; the demo auto-play button moved to the top so it no longer covers buttons.
+- **Text-direction control characters** are removed from names (they could show reversed text on the commander screen).
+
+Not changed (clinical sign-off needed): the P1 penetrating-injury result says "Open wound to the chest: chest seal if trained" although the question covers neck, abdomen, back, groin and buttocks.
+
 ### v0.22.0 build 2026-10-31-commander — commander screen (Jake, 31 October 2026)
 - **Casualty IDs tell phones apart:** short IDs keep the phone's code (2XMB MITT 003); two phones' casualties both showed as "MITT 003" in alerts and Needs attention.
 - **Needs attention lists the waits:** a P1 still in the field more than 10 minutes after triage (a P2 after 30), and a P1 at the casualty clearing station not evacuated after 30 minutes (a P2 after 60), longest wait first, with tourniquet times in hours and minutes (over 2 hours goes to the top).

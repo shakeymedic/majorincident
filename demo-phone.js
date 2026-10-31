@@ -25,6 +25,13 @@
         while ((typeof dbReady === 'undefined' || !dbReady) && n++ < 100) await W(100);
         if (!TRAINING) {
             // On another device: a demo link always means practice. Switch to training and reload (the link is kept).
+            // A phone already in real use is asked first and told how to get back (v0.22.1: it switched silently, and
+            // its name and records seemed to vanish until training mode was turned off again).
+            var inUse = (typeof incidentLog !== 'undefined' && incidentLog.length) || (typeof triagerName !== 'undefined' && triagerName) || (typeof cmdActive === 'function' && cmdActive());
+            if (inUse) {
+                var ok = await inAppConfirm({ title: 'Open the demo on this phone?', message: 'This is a link to a practice demo. The phone switches to training mode for it. Your real patients' + (cmdActive() ? ' and your link to the incident' : '') + ' are kept, but hidden while training mode is on.\n\nTo go back to real use afterwards: \u2699 Settings \u2192 turn Training mode off.', okLabel: 'Open the demo', cancelLabel: 'Not now' });
+                if (!ok) { try { history.replaceState(null, '', location.pathname); } catch (e) {} return false; }
+            }
             try { localStorage.setItem('mit_training', '1'); } catch (e) {}
             location.reload();
             return false;
@@ -120,12 +127,13 @@
         if (!b) {
             b = document.createElement('button');
             b.type = 'button'; b.id = 'demo-play-badge';
-            b.setAttribute('style', 'position:fixed; left:8px; bottom:8px; z-index:3000; border:2px solid #fff; border-radius:999px; padding:8px 12px; font-weight:800; font-size:0.85rem; color:#fff; background:#7C2855; box-shadow:0 2px 6px rgba(0,0,0,0.4); cursor:pointer; max-width:calc(100% - 16px);');
+            // Top left, over the app's title (v0.22.1: at the bottom it covered Back / Cancel and the bottom buttons).
+            b.setAttribute('style', 'position:fixed; left:6px; top:6px; z-index:3000; border:2px solid #fff; border-radius:999px; padding:6px 10px; font-weight:800; font-size:0.78rem; color:#fff; background:#7C2855; box-shadow:0 2px 6px rgba(0,0,0,0.4); cursor:pointer; max-width:55%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;');
             b.addEventListener('click', function () { play.on = !play.on; badge(); if (play.on) loop(); });
             document.body.appendChild(b);
         }
         var left = play.queue.length;
-        b.textContent = '🎬 ' + demoName() + ' · ' + (left ? (play.on ? '⏸ Auto-play on (' + left + ' left)' : '▶ Auto-play (' + left + ' left)') : 'auto-play finished');
+        b.textContent = '🎬 ' + (left ? (play.on ? '⏸ Auto-play (' + left + ' left)' : '▶ Auto-play (' + left + ' left)') : 'auto-play finished');
         b.title = play.on ? 'Tap to pause auto-play. You can use the phone yourself at any time.' : 'Tap to let this phone record its made-up casualties by itself.';
     }
     async function loop() {

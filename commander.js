@@ -302,7 +302,7 @@ function render(opts) {
     const onScene = all.filter(r => !r.evacuated);
     const order = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
     $('counts').innerHTML = order.map(c => { const i = MITTLib.CATEGORY_INFO[c]; const here = onScene.filter(r => r.category === c); const n = here.length, t = all.filter(r => r.category === c).length, cc = here.filter(r => stage(r) === 'ccs').length; return `<div class="count" style="background:${i.colour};color:${i.text}"><div class="n">${n}</div><div class="l">${esc(i.short)}</div><div class="s">${n - cc} field • ${cc} CCS</div><div class="t">${t} in total</div></div>`; }).join('') +
-        `<div class="count" style="background:#4C6272"><div class="n">${all.filter(r => r.evacuated).length}</div><div class="l">Evacuated</div><div class="s">${Object.keys(MITTLib.stageCounts(all).hospitals).length} destination${Object.keys(MITTLib.stageCounts(all).hospitals).length === 1 ? '' : 's'}</div><div class="t">${all.length} casualties in total</div></div>`;
+        `<div class="count" style="background:#4C6272"><div class="n">${all.filter(r => r.evacuated).length}</div><div class="l">Evacuated</div><div class="s">${Object.keys(MITTLib.stageCounts(all).hospitals).length} destination${Object.keys(MITTLib.stageCounts(all).hospitals).length === 1 ? '' : 's'}</div><div class="t">of ${all.length} casualt${all.length === 1 ? 'y' : 'ies'} recorded</div></div>`;
     const sc = MITTLib.stageCounts(all);
     const hosp = Object.keys(sc.hospitals).sort((a, b) => sc.hospitals[b] - sc.hospitals[a]);
     const fieldSectors = {};
@@ -336,7 +336,7 @@ function render(opts) {
     const att = [];
     onScene.forEach(r => {
         const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
-        const overdue = rs.state === 'overdue' ? `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min` : '';
+        const overdue = rs.state === 'overdue' ? (Math.round(rs.overdueMs / 60000) < 1 ? 'Reassessment due now' : `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min`) : '';
         // A Not Breathing casualty is listed once, with its overdue time on the same line (v0.19.12: it was listed twice).
         if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' + (overdue ? ' • ' + overdue.toLowerCase() : '') });
         else if (overdue) att.push({ k: 0, r, t: overdue });
@@ -351,11 +351,17 @@ function render(opts) {
         if (atCcs && st === 'ccs' && (r.category === 'P1' && now - atCcs > 30 * 60000 || r.category === 'P2' && now - atCcs > 60 * 60000)) att.push({ k: 1, r, w: now - atCcs, t: `At the clearing station ${mins(now - atCcs)}, not evacuated yet` });
         if (r.highRisk) att.push({ k: 2, r, t: 'Flagged high risk of deterioration' });
     });
+    // One row per casualty, with all its reasons (v0.22.1: a P1 with a tourniquet waiting in the field took three rows,
+    // and the count was of reasons, not casualties).
+    const byUid = new Map();
+    att.forEach(a => { const g = byUid.get(a.r.uid); if (!g) byUid.set(a.r.uid, { r: a.r, k: a.k, w: a.w || 0, parts: [a] }); else { g.k = Math.min(g.k, a.k); g.w = Math.max(g.w, a.w || 0); g.parts.push(a); } });
+    att.length = 0;
+    byUid.forEach(g => { g.parts.sort((a, b) => a.k - b.k); att.push({ k: g.k, w: g.w, r: g.r, t: g.parts.map(p => p.t).join(' • ') }); });
     att.sort((a, b) => a.k - b.k || (b.w || 0) - (a.w || 0));
     // At 3,000 casualties this list could hold thousands of rows; the first ATT_MAX are drawn (most urgent first).
     const attShown = att.slice(0, ATT_MAX);
     $('attention').innerHTML = att.length ? `<div class="att">${attShown.map(a => `<div class="att-row k${a.k}" data-act="openPatient" data-uid="${esc(a.r.uid)}" role="button" tabindex="0">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))} ${toolChip(a.r)}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}${att.length > attShown.length ? `<p class="muted">…and ${att.length - attShown.length} more. Use the casualty list to see them all.</p>` : ''}</div>` : '<div class="all-clear">Nothing outstanding</div>';
-    setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • most urgent and longest waiting first${att.length > attShown.length ? ` • first ${attShown.length} shown` : ''}` : 'overdue checks, long waits, tourniquets, high risk');
+    setText('attention-note', att.length ? `${att.length} casualt${att.length === 1 ? 'y' : 'ies'} • most urgent and longest waiting first${att.length > attShown.length ? ` • first ${attShown.length} shown` : ''}` : 'overdue checks, long waits, tourniquets, high risk');
     // table
     const vis = visibleRecords();
     // Only the first rows are drawn (3,000 rows made the page freeze on each refresh); more on request.
@@ -365,7 +371,7 @@ function render(opts) {
         const l = loc(r);
         const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : null;
         const ints = Object.keys(r.interventions || {}).map(k => `${esc(k)} ${esc((r.interventions[k] && r.interventions[k].time) || '')}`.trim()).join(', ');
-        const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? `Due soon (${hm(rs.dueAt)})` : `Due ${hm(rs.dueAt)}`;
+        const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">${Math.round(rs.overdueMs / 60000) < 1 ? 'Due now' : `Overdue ${Math.round(rs.overdueMs / 60000)} min`}</b>` : rs.state === 'due-soon' ? `Due soon (${hm(rs.dueAt)})` : `Due ${hm(rs.dueAt)}`;
         const fresh = !r.evacuated && (now - (r.updatedAt || r.reportedAt || 0)) < 90000;
         return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" data-act="openPatient" data-uid="${esc(r.uid)}" tabindex="0"><td><span class="id">${esc(r.id)}</span>${r.cardNo ? `<div><b>Card ${esc(r.cardNo)}</b></div>` : ''}<div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
             `<td>${cat(r.category)}<div style="margin-top:4px">${toolChip(r)}</div></td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
@@ -745,10 +751,16 @@ function renderAlerts(newIds) {
     const box = $('alerts');
     if (!ALERTS.list.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
     const isNew = (id) => (newIds || []).indexOf(id) > -1;
-    box.innerHTML = ALERTS.list.map(a => `<div class="alert${a.red ? ' red' : ''}${isNew(a.id) ? ' new' : ''}"${a.uid ? ` data-act="openPatient" data-uid="${esc(a.uid)}" role="button" tabindex="0"` : ''}><span>${a.red ? '🔴' : '🟠'}</span><span class="msg">${a.msg}<small>${a.sub || ''}</small></span><span class="when">${hm(a.at)}</span><button type="button" class="x" title="Dismiss" data-act="dismissAlert" data-id="${a.id}" aria-label="Dismiss">✕</button></div>`).join('') +
-        `<div class="alerts-foot"><button type="button" class="btn small sec" data-act="dismissAlert">Clear all</button></div>`;
+    // At most ALERTS_SHOWN at once, newest first (v0.22.1: up to 20 stacked above the counts and pushed the whole
+    // dashboard off the screen in a busy incident). Calls for help are always shown.
+    const ALERTS_SHOWN = 4;
+    const shown = ALERTS.expanded ? ALERTS.list : ALERTS.list.filter((a, i) => i < ALERTS_SHOWN || a.sos);
+    const hidden = ALERTS.list.length - shown.length;
+    box.innerHTML = shown.map(a => `<div class="alert${a.red ? ' red' : ''}${isNew(a.id) ? ' new' : ''}"${a.uid ? ` data-act="openPatient" data-uid="${esc(a.uid)}" role="button" tabindex="0"` : ''}><span>${a.red ? '🔴' : '🟠'}</span><span class="msg">${a.msg}<small>${a.sub || ''}</small></span><span class="when">${hm(a.at)}</span><button type="button" class="x" title="Dismiss" data-act="dismissAlert" data-id="${a.id}" aria-label="Dismiss">✕</button></div>`).join('') +
+        `<div class="alerts-foot">${hidden > 0 ? `<button type="button" class="btn small sec" data-act="toggleAlerts">Show ${hidden} more</button> ` : ALERTS.expanded && ALERTS.list.length > ALERTS_SHOWN ? `<button type="button" class="btn small sec" data-act="toggleAlerts">Show fewer</button> ` : ''}<button type="button" class="btn small sec" data-act="dismissAlert">Clear all</button></div>`;
     box.classList.remove('hidden');
 }
+function toggleAlerts() { ALERTS.expanded = !ALERTS.expanded; renderAlerts(); }
 function dismissAlert(id) { ALERTS.list = id ? ALERTS.list.filter(a => a.id !== id) : []; renderAlerts(); }
 
 // ---------- METHANE (the newest one any phone has saved) ----------
@@ -867,12 +879,15 @@ function renderActivity(all, now) {
     const B = 5 * 60000;
     const first = Math.min.apply(null, times.map(x => x.t));
     const start = Math.floor(first / B) * B;
-    const n = Math.max(12, Math.min(48, Math.ceil((now - start) / B)));   // at least an hour, at most 4 hours, of 5-minute bars
-    const from = Math.floor((now - (n - 1) * B) / B) * B;   // the last bar holds now
+    // Bars from the first casualty to now (at most 4 hours); the width is set for at least an hour of bars, so an early
+    // incident is not drawn as a few very wide bars (v0.22.1: the chart started with an empty hour before the incident).
+    const n = Math.max(1, Math.min(48, Math.floor((now - start) / B) + 1));
+    const from = n === 48 ? Math.floor((now - (n - 1) * B) / B) * B : start;   // the last bar holds now
+    const slots = Math.max(12, n);
     const bars = Array.from({ length: n }, () => ({ all: 0, p1: 0 }));
     times.forEach(x => { const i = Math.floor((x.t - from) / B); if (i >= 0 && i < n) { bars[i].all++; if (x.p1) bars[i].p1++; } });
     const max = Math.max(1, ...bars.map(b => b.all));
-    const W = 600, H = 70, gap = 2, bw = Math.max(2, (W - gap * n) / n);
+    const W = 600, H = 70, gap = 2, bw = Math.max(2, (W - gap * slots) / slots);
     const svg = bars.map((b, i) => { const x = i * (bw + gap), h = Math.round((b.all / max) * (H - 14)), h1 = Math.round((b.p1 / max) * (H - 14)); return `<rect class="act-bar" x="${x.toFixed(1)}" y="${H - 12 - h}" width="${bw.toFixed(1)}" height="${h}"><title>${hm(from + i * B)}: ${b.all} new${b.p1 ? `, ${b.p1} P1` : ''}</title></rect>` + (h1 ? `<rect class="act-bar p1" x="${x.toFixed(1)}" y="${H - 12 - h1}" width="${bw.toFixed(1)}" height="${h1}"></rect>` : ''); }).join('');
     const last10 = times.filter(x => now - x.t <= 10 * 60000).length;
     const p1Field = all.filter(r => r.category === 'P1' && stage(r) === 'field');
@@ -1089,7 +1104,7 @@ function renderPatient(r) {
     const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
     const st = stage(r);
     setText('pt-id', r.id);
-    $('pt-chips').innerHTML = `${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <span class="cat-chip" style="background:#DA291C;color:#fff">HIGH RISK</span>' : ''}${rs.state === 'overdue' ? ` <span class="cat-chip" style="background:#DA291C;color:#fff">Reassessment overdue ${Math.round(rs.overdueMs / 60000)} min</span>` : ''}`;
+    $('pt-chips').innerHTML = `${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <span class="cat-chip" style="background:#DA291C;color:#fff">HIGH RISK</span>' : ''}${rs.state === 'overdue' ? ` <span class="cat-chip" style="background:#DA291C;color:#fff">${Math.round(rs.overdueMs / 60000) < 1 ? 'Reassessment due now' : `Reassessment overdue ${Math.round(rs.overdueMs / 60000)} min`}</span>` : ''}`;
     const hist = (r.triageHistory || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
     const triage = `<ul class="tl">${hist.length ? hist.map(t => `<li><span class="t">${dhm(t.ts)}</span><span><b>${esc(t.tool || '')} ${esc(MITTLib.categoryShort(t.category))}</b> ${esc(t.reason || '')}${t.kind && t.kind !== 'triage' ? ` <span class="muted">(${esc(t.kind)})</span>` : ''}${t.by ? ` <span class="muted">by ${esc(t.by)}</span>` : ''}${t.action ? `<div class="muted">${esc(t.action)}</div>` : ''}</span></li>`).join('') : `<li><span class="t">${dhm(r.timestamp)}</span><span><b>${esc(r.tool || '')} ${esc(MITTLib.categoryShort(r.category))}</b> ${esc(r.reason || '')}</span></li>`}</ul>`;
     const ints = Object.keys(r.interventions || {});
@@ -1145,7 +1160,7 @@ function exportCsv() {
 // ---------- Clicks, changes and keys: one listener each, no inline handlers ----------
 const ACTIONS = {
     copySitrep, refreshNow, toggleWall, toggleFullscreen, toggleSound, unlockSound, printSummary, signOut, signIn, fitMap, exportCsv, startMarking,
-    showPatientOnMap, closePatient, addHospitalRow,
+    showPatientOnMap, closePatient, addHospitalRow, toggleAlerts,
     exportFile: (t) => exportFile(t.getAttribute('data-arg')),
     setStageFilter: (t) => setStageFilter(t.getAttribute('data-stage')),
     openPatient: (t) => openPatient(t.getAttribute('data-uid')),

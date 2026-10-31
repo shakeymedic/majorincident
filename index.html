@@ -795,6 +795,7 @@
     .ios-install-banner { display:none; background:#fff3cd; color:#664d03; border-bottom:3px solid #ffbf00; padding:10px 14px; font-size:0.95rem; line-height:1.4; }
     .ios-install-banner.show { display:block; }
     .ios-install-banner button { display:block; margin-top:8px; min-height:44px; min-width:88px; background:#005EB8; color:#fff; border:none; border-radius:8px; font-weight:bold; font-size:1rem; }
+    .ios-install-banner details { margin-top:4px; } .ios-install-banner summary { cursor:pointer; font-weight:bold; text-decoration:underline; min-height:32px; }
     .storage-banner button { margin-left:8px; background:#fff; color:#DA291C; border:none; border-radius:6px; padding:6px 10px; font-weight:bold; }
     .alert-card { border-left:6px solid var(--nhs-red); background: rgba(218,41,28,0.08); padding:0.8rem 1rem; border-radius:8px; margin-bottom:0.8rem; }
     .alert-card.info { border-left-color: var(--nhs-blue); background: rgba(0,94,184,0.08); }
@@ -1311,7 +1312,7 @@
         <h3 id="demo-title" style="margin-top:0;">Demo incident</h3>
         <p class="qr-meta" style="text-align:left;" id="demo-summary"></p>
         <div class="demo-grid">
-        <button type="button" class="btn btn-primary" onclick="demoGo('log')">📋 Casualty log<br><span style="font-size:0.8rem; font-weight:normal;">Every casualty, newest first, with overdue checks flagged</span></button>
+        <button type="button" class="btn btn-primary" onclick="demoGo('log')">📋 Patient log<br><span style="font-size:0.8rem; font-weight:normal;">Every casualty, newest first, with overdue checks flagged</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('map')">🗺 Map<br><span style="font-size:0.8rem; font-weight:normal;">Where each casualty is, the casualty clearing station, Open in Google Maps</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('patient')">🩸 A P1 patient<br><span style="font-size:0.8rem; font-weight:normal;">Tourniquet time, injuries on the body map, ATMIST handover</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('triage')">▶ Triage someone new<br><span style="font-size:0.8rem; font-weight:normal;">Walk through TST or MITT; the patient joins the demo</span></button>
@@ -1385,7 +1386,7 @@
         </div>
         <p class="qr-meta" style="text-align:left;" id="cmd-detail-status"></p>
         <div id="cmd-qr" style="display:flex; justify-content:center; margin:0.5rem 0;"></div>
-        <p class="qr-meta" id="cmd-detail-hint">Triagers: after they pick their role, their phone asks "Has someone set up a commander screen?"; they tap "Yes: scan their code" and scan this. The commander screen opens below on this phone; on a laptop or big screen, open the link and enter the PIN.</p>
+        <p class="qr-meta" id="cmd-detail-hint">Triagers: after they pick their role, their phone asks "Has someone set up a commander screen?"; they tap "Yes: scan their code" and scan this QR. To see the commander screen here, tap "Open the commander screen" below (no sign-in). On a laptop or big screen, open the link and enter the commander PIN.</p>
         <a id="cmd-open-btn" class="btn btn-primary" href="commander.html" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none;">🖥 Open the commander screen</a>
         <p style="word-break:break-all; font-size:0.85rem;"><a id="cmd-link" href="commander.html" target="_blank" rel="noopener"></a></p>
         <div class="modal-actions">
@@ -1409,7 +1410,7 @@
         <h3 id="reassess-title" style="margin-top:0; color:var(--nhs-blue);">Reassess Patient</h3>
         <p id="reassess-summary" style="font-weight:bold;"></p>
         <p id="reassess-hcp-note" class="alert-card" style="display:none;"></p>
-        <p style="font-size:0.9rem;">Record how they are now. <b>Worse:</b> you answer the triage questions again. <b>Better:</b> use ↻ Re-triage afterwards to update the category.</p>
+        <p style="font-size:0.9rem;">How are they now? <b>Worsened:</b> you answer the triage questions again straight away. <b>Improved or unchanged:</b> this is noted and the next check is timed again; the category stays. To change the category of someone who is better, use ↻ Re-triage (under ☰ More).</p>
         <div class="modal-actions" style="margin-bottom:1rem;">
             <button class="btn btn-secondary" style="background:var(--nhs-green);" onclick="submitReassessment('improved')">↑ Improved</button>
             <button class="btn btn-secondary" style="background:#666;" onclick="submitReassessment('unchanged')">= Unchanged</button>
@@ -1764,10 +1765,9 @@
     <div class="training-banner" role="status"><span id="training-banner-text">TRAINING MODE — practice only. Nothing here is a real patient.</span> <button type="button" id="btn-leave-demo" class="leave-demo" style="display:none;" onclick="leaveDemo()">↩ Start page</button></div>
     <div id="storage-banner" class="storage-banner" role="alert"></div>
     <div id="ios-install-banner" class="ios-install-banner" role="note">
-        <strong>iPhone / iPad: add Major Incident Triage to your Home Screen before an incident.</strong>
-        In Safari tap the Share button (square with an up arrow), then <em>Add to Home Screen</em>, and use that icon from then on.
-        Safari can delete saved records after 7 days without use; the Home Screen app does not.
-        Records made in Safari do not appear in the Home Screen app (they are stored separately): move them with <em>⇄ Hand over → More options → Export transfer file</em> here, then <em>Import transfer file</em> in the Home Screen app.
+        <!-- Short by default (v0.22.1: the full text took a third of the first screen before "Who are you?"). -->
+        <strong>iPhone / iPad:</strong> add this app to your Home Screen before an incident: Share button (square with an up arrow) → <em>Add to Home Screen</em>.
+        <details><summary>Why?</summary>Safari can delete saved records after 7 days without use; the Home Screen app does not. Records made in Safari do not appear in the Home Screen app (they are stored separately): move them with <em>⇄ Hand over → More options → Export transfer file</em> here, then <em>Import transfer file</em> in the Home Screen app.</details>
         <button type="button" onclick="dismissIosInstallBanner()">OK</button>
     </div>
 
@@ -1838,7 +1838,7 @@
                     </button>
                 </div>
                 <div id="intro-cmd-start">
-                    <p class="qr-meta intro-role-note">This starts a practice incident and opens the commander screen on this device. You get a code and PIN to give to the people triaging.</p>
+                    <p class="qr-meta intro-role-note" id="intro-cmd-note">This starts a new incident. You get a code and PIN to give to the people triaging, and a button to open the commander screen.</p>
                     <button class="btn btn-primary intro-role" id="btn-role-commander" onclick="startAsCommander()">
                         🎖 Start the commander screen →
                     </button>
@@ -1955,7 +1955,7 @@
 
         <div id="result-screen" class="screen">
             <div class="rs-head">
-                <span>ID: <strong id="r-patient-id" class="editable-id" role="button" tabindex="0" aria-label="Patient ID, tap to edit" onclick="editPatientId(true)"></strong> <button type="button" class="mini-btn" onclick="scanTagForCurrent()" aria-label="Scan the tag to set this ID" title="Scan the tag">📷</button></span>
+                <span>Patient <strong id="r-patient-id" class="editable-id" role="button" tabindex="0" aria-label="Patient ID, tap to edit" onclick="editPatientId(true)"></strong> <button type="button" class="mini-btn" onclick="scanTagForCurrent()" aria-label="Scan the tag to set this ID" title="Scan the tag">📷</button></span>
                 <span id="reassess-head"></span>
             </div>
             <div id="result-alerts"></div>
@@ -2222,7 +2222,7 @@
         </div>
 
         <div id="log-screen" class="screen">
-            <h2>Casualty log <small style="font-weight:normal; font-size:0.9rem;">(tap a row to open)</small></h2>
+            <h2>Patient log <small style="font-weight:normal; font-size:0.9rem;">(tap a row to open)</small></h2>
             <div id="alert-strip" style="margin-bottom:10px;"></div>
             <div class="log-tools">
                 <input type="search" id="log-search" placeholder="Search patients…" oninput="renderLogTable()" aria-label="Search patients">
@@ -2272,7 +2272,7 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.22.0';
+    const APP_VERSION = '0.22.1';
     const APP_BUILD = '2026-10-31-commander';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
@@ -3220,6 +3220,10 @@
         $('intro-med-roles').style.display = introKind === 'med' ? '' : 'none';
         $('intro-non-start').style.display = introKind === 'non' ? '' : 'none';
         $('intro-cmd-start').style.display = introKind === 'cmd' ? '' : 'none';
+        // Says whether the incident will be marked as practice (v0.22.1: it said "practice" even with training mode off).
+        if (introKind === 'cmd') setText('intro-cmd-note', TRAINING
+            ? 'This starts a practice incident (training mode is on). You get a code and PIN to give to the people triaging, and a button to open the commander screen.'
+            : 'This starts a new incident. You get a code and PIN to give to the people triaging, and a button to open the commander screen. For an exercise, turn on Training mode in ⚙ Settings first, so the incident is marked as practice.');
         setText('intro-path-title', introKind === 'med' ? '🩺 Medical' : introKind === 'non' ? '🚒 Not medical' : introKind === 'cmd' ? '🎖 Running the incident' : '');
         const opts = $('intro-options'); if (opts) opts.style.display = introKind ? 'none' : '';
         if (introKind) { const n = $('intro-triager'); if (n && !n.value.trim()) setTimeout(() => { try { n.focus(); } catch (e) {} }, 60); }
@@ -3229,10 +3233,12 @@
         else if (introKind === 'cmd') startAsCommander();
         else if (introKind === 'med') { const b = $('btn-role-paramedic'); if (b) b.focus(); }
     }
+    // A missing name is a prompt, not an error (v0.22.1: a red "⚠ Name required / I understand" for a first-time user).
+    function askForName() { inAppConfirm({ title: 'Your name or call sign', message: 'Type your name or call sign first. It goes on every record you make.', okLabel: 'OK', alertOnly: true }).then(() => { try { $('intro-triager').focus(); } catch (e) {} }); }
     function clinicalRoleLabel() { const r = ls('mit_clin_role'); return r === 'paramedic' ? 'Paramedic' : r === 'doctor_nurse' ? 'Doctor or nurse' : 'Clinician'; }
     function setUserRole(role, asCommander, clinRole) {
-        const name = $('intro-triager').value.trim();
-        if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
+        const name = $('intro-triager').value.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '').trim();   // no text-direction controls (v0.22.1)
+        if (!name) { askForName(); return; }
         const prevUser = triagerName, prevRole = userRole;
         // Someone other than the demo role setting up here ends the demo (training mode stays on).
         if (TRAINING && demoMode() && !exerciseRole() && !(demoPhone() && demoPhone().triager === name)) {
@@ -3262,8 +3268,8 @@
     }
     // The incident commander picks that role on the first screen: it creates the incident and opens the screen.
     async function startAsCommander() {
-        const name = $('intro-triager').value.trim();
-        if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
+        const name = $('intro-triager').value.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '').trim();   // no text-direction controls (v0.22.1)
+        if (!name) { askForName(); return; }
         if (cmdActive()) { setUserRole('HCP', true); cmdShowDetails(); return; }
         if (typeof navigator.onLine === 'boolean' && !navigator.onLine) { showBlockingError('No connection', 'Creating the incident needs a signal once. Try again when you have Wi-Fi or mobile data.'); return; }
         setUserRole('HCP', true);
@@ -3422,7 +3428,19 @@
         'Not Breathing': ['CPR if resources allow', 'Must be reassessed by a healthcare responder as soon as possible'],
     };
 
+    // A tap that lands on a screen that has only just appeared is ignored (v0.22.1 first-time-user test): a quick
+    // second tap on YES landed on "Next casualty", which sits in the same place, so the result was never seen and the
+    // next casualty started. 0.8 s covers a double tap and a "did that work?" second tap.
+    // Only the result screen: elsewhere the buttons do not sit where the previous screen's were.
+    let _screenShownAt = 0, _screenGuardMs = 0;
+    document.addEventListener('click', (ev) => {
+        if (Date.now() - _screenShownAt >= _screenGuardMs) return;
+        const t = ev.target && ev.target.closest ? ev.target.closest('#result-screen.active button, #result-screen.active a, #result-screen.active summary, #one-hand-bar button') : null;
+        if (!t || !ev.isTrusted) return;
+        ev.preventDefault(); ev.stopPropagation();
+    }, true);
     function showScreen(id) {
+        if (document.body.dataset.screen !== id) { _screenShownAt = Date.now(); _screenGuardMs = id === 'result-screen' ? 800 : 0; }
         document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
         $(id).classList.add('active');
         document.body.dataset.screen = id;
@@ -3506,7 +3524,9 @@
         setText('question-text', stepObj.question);
         const box = $('clinical-instruction-box');
         if (stepObj.instruction) { box.style.display = 'block'; box.textContent = stepObj.instruction; } else box.style.display = 'none';
-        setText('q-progress', `Question ${stepHistory.length + 1} of up to ${FLOW_MAX_QUESTIONS[currentTool] || flowFor(currentTool).length}`);
+        // The last question says so (v0.22.1: the child-under-2 bleeding question said "2 of up to 4").
+        const lastQ = [true, false].every(ans => { const o = outcomeFor(currentTool, stepObj.id, ans); return o && o.type === 'result'; });
+        setText('q-progress', lastQ ? `Question ${stepHistory.length + 1} (last)` : `Question ${stepHistory.length + 1} of up to ${FLOW_MAX_QUESTIONS[currentTool] || flowFor(currentTool).length}`);
         setText('q-unsure', stepObj.unsureText ? `Not sure? ${stepObj.unsureText}` : `Not sure? Tap ${stepObj.unsure} — the safer choice.`);
         $('btn-back').style.display = stepHistory.length > 0 ? 'block' : 'none';
         $('btn-under2').style.display = (currentTool === 'TST' && stepObj.id === 'walking') ? 'block' : 'none';
@@ -3572,7 +3592,7 @@
         setText('q-count-result', `${m.label} ${m.value}/min${m.how === 'counted' ? ' (counted)' : ''}: suggests ${m.yes ? 'YES' : 'NO'}.${near ? ' Close to the cut-off: a 15-second count can be out by up to 4 a minute, so count for longer or type the rate if unsure.' : ''} Tap YES or NO to confirm.`);
     }
     function measuredSummary() {
-        const parts = stepHistory.filter(id => measuredVals[id]).map(id => `${measuredVals[id].label} ${measuredVals[id].value}/min`);
+        const parts = stepHistory.filter(id => measuredVals[id]).map(id => `${measuredVals[id].label} ${measuredVals[id].value}/min${measuredVals[id].overridden ? ' (answer kept against this reading)' : ''}`);
         return parts.length ? ` Measured: ${parts.join(', ')}.` : '';
     }
     function handleAnswer(answer) {
@@ -3582,6 +3602,9 @@
             const outcome = outcomeFor(currentTool, stepId, answer);
             if (!outcome) { showBlockingError('Something went wrong', `Tap Cancel and triage this casualty again. Use the paper tag meanwhile. (step ${stepId})`); return; }
             stepHistory.push(stepId);
+            // An answer has been given: a reload from now on means a casualty part-way through triage (before the
+            // first answer there is nothing to lose, so no warning; v0.22.1 first-time-user test).
+            try { const o = JSON.parse(ls('mit_triage_open') || 'null'); if (o && o.id === currentPatientId && !o.answered) { o.answered = true; ls('mit_triage_open', JSON.stringify(o)); } } catch (e) {}
             if (outcome.type === 'next') loadStep(flowFor(currentTool).find(s => s.id === outcome.step));
             else { triggerHaptic('success'); stopCount(); logResult(outcome.category, (OUTCOME_ACTIONS[`${currentTool}|${outcome.reason}`] || '') + measuredSummary(), outcome.reason, answer); }
         } catch (err) { console.error(err); showBlockingError('Something went wrong', 'That answer could not be saved. Tap Cancel and triage this casualty again; use the paper tag meanwhile.'); logAudit('TRIAGE_ERROR', '-', String((err && err.message) || err), Date.now()); }
@@ -3607,7 +3630,8 @@
         const m = /-(\d{3,})$/.exec(open.id);
         const n = m ? parseInt(m[1], 10) : 0;
         if (n && open.id === MITTLib.nextAutoId(idPrefix(), open.tool, n, []).id && n >= patientCounter) { patientCounter = n + 1; ls('mit_patient_counter', patientCounter); }
-        logAudit('TRIAGE_NOT_FINISHED', open.id, `The app closed or reloaded during ${open.tool || ''} triage started ${fmtTime(open.at)}; nothing was saved for this ID.`, Date.now());
+        logAudit('TRIAGE_NOT_FINISHED', open.id, `The app closed or reloaded during ${open.tool || ''} triage started ${fmtTime(open.at)}${open.answered ? '' : ' (no question answered yet)'}; nothing was saved for this ID.`, Date.now());
+        if (!open.answered) return;
         setTimeout(() => inAppConfirm({ title: 'Triage not finished', message: `The app closed before ${open.id} was saved, so there is no record for that patient. Triage them again. The next new casualty will get a different ID.`, okLabel: 'OK', alertOnly: true }), 600);
     }
     async function confirmCancelCase() {
@@ -3902,10 +3926,11 @@
         pill.className = 'reassess-pill ' + status.state;
         if (status.state === 'na') { pill.textContent = ''; return; }
         const remaining = Math.round((status.dueAt - Date.now()) / 60000);
-        if (status.hcp) pill.textContent = 'CLINICIAN NOW';
-        else if (status.state === 'overdue') pill.textContent = `OVERDUE ${Math.abs(remaining)}m`;
-        else if (status.state === 'due-soon') pill.textContent = `Due ~${remaining}m`;
-        else pill.textContent = `OK ${remaining}m`;
+        // Plain words (v0.22.1: "OK 15m" and "CLINICIAN NOW" meant nothing to a first-time user).
+        if (status.hcp) pill.textContent = 'needs a clinician now';
+        else if (status.state === 'overdue') pill.textContent = `overdue ${Math.abs(remaining)} min`;
+        else if (status.state === 'due-soon') pill.textContent = `due in ${Math.max(0, remaining)} min`;
+        else pill.textContent = `next check in ${remaining} min`;
     }
     // Opens every section (used when a task needs the full record on screen).
     function toggleDetails() { openPatientMore(); document.querySelectorAll('#details-container details.rs-sec').forEach(d => { d.open = true; }); }
@@ -3923,10 +3948,23 @@
     // YES / NO taps: a second tap within 0.4 s is ignored, so a double tap cannot also answer the next question
     // (the buttons stay in the same place from question to question).
     let _lastAnswerTap = 0;
-    function answerTap(answer) {
+    async function answerTap(answer) {
         const now = Date.now();
         if (now - _lastAnswerTap < 400) return;
         _lastAnswerTap = now;
+        // A breathing rate or pulse typed or counted on this question that points the other way is checked before the
+        // answer is taken (v0.22.1: RR 30 + YES and HR 140 + NO gave P2 with "Measured: RR 30, HR 140" on the record).
+        const stepId = $('question-screen').dataset.stepId;
+        const m = measuredVals[stepId];
+        if (m && m.yes !== answer) {
+            const step = flowFor(currentTool).find(x => x.id === stepId);
+            const other = m.yes ? 'YES' : 'NO';
+            const ok = await inAppConfirm({ title: `${m.label} ${m.value}/min means ${other}`, message: `You tapped ${answer ? 'YES' : 'NO'} to "${step ? step.question : ''}", but the ${m.label} you ${m.how === 'counted' ? 'counted' : 'typed'} (${m.value}/min) means ${other}.`, okLabel: `Answer ${other}`, cancelLabel: `Keep ${answer ? 'YES' : 'NO'}` });
+            if ($('question-screen').dataset.stepId !== stepId) return;
+            if (ok) answer = m.yes;
+            else { logAudit('MEASURE_OVERRIDDEN', currentPatientId || '-', `${m.label} ${m.value}/min suggested ${other}; ${answer ? 'YES' : 'NO'} kept`, Date.now()); measuredVals[stepId] = Object.assign({}, m, { overridden: true }); }
+            _lastAnswerTap = Date.now();
+        }
         handleAnswer(answer);
     }
     // Sections start closed for every patient (a busy screen hides the category and the next action);
@@ -5614,12 +5652,12 @@
             tr.appendChild(el('td', null, [el('small', { text: `${row.reason || '-'} (${row.tool || '-'})` })]));
             const loc = locationForEntry(row);
             let locText = [row.sector && `[${row.sector}]`, row.landmark, row.floor && `L${row.floor}`, row.area].filter(Boolean).join(' ');
-            if (loc && loc.lat) locText += ` ${loc.lat}, ${loc.lng}${loc.acc ? ' ±' + loc.acc + 'm' : ''} (${MITTLib.formatLocationAge(loc.timestamp)})`;
+            if (loc && loc.lat) locText += ` ${MITTLib.toOsGridRef(loc.lat, loc.lng) || MITTLib.formatCoords(loc.lat, loc.lng)}${loc.acc ? ' ±' + loc.acc + ' m' : ''} (${MITTLib.formatLocationAge(loc.timestamp)})`;   // grid reference, as elsewhere (v0.22.1)
             tr.appendChild(el('td', { style: 'font-size:0.75rem;', text: locText.trim() || '-' }));
             const td = el('td', { style: 'font-size:0.8rem;' });
             if (ra.state !== 'na') {
                 const mins = Math.round((ra.dueAt - now) / 60000);
-                td.appendChild(el('span', { className: 'reassess-pill ' + ra.state, text: ra.hcp ? 'CLINICIAN NOW' : ra.state === 'overdue' ? `OVERDUE ${Math.abs(mins)}m` : ra.state === 'due-soon' ? `Due ${mins}m` : `OK ${mins}m` }));
+                td.appendChild(el('span', { className: 'reassess-pill ' + ra.state, text: ra.hcp ? 'needs a clinician now' : ra.state === 'overdue' ? `overdue ${Math.abs(mins)} min` : ra.state === 'due-soon' ? `due in ${Math.max(0, mins)} min` : `next check in ${mins} min` }));
             }
             if (row.category !== 'DEAD' && row.lastDeteriorationAt && now - row.lastDeteriorationAt < 30 * 60 * 1000) td.appendChild(el('span', { className: 'deteriorate-flag', text: 'DETERIORATING' }));
             if ((row.importConflicts || []).some(c => !c.resolved)) td.appendChild(el('span', { className: 'deteriorate-flag', text: 'REVIEW' }));
@@ -6179,7 +6217,7 @@
         ['TST', 'P1', 'P2', 'P3'].forEach(c => { $('interval-' + c).value = String(Math.round((reassessIntervals[c] || MITTLib.REASSESS_INTERVALS[c]) / 60000)); });
         $('set-tool-mode').value = toolMode;
         $('set-tool-mode-row').style.display = userRole === 'HCP' ? '' : 'none';
-        setText('set-you-sum', `${triagerName || 'no name'} · ${userRole === 'HCP' ? 'Clinician' : userRole === 'NON_HCP' ? 'Non-clinical' : 'no role'}`);
+        setText('set-you-sum', `${triagerName || 'no name'} · ${userRole === 'HCP' ? clinicalRoleLabel() : userRole === 'NON_HCP' ? 'Non-clinical' : 'no role'}`);
         setText('device-info', `Device code ${deviceId} • ID prefix ${idPrefix()} • storage: ${storageMode} • app v${APP_VERSION} (${APP_BUILD})`);
         $('modes-modal').style.display = 'flex';
     }
@@ -6718,8 +6756,8 @@
         $('cmd-open-btn').href = link;
         setText('cmd-title', CMD.cfg.commander ? 'Incident commander' : 'Live sharing');
         setText('cmd-detail-hint', CMD.cfg.role === 'creator'
-            ? 'Triagers: on their start screen, pick a role, then "Scan the commander\'s code" and point the camera at this QR. The commander screen opens below on this phone with no sign-in; on a laptop or big screen, open the link and enter the PIN.'
-            : tpin ? 'Show this QR to another triager so they can link too. The commander screen opens below on this phone with no sign-in.' : 'The commander screen opens below on this phone with no sign-in.');
+            ? 'Triagers: after they pick their role, their phone asks "Has someone set up a commander screen?"; they tap "Yes: scan their code" and scan this QR (or tap "Yes: type their code and PIN" and type the code and the triagers\' PIN). To see the commander screen here, tap "Open the commander screen" below (no sign-in). On a laptop or big screen, open the link and enter the commander PIN.'
+            : tpin ? 'Show this QR to another triager so they can link too. To see the commander screen here, tap "Open the commander screen" below (no sign-in).' : 'To see the commander screen here, tap "Open the commander screen" below (no sign-in).');
         $('cmd-end-btn').style.display = CMD.cfg.cmdPin ? '' : 'none';
         try { if (tpin) _renderQR($('cmd-qr'), JSON.stringify({ t: 'MIT_JOIN', c: CMD.cfg.code, p: tpin }), Math.min(220, qrSize())); else clearChildren($('cmd-qr')); } catch (e) { clearChildren($('cmd-qr')); }
         cmdRenderStatus();

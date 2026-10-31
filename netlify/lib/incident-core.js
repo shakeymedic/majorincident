@@ -83,7 +83,9 @@ function safeEqual(a, b) {
     if (ba.length !== bb.length) return false;
     return crypto.timingSafeEqual(ba, bb);
 }
-function str(v, max) { return typeof v === 'string' ? v.slice(0, max) : (v === undefined || v === null ? '' : String(v).slice(0, max)); }
+// Text direction controls are removed (v0.22.1: a name containing one showed reversed text on the commander screen).
+const BIDI = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+function str(v, max) { return (typeof v === 'string' ? v : (v === undefined || v === null ? '' : String(v))).replace(BIDI, '').slice(0, max); }
 function num(v) { const n = Number(v); return isFinite(n) ? n : null; }
 // A phone's own position as sent with a report: latitude, longitude, accuracy (m) and when the fix was taken.
 function cleanPosition(p, t) {
