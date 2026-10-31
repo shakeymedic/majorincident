@@ -2274,7 +2274,7 @@
     };
     const MAP_MARKS_MAX = 30;
     // A bubble of grouped casualties on a map takes the colour of the most urgent casualty in it. Not Breathing comes
-    // straight after P1: it needs a clinician now (v0.19.12 check: 9 P3s and 1 Not Breathing made a green bubble).
+    // straight after P1: it needs a clinician now (v0.19.12 check, fixed in v0.19.13: 9 P3s and 1 Not Breathing made a green bubble).
     // Evacuated casualties only colour a bubble that holds nobody still on scene.
     const MAP_URGENCY = ['P1', 'NOT_BREATHING', 'P1_HOLD', 'P2', 'P3', 'DEAD'];
     function clusterSummary(items) {
