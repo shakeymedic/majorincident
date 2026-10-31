@@ -61,6 +61,7 @@ async function test(name, fn) {
         return page;
     }
     async function setup(page, name, role) {
+        await page.evaluate(r => introPath(r === 'NON_HCP' ? 'non' : 'med'), role || 'HCP');
         await page.fill('#intro-triager', name);
         // Most tests are not about the commander link, so answer the start-screen link question with "not now".
         await page.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); } catch (e) {} });
@@ -649,6 +650,10 @@ async function test(name, fn) {
     await test('first launch needs only a name and a tap on a role; options stay tucked away', async () => {
         const F = await device('First use', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
         assert.strictEqual(await F.evaluate(() => document.getElementById('intro-options').open), false);
+        // v0.20.0: step 1 is one choice, medical or not; step 2 the name
+        assert.ok(await F.isVisible('#btn-path-medical')); assert.ok(await F.isVisible('#btn-path-nonmed'));
+        assert.strictEqual(await F.isVisible('#intro-triager'), false);
+        await F.click('#btn-path-nonmed');
         await F.fill('#intro-triager', 'Medic F');
         await F.click('#btn-role-responder');
         assert.ok(await F.evaluate(() => document.getElementById('home-screen').classList.contains('active')));
@@ -767,7 +772,7 @@ async function test(name, fn) {
     await test('non-clinical users get a simpler result screen and a readable role label', async () => {
         const P = await device('Police');
         await setup(P, 'PC Jones', 'NON_HCP');
-        assert.strictEqual(await P.textContent('#header-role'), 'Non-clinical');
+        assert.strictEqual(await P.textContent('#header-role'), 'Not medical');
         assert.strictEqual(await P.evaluate(() => getComputedStyle(document.getElementById('header-role')).color), 'rgb(255, 255, 255)');
         await triage(P, 'TST', [false, true]);
         // Non-clinical users may record a reassessment check (Jake, 17 Oct 2026); the clinical-only actions stay hidden.
@@ -882,7 +887,7 @@ async function test(name, fn) {
         await S.evaluate(async () => { currentEntry().notes = 'guided'; await generatePatientQR(); });
         const steps = await S.evaluate(() => Array.from(document.querySelectorAll('#qr-steps li')).map(li => li.className + ':' + li.textContent));
         assert.strictEqual(steps.length, 3);
-        assert.match(steps[0], /^now:.*Receive patient/);
+        assert.match(steps[0], /^now:.*📷 Receive/);
         await scan(R, await qrText(S));
         await page_visible(R, '#preview-modal');
         await R.evaluate(() => acceptPreview());
@@ -904,7 +909,7 @@ async function test(name, fn) {
         await O._ctx.setOffline(true);
         await O.reload();
         await O.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
-        assert.ok(await O.isVisible('#intro-triager'));
+        assert.ok(await O.isVisible('#btn-path-medical'));
         await O._ctx.setOffline(false);
         await O._ctx.close();
     });
@@ -1524,6 +1529,7 @@ async function test(name, fn) {
     });
     await test('a new phone is asked at the start whether there is a commander; "type the code" links it and the home alert goes', async () => {
         const CG = await device('Cmd G');
+        await CG.evaluate(() => introPath('med'));
         await CG.fill('#intro-triager', 'Medic Golf');
         await CG.evaluate(() => setUserRole('HCP'));
         await page_visible(CG, '#cmd-link-modal');
@@ -1542,6 +1548,7 @@ async function test(name, fn) {
     });
     await test('"No commander / not now" closes the question and keeps the home alert as a reminder', async () => {
         const CH = await device('Cmd H');
+        await CH.evaluate(() => introPath('non'));
         await CH.fill('#intro-triager', 'Medic Hotel');
         await CH.evaluate(() => setUserRole('NON_HCP'));
         await page_visible(CH, '#cmd-link-modal');
@@ -1560,9 +1567,14 @@ async function test(name, fn) {
     });
     await test('v0.19.2 walk-through: plain role buttons, one-tap "where are you" on the link sheet, then a one-time how-to card', async () => {
         const W = await device('Walk', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
-        assert.match(await W.textContent('#btn-role-responder'), /Police, fire or first aider/);
-        assert.match(await W.textContent('#btn-role-paramedic'), /Paramedic or ambulance medic/);
+        assert.match(await W.textContent('#btn-path-nonmed'), /Not medical/);
+        assert.match(await W.textContent('#btn-path-nonmed'), /Police, fire, first aider/);
+        assert.match(await W.textContent('#btn-path-medical'), /Paramedic, doctor or nurse/);
+        await W.click('#btn-path-medical');
+        assert.match(await W.textContent('#btn-role-paramedic'), /Paramedic or ambulance clinician/);
         assert.match(await W.textContent('#btn-role-clinician'), /Doctor or nurse/);
+        await W.click('#btn-intro-back');
+        await W.click('#btn-path-nonmed');
         await W.fill('#intro-triager', 'PC Whiskey');
         await W.click('#btn-role-responder');
         await page_visible(W, '#cmd-link-modal');
@@ -1582,6 +1594,7 @@ async function test(name, fn) {
     });
     await test('v0.19.3: a paramedic button on the start screen gives the clinician role and a clinician how-to card that explains MITT', async () => {
         const PM = await device('Paramedic', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
+        await PM.click('#btn-path-medical');
         await PM.fill('#intro-triager', 'Para 1');
         await PM.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); } catch (e) {} });
         await PM.click('#btn-role-paramedic');
@@ -1819,6 +1832,7 @@ async function test(name, fn) {
     });
     await test('"I\'m the incident commander" on the start screen creates the incident and the commander page signs in by itself on that phone', async () => {
         const CI = await device('Cmd I');
+        await CI.click('#btn-path-cmd');
         await CI.fill('#intro-triager', 'Cdr India');
         await CI.evaluate(() => startAsCommander());
         await CI.waitForFunction(() => cmdActive(), null, { timeout: 8000 });

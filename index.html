@@ -1162,6 +1162,18 @@
     #intro-screen .intro-role-pair .btn { flex: 1 1 0; margin: 0 0 0.3rem 0 !important; padding: 0.8rem 0.6rem !important; font-size: 1.05rem !important; text-align: center; }
     #intro-screen .intro-role-note { text-align: left; margin: 0 0 0.6rem; }
     #intro-screen .intro-role-sub { font-size: 0.9rem; font-weight: normal; }
+    #intro-screen .intro-q { font-size: 1.35rem; margin: 0.6rem 0 0.6rem; }
+    #intro-screen .intro-path { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 104px; margin: 0 0 12px !important; padding: 14px 16px !important; border-radius: 14px; text-align: left; color: #fff; font-size: 1.5rem !important; border: none; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+    #intro-screen .intro-path-med { background: #005EB8 !important; }
+    #intro-screen .intro-path-non { background: #003087 !important; }
+    #intro-screen .intro-path-icon { font-size: 2.2rem; line-height: 1; }
+    #intro-screen .intro-path-text { display: flex; flex-direction: column; gap: 2px; }
+    #intro-screen .intro-path-text b { font-size: 1.55rem; font-weight: 900; }
+    #intro-screen .intro-path .intro-role-sub { font-size: 1rem; opacity: 0.95; }
+    #intro-screen .intro-cmd-link { display: block; width: 100%; min-height: 48px; margin: 4px 0 14px; background: transparent; border: 2px dashed var(--nhs-dark-blue); border-radius: 10px; color: var(--nhs-dark-blue); font-weight: 700; font-size: 0.95rem; cursor: pointer; }
+    #intro-screen .intro-back { background: none; border: none; color: var(--nhs-blue, #005EB8); font-size: 1.05rem; font-weight: 700; padding: 10px 4px; min-height: 44px; cursor: pointer; }
+    #intro-screen .intro-path-title { margin: 0 0 0.6rem; font-size: 1.4rem; }
+    #intro-screen #intro-step-details .intro-role { width: 100%; margin: 0 0 10px !important; min-height: 64px; font-size: 1.2rem !important; }
     #intro-screen .intro-role-cmd { background: transparent !important; color: var(--nhs-dark-blue); border: 2px dashed var(--nhs-dark-blue); font-size: 0.95rem !important; padding: 0.6rem 0.8rem !important; }
     #intro-screen .intro-role-cmd:hover { background: rgba(0,48,135,0.06) !important; }
     #intro-screen .intro-purpose { margin: 0 0 0.5rem; padding: 8px 10px; border-left: 4px solid #E87722; background: rgba(232,119,34,0.10); font-size: 0.95rem; line-height: 1.3; }
@@ -1267,7 +1279,7 @@
         <ul>
             <li>Every device needs internet. Install the app on each phone.</li>
             <li>Pick a control room device and a big screen (laptop, TV or tablet) for the commander screen.</li>
-            <li>Brief your casualties (actors or cards): can they walk, are they breathing, catastrophic bleeding, breathing rate, pulse or capillary refill. The app asks the TST and MITT questions in order.</li>
+            <li>Brief your casualties (actors or cards): can they walk, are they breathing, catastrophic bleeding, breathing rate and heart rate. The app asks the TST and MITT questions in order.</li>
             <li>Agree how teams talk to each other, as on the day: radio, phone or runner. The app does not replace this.</li>
         </ul>
         <h4>Set up (about 2 minutes)</h4>
@@ -1278,11 +1290,11 @@
         </ol>
         <h4>During the exercise</h4>
         <ul>
-            <li><strong>Field triagers</strong> triage each casualty, record bleeding control and position, then hand over to the casualty clearing station: 📤 QR Handover on the patient, the casualty clearing station's phone scans it with 📷 Receive patient.</li>
+            <li><strong>Field triagers</strong> triage each casualty, record bleeding control and position, then hand over to the casualty clearing station: 📱 Hand over this patient on the result screen, the casualty clearing station's phone scans it with 📷 Receive.</li>
             <li><strong>Casualty clearing station</strong> accepts each patient (the commander screen then shows them as at the casualty clearing station), re-triages with MITT, records treatment, then marks them evacuated and picks the receiving hospital.</li>
             <li><strong>Control room</strong> runs the incident from the commander screen alone: counts split into field, casualty clearing station and evacuated, the map, the needs-attention list, alerts with a sound (new P1, deterioration, tourniquet past an hour, phone gone quiet), the timeline, METHANE from the phones, the hospital board with each hospital's agreed capacity, phones, and every patient (tap any patient for their full details). Use the wall display on a TV. The view-only PIN lets an observer or a receiving hospital watch without being able to change anything.</li>
             <li>Ideas for injects: a casualty deteriorates (tell the triager to re-triage), a new casualty appears late, a phone loses signal (aeroplane mode for 2 minutes, then it catches up), a tourniquet passes 1 hour.</li>
-            <li><strong>If the commander screen says the server is unreachable</strong>, carry on: every phone keeps its own records and sends them when the link returns. For an urgent picture, a phone can use Home → More → <em>Send patients to another device</em> to show its patients as QR codes for the control room's phone to scan.</li>
+            <li><strong>If the commander screen says the server is unreachable</strong>, carry on: every phone keeps its own records and sends them when the link returns. For an urgent picture, a phone can use ⇄ <em>Hand over</em> to show its patients as QR codes for the control room's phone to scan.</li>
         </ul>
         <h4>Finish and debrief</h4>
         <ul>
@@ -1297,7 +1309,7 @@
         <h3 id="demo-title" style="margin-top:0;">Demo incident</h3>
         <p class="qr-meta" style="text-align:left;" id="demo-summary"></p>
         <div class="demo-grid">
-        <button type="button" class="btn btn-primary" onclick="demoGo('log')">📋 Casualty log<br><span style="font-size:0.8rem; font-weight:normal;">Every patient by priority, with overdue reassessments flagged</span></button>
+        <button type="button" class="btn btn-primary" onclick="demoGo('log')">📋 Casualty log<br><span style="font-size:0.8rem; font-weight:normal;">Every casualty, newest first, with overdue checks flagged</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('map')">🗺 Map<br><span style="font-size:0.8rem; font-weight:normal;">Where each casualty is, the casualty clearing station, Open in Google Maps</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('patient')">🩸 A P1 patient<br><span style="font-size:0.8rem; font-weight:normal;">Tourniquet time, injuries on the body map, ATMIST handover</span></button>
         <button type="button" class="btn btn-primary" onclick="demoGo('triage')">▶ Triage someone new<br><span style="font-size:0.8rem; font-weight:normal;">Walk through TST or MITT; the patient joins the demo</span></button>
@@ -1307,7 +1319,7 @@
         </div>
         <button type="button" class="btn btn-primary" style="background:#000;" onclick="leaveDemo()">↩ Start page<br><span style="font-size:0.8rem; font-weight:normal;">Pick another role, or use the app for real</span></button>
         <button type="button" class="btn btn-secondary" onclick="closeDemoGuide()">Close</button>
-        <p class="qr-meta" style="text-align:left;">With two devices you can hand over for real: 📷 Receive patient on one, QR Handover on the other. Reopen this from the orange demo card on the home screen.</p>
+        <p class="qr-meta" style="text-align:left;">With two devices you can hand over for real: 📷 Receive on one, ⇄ Hand over on the other. Reopen this from the orange demo card on the home screen.</p>
     </div>
 </div>
 <div id="cmd-link-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-link-title">
@@ -1395,7 +1407,7 @@
         <h3 id="reassess-title" style="margin-top:0; color:var(--nhs-blue);">Reassess Patient</h3>
         <p id="reassess-summary" style="font-weight:bold;"></p>
         <p id="reassess-hcp-note" class="alert-card" style="display:none;"></p>
-        <p style="font-size:0.9rem;">Record the patient's current state. If the category has changed, change it on the next screen.</p>
+        <p style="font-size:0.9rem;">Record how they are now. <b>Worse:</b> you answer the triage questions again. <b>Better:</b> use ↻ Re-triage afterwards to update the category.</p>
         <div class="modal-actions" style="margin-bottom:1rem;">
             <button class="btn btn-secondary" style="background:var(--nhs-green);" onclick="submitReassessment('improved')">↑ Improved</button>
             <button class="btn btn-secondary" style="background:#666;" onclick="submitReassessment('unchanged')">= Unchanged</button>
@@ -1563,7 +1575,7 @@
 
 <div id="all-transfer-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="all-transfer-title">
     <div class="modal-box" style="display:flex; flex-direction:column; align-items:center; max-width:640px; max-height:94vh; overflow-y:auto;">
-        <h3 id="all-transfer-title" style="margin-top:0;">Send patients</h3>
+        <h3 id="all-transfer-title" style="margin-top:0;">⇄ Hand over</h3>
         <p class="qr-meta" id="all-transfer-meta"></p>
         <div id="all-transfer-qrcode" style="background:#fff; padding:16px; border-radius:10px;"></div>
         <p id="all-transfer-desc" style="text-align:center;"></p>
@@ -1591,7 +1603,7 @@
         <button type="button" class="btn btn-primary" id="btn-scan-tag" onclick="scanTagForNewPatient()">📷 Scan the tag / wristband</button>
         <div class="input-group"><label for="manual-id-input">Or type it</label><input type="text" id="manual-id-input" placeholder="e.g. T1234" autocomplete="off" autocapitalize="characters"></div>
         <div class="modal-actions">
-            <button class="btn btn-primary" onclick="submitManualId()">Start Triage</button>
+            <button class="btn btn-primary" onclick="submitManualId()">Start triage</button>
             <button class="btn btn-secondary" onclick="closeManualId()">Cancel</button>
         </div>
     </div>
@@ -1657,7 +1669,7 @@
 
 <div id="qr-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="qr-title">
     <div class="modal-box" style="display:flex; flex-direction:column; align-items:center; max-width:600px;">
-        <h3 id="qr-title">Patient Data</h3>
+        <h3 id="qr-title">Hand over this casualty</h3>
         <ol id="qr-steps" class="handover-steps" style="display:none;"></ol>
         <p class="qr-meta" id="qr-summary"></p>
         <div id="qrcode"></div>
@@ -1753,7 +1765,7 @@
         <strong>iPhone / iPad: add Major Incident Triage to your Home Screen before an incident.</strong>
         In Safari tap the Share button (square with an up arrow), then <em>Add to Home Screen</em>, and use that icon from then on.
         Safari can delete saved records after 7 days without use; the Home Screen app does not.
-        Records made in Safari do not appear in the Home Screen app (they are stored separately): move them with <em>Send patients → Export transfer file</em> here, then <em>Import transfer file</em> in the Home Screen app.
+        Records made in Safari do not appear in the Home Screen app (they are stored separately): move them with <em>⇄ Hand over → More options → Export transfer file</em> here, then <em>Import transfer file</em> in the Home Screen app.
         <button type="button" onclick="dismissIosInstallBanner()">OK</button>
     </div>
 
@@ -1789,27 +1801,47 @@
                 <button type="button" class="demo-btn" id="btn-demo" onclick="startDemo()">▶ Demo</button>
             </div>
             <p class="intro-purpose" role="note"><strong>Training and exercise use only.</strong> Not for use with real patients.</p>
-            <p class="intro-hint"><strong>1.</strong> Type your name. <strong>2.</strong> Tap who you are. That's all. Or tap <strong>▶ Demo</strong> to practise with made-up patients.</p>
-            <div class="input-group">
-                <label for="intro-triager">1. Your name or call sign</label>
-                <input type="text" id="intro-triager" placeholder="e.g. PC Jones, Medic 1" autocomplete="off" enterkeyhint="next">
-            </div>
-            <p class="intro-step-label">2. Who are you?</p>
-            <button class="btn btn-primary intro-role" id="btn-role-responder" onclick="setUserRole('NON_HCP')">
-                🚒 Police, fire or first aider<br><span class="intro-role-sub">Simple yes/no questions</span>
-            </button>
-            <div class="intro-role-pair">
-                <button class="btn btn-secondary intro-role" id="btn-role-paramedic" onclick="setUserRole('HCP')">
-                    🚑 Paramedic or ambulance medic
+            <!-- Step 1: one choice only, medical or not (Jake, 31 Oct 2026). Details come on the next step. -->
+            <div id="intro-step-who">
+                <p class="intro-step-label intro-q">Who are you?</p>
+                <button type="button" class="btn intro-path intro-path-med" id="btn-path-medical" onclick="introPath('med')">
+                    <span class="intro-path-icon" aria-hidden="true">🩺</span><span class="intro-path-text"><b>Medical</b><span class="intro-role-sub">Paramedic, doctor or nurse</span></span>
                 </button>
-                <button class="btn btn-secondary intro-role" id="btn-role-clinician" onclick="setUserRole('HCP')">
-                    🩺 Doctor or nurse
+                <button type="button" class="btn intro-path intro-path-non" id="btn-path-nonmed" onclick="introPath('non')">
+                    <span class="intro-path-icon" aria-hidden="true">🚒</span><span class="intro-path-text"><b>Not medical</b><span class="intro-role-sub">Police, fire, first aider or anyone else</span></span>
                 </button>
+                <button type="button" class="intro-cmd-link" id="btn-path-cmd" onclick="introPath('cmd')">🎖 Running the incident? Start the commander screen</button>
             </div>
-            <p class="qr-meta intro-role-note">Paramedics, doctors and nurses start with the same yes/no questions, and switch to the clinicians' tool (MITT) when the commander asks.</p>
-            <button class="btn btn-secondary intro-role-cmd" id="btn-role-commander" onclick="startAsCommander()">
-                🎖 Running the incident? Start as incident commander
-            </button>
+            <!-- Step 2: name, then (medical only) which kind of clinician. -->
+            <div id="intro-step-details" style="display:none;">
+                <button type="button" class="intro-back" id="btn-intro-back" onclick="introPath('')">‹ Back</button>
+                <h3 id="intro-path-title" class="intro-path-title"></h3>
+                <div class="input-group">
+                    <label for="intro-triager">Your name or call sign</label>
+                    <input type="text" id="intro-triager" placeholder="e.g. PC Jones, Medic 1" autocomplete="off" enterkeyhint="go" onkeydown="if (event.key === 'Enter') { event.preventDefault(); introNameEnter(); }">
+                </div>
+                <div id="intro-med-roles">
+                    <p class="intro-step-label">Your role</p>
+                    <button class="btn btn-primary intro-role" id="btn-role-paramedic" onclick="setUserRole('HCP', false, 'paramedic')">
+                        🚑 Paramedic or ambulance clinician
+                    </button>
+                    <button class="btn btn-primary intro-role" id="btn-role-clinician" onclick="setUserRole('HCP', false, 'doctor_nurse')">
+                        🩺 Doctor or nurse
+                    </button>
+                    <p class="qr-meta intro-role-note">You start with the same quick yes/no questions (Ten Second Triage) as everyone else, and switch to the clinicians' tool (MITT) when the commander asks.</p>
+                </div>
+                <div id="intro-non-start">
+                    <button class="btn btn-primary intro-role" id="btn-role-responder" onclick="setUserRole('NON_HCP')">
+                        Start →<br><span class="intro-role-sub">Simple yes/no questions</span>
+                    </button>
+                </div>
+                <div id="intro-cmd-start">
+                    <p class="qr-meta intro-role-note">This starts a practice incident and opens the commander screen on this device. You get a code and PIN to give to the people triaging.</p>
+                    <button class="btn btn-primary intro-role" id="btn-role-commander" onclick="startAsCommander()">
+                        🎖 Start the commander screen →
+                    </button>
+                </div>
+            </div>
             <p class="qr-meta" id="intro-cmd-status" style="text-align:left; margin:-4px 0 12px;"></p>
             <!-- Below the setup steps and small, so a new user does not tap it first (Chrome retest, 30 Oct 2026). -->
             <button id="btn-resume-log" class="btn btn-secondary" style="display:none; margin:0 0 12px; padding:0.6rem; font-size:0.95rem;" onclick="showLog()">
@@ -1932,7 +1964,7 @@
             </div>
             <div id="action-box" class="rs-action"></div>
             <button id="btn-change-answer" class="rs-link" style="display:none;" onclick="changeLastAnswer()">↩ Tapped the wrong button? Change the last answer</button>
-            <button class="btn btn-primary btn-next" onclick="nextPatient()">Next Patient →</button>
+            <button class="btn btn-primary btn-next" onclick="nextPatient()">Next casualty →</button>
             <div class="rs-row rs-main">
                 <button class="btn btn-primary rs-handover" id="btn-handover" onclick="generatePatientQR()">📱 Hand over this patient</button>
                 <button class="btn btn-secondary rs-more-btn" id="btn-patient-more" onclick="openPatientMore()">☰ More</button>
@@ -2090,14 +2122,14 @@
                     </div>
                     <div class="input-group"><label for="p-evac-vehicle">Vehicle / crew</label><input type="text" id="p-evac-vehicle" class="rec-field" placeholder="e.g. AMB-404, HART Team 1"></div>
                     <div class="input-group"><label for="p-hospital-id">Hospital / receiving ID number</label><input type="text" id="p-hospital-id" class="rec-field" placeholder="Pre-assigned hospital number, if known"></div>
-                    <button class="btn btn-secondary btn-handover" style="margin-bottom:10px; background-color:#555;" onclick="scanHandover()">Hand over care to a colleague (scan their ID)</button>
+                    <button class="btn btn-secondary btn-handover" style="margin-bottom:10px; background-color:#555;" onclick="scanHandover()">Record who took over care (scan their ID)</button>
                     <button id="btn-atmist" class="btn btn-secondary hcp-only" style="margin-bottom:10px;" onclick="generateAtmist()">📢 ATMIST handover</button>
                     <button id="btn-evac" class="btn btn-evac" onclick="toggleEvac()">Mark as EVACUATED</button>
                 </div>
             </details>
 
             <details class="rs-sec" id="sec-category">
-                <summary>Other <span class="rs-sum" id="sum-category"></span></summary>
+                <summary>Change category <span class="rs-sum" id="sum-category"></span></summary>
                 <div class="rs-body">
                     <div class="input-group">
                         <label for="p-cat-override">Category (change / override)</label>
@@ -2105,7 +2137,7 @@
                             <option value="P1">P1 – Immediate</option>
                             <option value="P2">P2 – Urgent</option>
                             <option value="P3">P3 – Delayed</option>
-                            <option value="NOT_BREATHING">Not Breathing (TST — needs HCP reassessment)</option>
+                            <option value="NOT_BREATHING">Not breathing (clinician must reassess)</option>
                             <option value="DEAD">Dead (MITT)</option>
                             <option value="P1_HOLD">P1 Hold (senior clinical decision)</option>
                         </select>
@@ -2188,7 +2220,7 @@
         </div>
 
         <div id="log-screen" class="screen">
-            <h2>Patient Log <small style="font-weight:normal; font-size:0.9rem;">(tap a row to open)</small></h2>
+            <h2>Casualty log <small style="font-weight:normal; font-size:0.9rem;">(tap a row to open)</small></h2>
             <div id="alert-strip" style="margin-bottom:10px;"></div>
             <div class="log-tools">
                 <input type="search" id="log-search" placeholder="Search patients…" oninput="renderLogTable()" aria-label="Search patients">
@@ -2206,7 +2238,7 @@
                 </table>
             </div>
             <div class="log-actions" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-                <button class="btn btn-transfer-all" style="flex:2; padding:1rem; font-size:1rem;" onclick="openAllPatientsTransfer()">Send patients to another device</button>
+                <button class="btn btn-transfer-all" style="flex:2; padding:1rem; font-size:1rem;" onclick="openAllPatientsTransfer()">⇄ Hand over</button>
                 <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem; background:#666;" onclick="refreshLog()">↻ Refresh</button>
             </div>
             <details class="rs-sec" id="log-exports">
@@ -2219,7 +2251,7 @@
                         <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="showAuditVerification()">Verify audit trail</button>
                         <button class="btn btn-secondary" style="flex:1; padding:0.8rem; font-size:0.9rem;" onclick="showDebriefTimings()">⏱ Debrief timings</button>
                     </div>
-                    <button class="btn btn-danger" style="margin-bottom:0;" onclick="clearAllData()">Close / Reset Incident</button>
+                    <button class="btn btn-danger" style="margin-bottom:0;" onclick="clearAllData()">Delete all casualties from this phone…</button>
                 </div>
             </details>
             <div style="margin-top: 0.6rem; display: flex; gap: 10px;">
@@ -2238,8 +2270,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.14';
-    const APP_BUILD = '2026-10-31-signal';
+    const APP_VERSION = '0.20.0';
+    const APP_BUILD = '2026-10-31-start';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -3170,10 +3202,31 @@
         const roleEl = $('header-role');
         if (!roleEl) return;
         const cdr = typeof CMD !== 'undefined' && CMD.cfg && CMD.cfg.commander && CMD.cfg.code;
-        roleEl.textContent = cdr ? 'Incident commander' : userRole === 'HCP' ? 'Clinician' : userRole === 'NON_HCP' ? 'Non-clinical' : '';
+        roleEl.textContent = cdr ? 'Incident commander' : userRole === 'HCP' ? clinicalRoleLabel() : userRole === 'NON_HCP' ? 'Not medical' : '';
         roleEl.className = 'status-item role-pill ' + (userRole === 'HCP' ? 'role-hcp' : 'role-non');
+        roleEl.style.display = roleEl.textContent ? '' : 'none';
     }
-    function setUserRole(role, asCommander) {
+    // Start screen: step 1 asks only "medical or not" (or the commander link); step 2 takes the name and, for
+    // medical, which kind of clinician (Jake, 31 Oct 2026: the first screen should be that simple).
+    let introKind = '';
+    function introPath(kind) {
+        introKind = kind || '';
+        $('intro-step-who').style.display = introKind ? 'none' : '';
+        $('intro-step-details').style.display = introKind ? '' : 'none';
+        $('intro-med-roles').style.display = introKind === 'med' ? '' : 'none';
+        $('intro-non-start').style.display = introKind === 'non' ? '' : 'none';
+        $('intro-cmd-start').style.display = introKind === 'cmd' ? '' : 'none';
+        setText('intro-path-title', introKind === 'med' ? '🩺 Medical' : introKind === 'non' ? '🚒 Not medical' : introKind === 'cmd' ? '🎖 Running the incident' : '');
+        const opts = $('intro-options'); if (opts) opts.style.display = introKind ? 'none' : '';
+        if (introKind) { const n = $('intro-triager'); if (n && !n.value.trim()) setTimeout(() => { try { n.focus(); } catch (e) {} }, 60); }
+    }
+    function introNameEnter() {
+        if (introKind === 'non') setUserRole('NON_HCP');
+        else if (introKind === 'cmd') startAsCommander();
+        else if (introKind === 'med') { const b = $('btn-role-paramedic'); if (b) b.focus(); }
+    }
+    function clinicalRoleLabel() { const r = ls('mit_clin_role'); return r === 'paramedic' ? 'Paramedic' : r === 'doctor_nurse' ? 'Doctor or nurse' : 'Clinician'; }
+    function setUserRole(role, asCommander, clinRole) {
         const name = $('intro-triager').value.trim();
         if (!name) { showBlockingError('Name required', 'Enter your name or call sign. Every record and audit entry is attributed to it.'); $('intro-triager').focus(); return; }
         const prevUser = triagerName, prevRole = userRole;
@@ -3186,6 +3239,7 @@
             if (/^DEMO/i.test($('intro-device-prefix').value)) $('intro-device-prefix').value = '';
         }
         triagerName = name;
+        if (role === 'HCP' && clinRole) ls('mit_clin_role', clinRole); else if (role !== 'HCP') ls('mit_clin_role', null);
         const inputPrefix = $('intro-device-prefix').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
         devicePrefix = inputPrefix;
         const inputSec = $('intro-sector').value.trim();
@@ -3261,7 +3315,7 @@
         ls('mit_id_mode', idMode);
     }
     async function resetApp() {
-        const ok = await inAppConfirm({ title: 'Change user or role?', message: 'All patient data stays on this device.', okLabel: 'Change' });
+        const ok = await inAppConfirm({ title: 'Change user or role?', message: 'All patient data stays on this device.', okLabel: 'Change name or role', cancelLabel: 'Keep as I am' });
         if (ok) { commitDirtyFields('User change'); showScreen('intro-screen'); }
     }
 
@@ -3370,7 +3424,7 @@
         document.body.dataset.screen = id;
         // Back on the start page means someone is setting up (again, or a new person on this phone):
         // they get the "Two quick questions" link prompt too, not just the first person (Chrome test, 30 Oct 2026).
-        if (id === 'intro-screen') { try { sessionStorage.removeItem('mit_cmd_link_dismissed'); } catch (e) {} }
+        if (id === 'intro-screen') { try { sessionStorage.removeItem('mit_cmd_link_dismissed'); } catch (e) {} introPath(''); }
         if (id !== 'result-screen') closePatientMore();
         if (id !== 'question-screen') stopCount();
         document.querySelector('main').scrollTop = 0;
@@ -3379,7 +3433,7 @@
         dash.classList.toggle('log', isLog);   // the log shows on scene / total in the same compact strip
         $('evac-summary').style.display = isLog ? 'block' : 'none';
         setText('dash-legend', isLog ? 'On scene / total' : 'Patients still on scene (totals in the Patient log)');
-        $('oh-primary').textContent = id === 'result-screen' ? 'Next Patient' : 'Triage';
+        $('oh-primary').textContent = id === 'result-screen' ? 'Next casualty' : 'Triage';
         // A pending re-triage / correction never lingers: leaving the relevant screens cancels it.
         if (pendingReTriageUid && id !== 'home-screen' && id !== 'question-screen') pendingReTriageUid = null;
         if (pendingCorrectionUid && id !== 'question-screen') pendingCorrectionUid = null;
@@ -3522,11 +3576,11 @@
             triggerHaptic('tap');
             const stepId = $('question-screen').dataset.stepId;
             const outcome = outcomeFor(currentTool, stepId, answer);
-            if (!outcome) { showBlockingError('Triage error', `Unknown step ${stepId}. Restart this patient.`); return; }
+            if (!outcome) { showBlockingError('Something went wrong', `Tap Cancel and triage this casualty again. Use the paper tag meanwhile. (step ${stepId})`); return; }
             stepHistory.push(stepId);
             if (outcome.type === 'next') loadStep(flowFor(currentTool).find(s => s.id === outcome.step));
             else { triggerHaptic('success'); stopCount(); logResult(outcome.category, (OUTCOME_ACTIONS[`${currentTool}|${outcome.reason}`] || '') + measuredSummary(), outcome.reason, answer); }
-        } catch (err) { console.error(err); showBlockingError('Triage error', 'The answer could not be processed: ' + err.message); }
+        } catch (err) { console.error(err); showBlockingError('Something went wrong', 'That answer could not be saved. Tap Cancel and triage this casualty again; use the paper tag meanwhile.'); logAudit('TRIAGE_ERROR', '-', String((err && err.message) || err), Date.now()); }
     }
     // A second tap within 0.4 s is ignored, as for YES / NO, so a double tap cannot go back two questions.
     let _lastBackTap = 0;
@@ -3827,7 +3881,7 @@
             box.appendChild(card);
         }
         if (entry.handoverState === 'pending' || entry.handoverState === 'accepted-outdated') {
-            box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: entry.handoverState === 'pending' ? 'Handover pending' : 'Receiver has an OLDER version' }), entry.handoverState === 'pending' ? 'QR shown but no acknowledgement scanned yet.' : 'Changes were made after the QR the receiver accepted. Show the QR again.']));
+            box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: entry.handoverState === 'pending' ? 'Hand over not confirmed yet' : 'Receiver has an OLDER version' }), entry.handoverState === 'pending' ? 'QR shown but no acknowledgement scanned yet.' : 'Changes were made after the QR the receiver accepted. Show the QR again.']));
         }
     }
     function resolveImportConflicts(entry) {
@@ -4364,15 +4418,15 @@
         if (text.length > MITTLib.PATIENT_QR_MAX_CHARS) {
             // Never fail a handover for size: send this one patient as a multi-part QR instead.
             logAudit('QR_TOO_LARGE_FALLBACK', entry.id, `${text.length} chars; switched to multi-part transfer`, Date.now(), { uid: entry.uid });
-            await inAppConfirm({ title: 'Record too large for one QR', message: `${entry.id} has too much detail for a single QR. It will be sent as a short series of numbered QR codes. The receiver uses "Receive (scan)" as normal.`, okLabel: 'Continue', alertOnly: true });
+            await inAppConfirm({ title: 'Record too large for one QR', message: `${entry.id} has too much detail for a single QR. It will be sent as a short series of numbered QR codes. The receiver uses "📷 Receive" (scan)" as normal.`, okLabel: 'Continue', alertOnly: true });
             openAllPatientsTransfer({ type: 'patient', uid: entry.uid });
             return;
         }
         try { _renderQR($('qrcode'), text, qrSize()); }
-        catch (e) { console.error(e); showBlockingError('QR could not be generated', `${e.message}. Use "Send patients to another device" → Export transfer file.`); logAudit('QR_FAILED', entry.id, e.message, Date.now(), { uid: entry.uid }); return; }
+        catch (e) { console.error(e); showBlockingError('QR could not be generated', `${e.message}. Use ⇄ Hand over → More options → Export transfer file.`); logAudit('QR_FAILED', entry.id, e.message, Date.now(), { uid: entry.uid }); return; }
         _setCurrentQrText(text);
         setText('qr-title', `${TRAINING ? 'TRAINING — ' : ''}Patient ${entry.id} — ${catShort(entry.category)}`);
-        setQrSteps(['1. The receiver taps 📷 Receive patient and scans this code', '2. They check the details and tap Accept', '3. Their phone shows a confirmation code — you scan it'], 0);
+        setQrSteps(['1. The receiver taps 📷 Receive and scans this code', '2. They check the details and tap Accept', '3. Their phone shows a confirmation code — you scan it'], 0);
         setText('qr-summary', _summariseEntry(entry));
         setText('qr-desc', `Show to the receiver. Brightness up. Generated ${fmtTime(wrapper.g)}.`);
         setText('qr-expiry', `Check code ${MITTLib.shortCodeFromHash(wrapper.h)} • version ${wrapper.rv} • app v${APP_VERSION}`);
@@ -4479,7 +4533,7 @@
         _scanPaused = false;
         const titles = {
             HANDOVER: ['Scan colleague identity', "Scan the colleague's “My ID” QR."],
-            ACK: ["Scan receiver's acknowledgement", "Scan the ACK QR on the receiver's phone."],
+            ACK: ["Scan their confirmation code", "Scan the confirmation code on the receiver's phone."],
             TACK: ["Scan receiver's confirmation", "Scan the confirmation QR on the receiver's phone."],
             JOIN: ["Link to the incident commander", "Scan the join code on the commander's phone or screen."],
             TAG: ['Scan the triage tag / wristband', 'Point at the barcode or QR on the tag. No barcode? Fill the box with the printed number and tap the button below.'],
@@ -4489,7 +4543,7 @@
         $('btn-ocr').style.display = tagMode ? 'block' : 'none';
         $('btn-scan-paste').textContent = tagMode ? '⌨ Type it' : '⌨ Paste';
         ocrStatus('');
-        const t = titles[scanMode] || ['Receive (scan)', 'Any Major Incident Triage QR. For multi-part transfers keep scanning — the camera stays on and parts can be in any order.'];
+        const t = titles[scanMode] || ['📷 Receive', 'Any Major Incident Triage QR. For multi-part transfers keep scanning — the camera stays on and parts can be in any order.'];
         setText('scan-title', t[0]); setText('scan-instruction', t[1]);
         renderScanProgress();
         _safeCleanupScanner(); initScannerInstance();
@@ -4557,7 +4611,7 @@
         if (_shouldDebounceScan(txt)) return;
         playBeep(); triggerHaptic('success');
         if (scanMode === 'TAG' || scanMode === 'CARD') {
-            if (looksLikeAppCode(txt)) { stopScanner(); showBlockingError('That is an app code', 'This QR was made by Major Incident Triage (a handover or join code), not a tag number. For handovers use Receive patient.'); return; }
+            if (looksLikeAppCode(txt)) { stopScanner(); showBlockingError('That is an app code', 'This QR was made by Major Incident Triage (a handover or join code), not a tag number. For hand overs use 📷 Receive.'); return; }
             handleTagScan(txt, 'scanned');
             return;
         }
@@ -5183,7 +5237,7 @@
         const n = _allTransfer.payload.n;
         setText('all-transfer-title', total === 1 ? 'Send patients' : `Send patients — QR ${idx} of ${total}`);
         setText('all-transfer-meta', `${scopeLabel(_allTransfer.payload.scope)} • ${n} record${n === 1 ? '' : 's'} • transfer ${_allTransfer.transferId}`);
-        setText('all-transfer-desc', (total === 1 ? '1. The receiver taps 📷 Receive patient and scans this code. ' : '1. The receiver taps 📷 Receive patient and keeps the camera on these codes (any order; repeats are ignored). ') + '2. They tap Accept and show you a confirmation code. 3. You tap "Scan receiver\'s confirmation" below.');
+        setText('all-transfer-desc', (total === 1 ? '1. The receiver taps 📷 Receive and scans this code. ' : '1. The receiver taps 📷 Receive and keeps the camera on these codes (any order; repeats are ignored). ') + '2. They tap Accept and show you a confirmation code. 3. You tap "Scan receiver\'s confirmation" below.');
         setText('all-transfer-progress', total === 1 ? `Check code ${MITTLib.shortCodeFromHash(_allTransfer.payload.h)}` : `Part ${idx} of ${total} • check code ${MITTLib.shortCodeFromHash(_allTransfer.payload.h)}`);
         $('all-transfer-bar').style.width = `${Math.round(idx / total * 100)}%`;
         $('btn-auto-cycle').style.display = total > 1 ? '' : 'none';
@@ -5481,7 +5535,7 @@
         if (a.conflicts.length) parts.push(`${a.conflicts.length} with import differences to review`);
         if (a.dupIds.length) parts.push(`${a.dupIds.length} duplicate ID(s): ${a.dupIds.slice(0, 4).join(', ')}`);
         if (a.outdated.length) parts.push(`${a.outdated.length} receiver(s) have an older version`);
-        if (a.pending.length) parts.push(`${a.pending.length} handover(s) awaiting ACK`);
+        if (a.pending.length) parts.push(`${a.pending.length} hand over${a.pending.length === 1 ? '' : 's'} not yet confirmed`);
         if (a.dueSoon.length) parts.push(`${a.dueSoon.length} due soon`);
         return parts;
     }
@@ -5565,7 +5619,7 @@
             }
             if (row.category !== 'DEAD' && row.lastDeteriorationAt && now - row.lastDeteriorationAt < 30 * 60 * 1000) td.appendChild(el('span', { className: 'deteriorate-flag', text: 'DETERIORATING' }));
             if ((row.importConflicts || []).some(c => !c.resolved)) td.appendChild(el('span', { className: 'deteriorate-flag', text: 'REVIEW' }));
-            const hs = { pending: ['due-soon', 'Handover pending'], accepted: ['ok', 'Handover ✓'], 'accepted-outdated': ['overdue', 'Receiver has OLD version'], 'handed-over': ['ok', `Care → ${row.handoverTo || ''}`], received: ['ok', `From ${row.receivedFrom || 'other device'}`] }[row.handoverState];
+            const hs = { pending: ['due-soon', 'Not confirmed yet'], accepted: ['ok', 'Handover ✓'], 'accepted-outdated': ['overdue', 'Receiver has OLD version'], 'handed-over': ['ok', `Care → ${row.handoverTo || ''}`], received: ['ok', `From ${row.receivedFrom || 'other device'}`] }[row.handoverState];
             if (hs) td.appendChild(el('span', { className: 'reassess-pill ' + hs[0], text: hs[1] }));
             if (row.highRisk) td.appendChild(el('strong', { style: 'color:red;', text: ' [HIGH RISK] ' }));
             const parts = [];
@@ -6455,7 +6509,11 @@
         const ids = Array.from(refused).map(u => { const i = indexByUid(u); return i > -1 ? incidentLog[i].id : u; });
         if (CMD.full.size > CMD.fullWarned) {
             logAudit('COMMANDER_INCIDENT_FULL', '-', `Incident ${CMD.cfg.code} is full${CMD.fullMax ? ` (${CMD.fullMax} casualties)` : ''}: ${ids.join(', ')} NOT stored by the commander. Kept on this phone as not sent; will keep trying.`, Date.now(), { uids: Array.from(refused) });
-            showBlockingError('Incident full: not sent to the commander', `The incident has reached its limit${CMD.fullMax ? ` of ${CMD.fullMax.toLocaleString('en-GB')} casualties` : ''}, so ${ids.length === 1 ? ids[0] + ' was' : ids.length + ' casualties (' + ids.slice(0, 5).join(', ') + (ids.length > 5 ? '…' : '') + ') were'} NOT stored. The commander screen shows that they were refused, but they are not in its counts.\n\nThey are kept on this phone and marked as not sent; it keeps trying. Make sure the commander knows about them another way (radio, paper triage card).`);
+            // The first time, a box that must be read; after that, or in the middle of a triage, a message that does not
+            // stop the triage (v0.19.12 check: every new refusal opened a blocking box, even mid-question).
+            const midTriage = document.body.dataset.screen === 'question-screen';
+            if (CMD.fullWarned || midTriage) showToast(`⚠ Incident full: ${ids.length === 1 ? ids[0] + ' was' : ids.length + ' casualties were'} NOT sent to the commander. Kept on this phone. Tell the commander by radio.`, { alert: true, long: true });
+            else showBlockingError('Incident full: not sent to the commander', `The incident has reached its limit${CMD.fullMax ? ` of ${CMD.fullMax.toLocaleString('en-GB')} casualties` : ''}, so ${ids.length === 1 ? ids[0] + ' was' : ids.length + ' casualties (' + ids.slice(0, 5).join(', ') + (ids.length > 5 ? '…' : '') + ') were'} NOT stored. The commander screen shows that they were refused, but they are not in its counts.\n\nThey are kept on this phone and marked as not sent; it keeps trying. Make sure the commander knows about them another way (radio, paper triage card).`);
             try { if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]); } catch (e) {}
         }
         CMD.fullWarned = CMD.full.size;
@@ -6678,14 +6736,14 @@
     }
     async function cmdStop() {
         if (!cmdActive()) return;
-        const ok = await inAppConfirm({ title: 'Stop sharing from this phone?', message: `Records already sent stay on the commander screen until the incident expires or is ended. Other phones are not affected.`, okLabel: 'Stop sharing' });
+        const ok = await inAppConfirm({ title: 'Stop sharing from this phone?', message: `Records already sent stay on the commander screen until the incident expires or is ended. Other phones are not affected.`, okLabel: 'Stop sharing' , cancelLabel: 'Keep sharing' });
         if (!ok) return;
         cmdStopLocal('Stopped live sharing from this phone');
         showToast('Live sharing stopped.');
     }
     async function cmdEndIncident() {
         if (!cmdActive()) return;
-        const ok = await inAppConfirm({ title: 'End the incident for everyone?', message: `Deletes the server copy now. Every phone stops sending and the commander screen shows nothing more. Phones keep their own records.`, okLabel: 'End incident', danger: true });
+        const ok = await inAppConfirm({ title: 'End the incident for everyone?', message: `Deletes the server copy now. Every phone stops sending and the commander screen shows nothing more. Phones keep their own records.`, okLabel: 'End incident', danger: true , cancelLabel: 'Keep the incident running' });
         if (!ok) return;
         try {
             if (!CMD.cfg.cmdPin) { showBlockingError('Commander PIN needed', 'Only the commander PIN can end the incident for everyone.'); return; }
@@ -6824,7 +6882,7 @@
             if (e.key !== 'Enter' && e.key !== ' ') return;
             e.preventDefault();
             if (duressActive()) { cmdCancelDuress(); return; }
-            const ok = await inAppConfirm({ title: 'Call the commander for help?', message: 'An alarm sounds on the commander screen with your name and, if known, your position.', okLabel: 'Call for help', danger: true });
+            const ok = await inAppConfirm({ title: 'Call the commander for help?', message: 'An alarm sounds on the commander screen with your name and, if known, your position.', okLabel: 'Call for help', cancelLabel: 'Don\'t call', danger: true });
             if (ok) cmdRaiseDuress('keyboard');
         });
     }
@@ -7135,7 +7193,7 @@
         let realUseNotice = false;
         try { realUseNotice = sessionStorage.getItem('mit_real_use_notice') === '1'; sessionStorage.removeItem('mit_real_use_notice'); } catch (e) {}
         if (realUseNotice && !TRAINING) inAppConfirm({ title: 'You are now in real use', message: 'Training mode is off. Anything you record from now on is a real record.\n\nTo practise again: ⚙ Settings → Training mode.', okLabel: 'OK', alertOnly: true });
-        if (_allChunkStore.transferId && Object.keys(_allChunkStore.chunks || {}).length) showToast(`Unfinished multi-part transfer ${_allChunkStore.transferId} (${Object.keys(_allChunkStore.chunks).length}/${_allChunkStore.totalChunks}). Tap "Receive (scan)" to continue.`, { long: true });
+        if (_allChunkStore.transferId && Object.keys(_allChunkStore.chunks || {}).length) showToast(`Unfinished multi-part transfer ${_allChunkStore.transferId} (${Object.keys(_allChunkStore.chunks).length}/${_allChunkStore.totalChunks}). Tap 📷 Receive to continue.`, { long: true });
     };
 </script>
 </body>
