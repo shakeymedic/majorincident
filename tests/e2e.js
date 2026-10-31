@@ -1904,6 +1904,27 @@ async function test(name, fn) {
         assert.strictEqual(await CF.evaluate(() => CMD.cfg.code), code);
         await CF._ctx.close();
     });
+    await test('v0.22.0 commander: short IDs keep the phone, waits are listed, activity and a situation report', async () => {
+        assert.strictEqual(await CC.evaluate(() => shortId('TRAIN-ABCD-MITT-003')), 'ABCD MITT 003');
+        assert.strictEqual(await CC.evaluate(() => shortId('TRAIN-EFGH-MITT-003')), 'EFGH MITT 003');
+        assert.strictEqual(await CC.evaluate(() => shortId('MITT-007')), 'MITT 007');
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => /new in the last 10 min/.test(document.getElementById('activity').textContent), null, { timeout: 8000 });
+        const rep = await CC.evaluate(() => sitrepText());
+        assert.match(rep, /casualt/); assert.match(rep, /On scene \d+/); assert.match(rep, /Evacuated \d+/);
+        // A P1 in the field for over 10 minutes is listed as waiting, longest first
+        const waits = await CC.evaluate(() => {
+            const t0 = Date.now();
+            const keep = data.records;
+            data.records = keep.concat([{ uid: 'w1', id: 'TRAIN-WAIT-TST-001', category: 'P1', tool: 'TST', timestamp: t0 - 25 * 60000, createdAt: t0 - 25 * 60000 }, { uid: 'w2', id: 'TRAIN-WAIT-TST-002', category: 'P1', tool: 'TST', timestamp: t0 - 12 * 60000, createdAt: t0 - 12 * 60000 }]);
+            render({ sameData: true });
+            const rows = Array.from(document.querySelectorAll('#attention .att-row')).map(r => r.textContent).filter(t => /In the field/.test(t));
+            data.records = keep; render({ sameData: true });
+            return rows;
+        });
+        assert.strictEqual(waits.length, 2, JSON.stringify(waits));
+        assert.match(waits[0], /WAIT TST 001/); assert.match(waits[0], /25 min/);
+    });
     await CA._ctx.close(); await CB._ctx.close(); await CC._ctx.close();
 
     console.log('\ne2e: demo incident');

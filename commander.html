@@ -100,6 +100,18 @@
     .count .l { font-size:0.78rem; font-weight:800; margin-top:5px; letter-spacing:0.08em; text-transform:uppercase; }
     .count .s { font-size:0.74rem; opacity:0.85; margin-top:2px; font-variant-numeric:tabular-nums; }
     #counts-note { margin:0.6rem 0 0; }
+    .sitrep-row { margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #sitrep-text { font-size:0.85rem; }
+    body.wall .sitrep-row { display:none; }
+    .activity { display:flex; align-items:flex-end; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    .activity .act-fig { display:flex; flex-direction:column; min-width:9em; }
+    .activity .act-fig b { font-size:1.6rem; font-variant-numeric:tabular-nums; line-height:1; }
+    .activity .act-fig span { color:var(--muted); font-size:0.8rem; }
+    .activity svg { flex:1 1 320px; max-width:100%; height:70px; }
+    .activity .act-bar { fill:var(--nhs-blue, #005EB8); }
+    .activity .act-bar.p1 { fill:#DA291C; }
+    .activity .act-cap { flex-basis:100%; font-size:0.78rem; margin-top:-6px; }
+    body.wall .activity svg { height:90px; }
     .count .t { font-size:0.7rem; opacity:0.75; font-variant-numeric:tabular-nums; }
     /* Field / CCS / evacuated strip */
     .stages { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-top:10px; }
@@ -489,7 +501,7 @@
 <div class="training hidden" id="training-banner">TRAINING INCIDENT — practice data, not real patients</div>
 <main>
     <div class="card" id="signin">
-        <h2>Open an incident</h2>
+        <h2>Open incident</h2>
         <p class="muted lead">Enter the incident code and the <b>commander PIN</b> shown on the phone that started the incident. The page refreshes every 30 seconds while open. The triagers' PIN and the view-only PIN open the same screen to watch only.</p>
         <div class="fields">
             <div>
@@ -507,7 +519,7 @@
         </div>
         <div class="danger hidden" id="signin-error" style="margin-top:0.8rem;"></div>
         <div class="signin-foot">
-            <button type="button" class="btn" data-act="signIn">Open dashboard</button>
+            <button type="button" class="btn" data-act="signIn">Open incident</button>
             <p class="muted">No incident? <a href="#DEMO">See the demo incident</a> (made up, updates by itself, nothing sent or received), or run a <a href="demo.html">linked demo</a> (this screen with demo phones beside it).</p>
         </div>
         <div class="how"><b>Where the code comes from:</b> the commander's phone shows it on the start screen with <b>"🎖 Running the incident? Start the commander screen"</b>, or in ⚙ Settings → Incident. On that phone this page signs in by itself. Data is held for 24 hours after the last update, then deleted. For a TV in the command post, use <b>Wall display</b> (or add <b>/wall</b> to the link) and the ⛶ button for full screen.</div>
@@ -521,6 +533,8 @@
         <div class="card count-wrap">
             <div class="counts" id="counts"></div>
             <div class="stages" id="stages"></div>
+            <div class="activity" id="activity" aria-label="Casualties triaged over time"></div>
+            <div class="sitrep-row"><button type="button" class="btn small sec" data-act="copySitrep" id="btn-sitrep">📋 Copy situation report</button> <span class="muted" id="sitrep-text"></span></div>
             <p class="muted" id="counts-note"></p>
         </div>
         <div class="grid2 wall-grid">
@@ -571,7 +585,7 @@
             </div>
             <div class="wall-right">
                 <div class="card" id="attention-card">
-                    <h2>Needs attention <small id="attention-note">overdue reassessments, tourniquets, high risk</small></h2>
+                    <h2>Needs attention <small id="attention-note">overdue checks, long waits, tourniquets, high risk</small></h2>
                     <div id="attention"></div>
                 </div>
                 <div class="card" id="table-card">
