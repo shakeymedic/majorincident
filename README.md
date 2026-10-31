@@ -164,6 +164,18 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.20.0 build 2026-10-31-start — simpler start screen and clearer wording (Jake, 31 October 2026)
+- **The start screen asks one thing: Medical or Not medical** (two big buttons), with a smaller "🎖 Running the incident? Start the commander screen" link. The next step asks for the name and, for medical, Paramedic or ambulance clinician / Doctor or nurse. The header shows that role ("Paramedic", "Doctor or nurse", "Not medical").
+- **One name for each action.** ⇄ Hand over sends casualties to another phone and 📷 Receive takes them in, everywhere (it was also "Send patients", "QR Handover", "Receive patient", "Receive (scan)"). The receiver's reply is the "confirmation code" (was "ACK"/"acknowledgement"). Recording who took over care is "Record who took over care", not another "hand over".
+- **Messages point to things that exist:** the result screen section is now "Change category" (messages said "under Change category" while it was called "Other"); the commander page names the new start-screen link.
+- **Reassess box says what really happens:** Worse means the triage questions again; Better means use ↻ Re-triage afterwards (it said "change it on the next screen", which only happens for Worse).
+- **Triage errors say what to do** (Cancel, triage again, use the paper tag) instead of showing a technical message; the detail goes to the audit.
+- **Dialog buttons say what they do** for calling for help, stopping sharing, ending the incident, changing user and clearing a call for help (no bare "Cancel").
+- **Incident full mid-triage:** after the first warning, or in the middle of a triage, a message that does not stop the triage (it opened a box that had to be dismissed each time).
+- Smaller wording fixes: "Next casualty →", "Casualty log", "Start triage", "Delete all casualties from this phone…", "Not breathing (clinician must reassess)", the exercise guide no longer mentions capillary refill (the app does not ask it), the demo log card says "newest first".
+- **Not changed (clinical sign-off needed):** the wording of the TST/MITT questions and actions. See the review in the test report.
+- Service worker cache v54. Web change only: no Android rebuild.
+
 ### v0.19.14 build 2026-10-31-signal — fixes from the v0.19.13 stress test (31 October 2026)
 - **A call for help says whether it has gone.** With no signal the 🆘 button said "HELP CALLED" and "live on the commander screen" when nothing had been sent. It now shows SENDING HELP… until the server has it, then HELP CALLED ✓ (with a vibration, a message and an audit entry). After a failed attempt it turns amber: HELP NOT SENT, with a warning to use the radio, and the phone tries again every 5 seconds until it goes.
 - **Casualties waiting for signal are visible.** While reports are failing, the home screen shows "☁ ✗ N casualties not yet sent to the commander" (tap to try again) and the status button says "N not sent", instead of only a ✗ and a tooltip a phone cannot show.

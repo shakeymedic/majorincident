@@ -680,7 +680,7 @@ async function clearDuress(deviceId) {
     if (!canMark() || !data) return;
     const d = (data.devices || []).find(x => x.deviceId === deviceId);
     if (!d || !sos(d)) return;
-    if (!await ask({ title: `Clear the call for help from ${d.triager || deviceId}?`, message: 'Only do this once someone is going to them. Their phone is told it was cleared; they can call again if they still need help.', okLabel: 'Clear: help is on its way' })) return;
+    if (!await ask({ title: `Clear the call for help from ${d.triager || deviceId}?`, message: 'Only do this once someone is going to them. Their phone is told it was cleared; they can call again if they still need help.', okLabel: 'Clear: help is on its way' , cancelLabel: 'Keep the alarm on' })) return;
     if (demo) { d.duress = Object.assign({}, d.duress, { clearedAt: Date.now(), clearedBy: 'commander' }); render(); return; }
     const by = await whoDecides();
     if (!by) return;

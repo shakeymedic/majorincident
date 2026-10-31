@@ -887,7 +887,7 @@ async function test(name, fn) {
         await S.evaluate(async () => { currentEntry().notes = 'guided'; await generatePatientQR(); });
         const steps = await S.evaluate(() => Array.from(document.querySelectorAll('#qr-steps li')).map(li => li.className + ':' + li.textContent));
         assert.strictEqual(steps.length, 3);
-        assert.match(steps[0], /^now:.*Receive patient/);
+        assert.match(steps[0], /^now:.*📷 Receive/);
         await scan(R, await qrText(S));
         await page_visible(R, '#preview-modal');
         await R.evaluate(() => acceptPreview());
