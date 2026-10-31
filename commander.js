@@ -642,7 +642,12 @@ let fullSeen = -1;
 function renderFull() {
     const box = $('full-warn');
     if (!box) return;
-    const f = data && data.full, max = (data && data.maxRecords) || 0, count = data && typeof data.recordCount === 'number' ? data.recordCount : ((data && data.records) || []).length;
+    const f = data && data.full, max = (data && data.maxRecords) || 0;
+    // The server's figure never counts too few but can count too many (a batch sent twice at once is added twice until
+    // the next real count at the limit); this screen holds every casualty, so the smaller of the two is shown
+    // (v0.19.13 test: told 115 when 65 were stored).
+    const onScreen = ((data && data.records) || []).length;
+    const count = data && typeof data.recordCount === 'number' ? (onScreen ? Math.min(data.recordCount, onScreen) : data.recordCount) : onScreen;
     const refused = f && f.count ? f.count : 0;
     if (!refused && !(max && count >= max * 0.9)) { box.classList.add('hidden'); box.innerHTML = ''; fullSeen = 0; return; }
     const n = (x) => Number(x).toLocaleString('en-GB');

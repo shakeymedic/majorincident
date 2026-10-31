@@ -164,6 +164,13 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.14 build 2026-10-31-signal — fixes from the v0.19.13 stress test (31 October 2026)
+- **A call for help says whether it has gone.** With no signal the 🆘 button said "HELP CALLED" and "live on the commander screen" when nothing had been sent. It now shows SENDING HELP… until the server has it, then HELP CALLED ✓ (with a vibration, a message and an audit entry). After a failed attempt it turns amber: HELP NOT SENT, with a warning to use the radio, and the phone tries again every 5 seconds until it goes.
+- **Casualties waiting for signal are visible.** While reports are failing, the home screen shows "☁ ✗ N casualties not yet sent to the commander" (tap to try again) and the status button says "N not sent", instead of only a ✗ and a tooltip a phone cannot show.
+- **Sending resumes faster when signal returns:** failed reports are retried after 5, 10, 15… seconds up to every 30 seconds (it was up to every 5 minutes), as well as at once when the phone reports being back online.
+- **The commander's "nearly full" figure is not inflated:** the screen shows the smaller of the server's running figure (which a batch sent twice at once can push up until the next real count) and the casualties it actually holds.
+- Service worker cache v53. Web change only: no Android rebuild.
+
 ### v0.19.13 build 2026-10-31-count — fixes from the v0.19.12 check (31 October 2026)
 - **The casualty count can no longer drift and call an incident full early.** The running total could only ever run high (a batch resent after a phone timed out, two copies of the same new casualty at once, a write that failed after being counted) and nothing recounted, so an incident could refuse casualties well before it held 3,000. Nothing is now refused on the running total alone: near the limit the stored casualties are counted for real, together with those other reports are still writing, and that count is kept beside the total (replaced whole, so two reports correcting at once cannot take anything off twice; at most one real count a minute while the incident stays full). Reports sent at the same moment still cannot take an incident past its limit; near the limit they may refuse a little too much, and the phones send those again with their next report. The commander's "nearly full" figure uses the corrected count.
 - **Incidents started before v0.19.12** are counted once, safely, even if two reports arrive together (before, both added the whole incident, so one holding 1,600 could read as 3,200 and refuse everything new).
