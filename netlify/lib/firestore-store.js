@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const DEFAULT_COLLECTION = 'mi_kv';
 const GET_CHUNK = 300;     // documents per getAll call
 const WRITE_CHUNK = 400;   // writes per batch (Firestore allows 500)
+const DELETE_PARALLEL = 5; // delete batches sent at once
 const PREFIX_END = ''; // sorts after every character a key can hold
 
 // Firestore document ids cannot contain '/', nor be '.', '..' or __x__, so every key is percent-encoded.
@@ -67,12 +68,25 @@ function firestoreStore(db, opts) {
                 await batch.commit();
             }
         },
+        // Several batches at once: ending a 3,000-casualty incident took 8 s one batch at a time (v0.19.12).
         async deleteMany(keys) {
-            for (let i = 0; i < keys.length; i += WRITE_CHUNK) {
-                const batch = db.batch();
-                keys.slice(i, i + WRITE_CHUNK).forEach(k => batch.delete(col.doc(docId(k))));
-                await batch.commit();
+            const chunks = [];
+            for (let i = 0; i < keys.length; i += WRITE_CHUNK) chunks.push(keys.slice(i, i + WRITE_CHUNK));
+            for (let i = 0; i < chunks.length; i += DELETE_PARALLEL) {
+                await Promise.all(chunks.slice(i, i + DELETE_PARALLEL).map(ch => { const batch = db.batch(); ch.forEach(k => batch.delete(col.doc(docId(k)))); return batch.commit(); }));
             }
+        },
+        // Documents after a key, in key order, with their values: one query, one read per document returned (a listing
+        // then a bulk read cost two). Counter documents (no value) are left out.
+        async range(prefix, after, limit) {
+            prefix = String(prefix || '');
+            const from = after && String(after) > prefix ? String(after) : '';
+            const snap = await col.where('k', from ? '>' : '>=', from || prefix).where('k', '<', prefix + PREFIX_END).orderBy('k').limit(limit).get();
+            return snap.docs.map(d => {
+                let v = null;
+                try { const t = d.get('v'); v = typeof t === 'string' ? JSON.parse(t) : null; } catch (e) { v = null; }
+                return { key: String(d.get('k') || ''), value: v };
+            }).filter(x => x.value && x.key.startsWith(prefix));
         },
         async list(prefix) {
             prefix = String(prefix || '');

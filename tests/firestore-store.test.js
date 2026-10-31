@@ -11,19 +11,23 @@ const { firestoreStore, firestoreConfig, docId } = require('../netlify/lib/fires
 function fakeFirestore() {
     const cols = new Map();
     const snap = (data) => ({ exists: !!data, get: (f) => data ? data[f] : undefined });
-    function query(docs, filters, fields) {
+    function query(docs, filters, fields, order, lim) {
         return {
-            where(f, op, v) { return query(docs, filters.concat([[f, op, v]]), fields); },
-            select(...fs) { return query(docs, filters, fs); },
+            where(f, op, v) { return query(docs, filters.concat([[f, op, v]]), fields, order, lim); },
+            select(...fs) { return query(docs, filters, fs, order, lim); },
+            orderBy(f) { return query(docs, filters, fields, f, lim); },
+            limit(n) { return query(docs, filters, fields, order, n); },
             async get() {
-                const out = [];
+                let out = [];
                 for (const [id, text] of docs) {
                     const d = JSON.parse(text);
                     if (/[/]/.test(id) || id === '.' || id === '..' || /^__.*__$/.test(id)) throw new Error('invalid document id ' + id);
-                    if (!filters.every(([f, op, v]) => op === '>=' ? d[f] >= v : op === '<' ? d[f] < v : false)) continue;
+                    if (!filters.every(([f, op, v]) => op === '>=' ? d[f] >= v : op === '>' ? d[f] > v : op === '<' ? d[f] < v : false)) continue;
                     const picked = fields ? Object.fromEntries(fields.map(f => [f, d[f]])) : d;
-                    out.push({ id, get: (f) => picked[f] });
+                    out.push({ id, d: picked, get: (f) => picked[f] });
                 }
+                if (order) out.sort((a, b) => a.d[order] < b.d[order] ? -1 : a.d[order] > b.d[order] ? 1 : 0);
+                if (lim) out = out.slice(0, lim);
                 return { docs: out };
             },
         };
@@ -42,7 +46,7 @@ function fakeFirestore() {
         collection(name) {
             if (!cols.has(name)) cols.set(name, new Map());
             const docs = cols.get(name);
-            return Object.assign(query(docs, [], null), {
+            return Object.assign(query(docs, [], null, null, 0), {
                 doc(id) {
                     if (/[/]/.test(id) || id === '.' || id === '..' || /^__.*__$/.test(id)) throw new Error('invalid document id ' + id);
                     return {
