@@ -12,6 +12,8 @@
     if (!L) return;
     var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
     var lastHuman = 0;
+    var log = window.MITT_DEMO_LOG = [];
+    function note(m) { log.push(new Date().toISOString().slice(11, 19) + ' ' + m); if (log.length > 60) log.shift(); }
     ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, function (e) { if (e.isTrusted && !(e.target && e.target.closest && e.target.closest('#demo-play-badge'))) lastHuman = Date.now(); }, true); });
 
     function phoneSpec() { return MITTLib.DEMO_INCIDENT.phones[Number(L.role.slice(1))] || MITTLib.DEMO_INCIDENT.phones[0]; }
@@ -36,6 +38,7 @@
         introPath(ph.role === 'HCP' ? 'med' : 'non');
         $('intro-triager').value = demoName();
         setUserRole(ph.role, false, ph.role === 'HCP' ? (/doctor/i.test(ph.triager) ? 'doctor_nurse' : 'paramedic') : undefined);
+        try { dismissCoach(); } catch (e) {}   // the how-to card would cover half the demo phone
         await W(300);
         try { closeCmdLink(); } catch (e) {}
         var ok = await cmdJoin(L.code, L.pin);
@@ -66,7 +69,7 @@
             if (cur.path.length > 8) continue;
             for (var i = 0; i < 2; i++) {
                 var ans = i ? 'NO' : 'YES';
-                var o = outcomeFor(c.tool, cur.step, ans);
+                var o = outcomeFor(c.tool, cur.step, !i);   // the app's answers are true (YES) / false (NO)
                 if (!o) continue;
                 var path = cur.path.concat([ans]);
                 if (o.type === 'next') { if (o.step !== 'bleeding_u2') todo.push({ step: o.step, path: path }); continue; }
@@ -80,22 +83,26 @@
         var b = Array.prototype.filter.call(document.querySelectorAll('button'), function (x) { return x.offsetParent && re.test(x.innerText); })[0];
         if (!b) return false;
         b.click();
-        await W(Math.round(750 / L.speed));
+        // The app ignores a second tap within about half a second (so a double tap cannot answer twice): never faster.
+        await W(Math.max(700, Math.round(900 / L.speed)));
         return true;
     }
     async function playOne(c) {
         var path = answersFor(c);
-        if (!path) return false;
+        if (!path) { note('no answers for ' + c.tool + ' ' + c.category + ' ' + c.reason); return 'skip'; }
         if (window.MITT_SIM && c.loc && c.loc.lat) window.MITT_SIM_POS = { lat: Number(c.loc.lat), lng: Number(c.loc.lng), acc: 6 };
         await W(5500);   // let the simulated position arrive before the casualty is recorded
-        if (document.body.dataset.screen !== 'home-screen' || visibleModal()) return false;
-        if (c.tool === 'MITT') { if (!(await tap(/MITT triage/))) return false; }
-        else if (!(await tap(/START TRIAGE/))) return false;
+        if (document.body.dataset.screen !== 'home-screen' || visibleModal()) { note('busy before start'); return false; }
+        if (c.tool === 'MITT') { if (!(await tap(/MITT triage/))) { note('no MITT button'); return false; } }
+        else if (!(await tap(/START TRIAGE/))) { note('no START button'); return false; }
+        note('triage ' + c.tool + ' ' + c.category + ' ' + path.join(','));
         for (var i = 0; i < path.length; i++) {
             if (document.body.dataset.screen !== 'question-screen') break;
             await tap(path[i] === 'YES' ? /^\s*✓\s*YES/ : /^\s*✕\s*NO/);
         }
         await W(600);
+        var e0 = typeof currentEntry === 'function' ? currentEntry() : null;
+        if (e0 && e0.category !== c.category && !/DEAD/.test(c.category)) note('MISMATCH: got ' + e0.category + ' wanted ' + c.category);
         var tod = Array.prototype.filter.call(document.querySelectorAll('#tod-modal button'), function (x) { return x.offsetParent && /no time yet/.test(x.innerText); })[0];
         if (tod) { tod.click(); await W(600); }
         // Where and what, as a triager would add after the questions.
@@ -129,10 +136,10 @@
                 var gap = Math.round((12000 + Math.random() * 10000) / L.speed);
                 await W(gap);
                 if (!play.on) break;
-                if (Date.now() - lastHuman < 15000 || document.body.dataset.screen !== 'home-screen' || visibleModal()) continue;
+                if (Date.now() - lastHuman < 15000 || document.body.dataset.screen !== 'home-screen' || visibleModal()) { note('waiting: ' + (Date.now() - lastHuman < 15000 ? 'in use' : document.body.dataset.screen)); continue; }
                 var c = play.queue[0];
                 var ok = await playOne(c);
-                if (ok) { play.queue.shift(); play.done++; }
+                if (ok) { play.queue.shift(); if (ok === true) play.done++; }
                 badge();
             }
         } finally { play.busy = false; badge(); }

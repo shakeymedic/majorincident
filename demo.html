@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.tile.openstreetmap.org; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';">
+<title>Linked demo — Major Incident Triage</title>
+<link rel="icon" href="icon.svg">
+<style>
+    :root { --blue:#005EB8; --dark:#003087; --bg:#e8edee; --ink:#212b32; --muted:#4c6272; --line:#d8dde0; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+    header { background:var(--dark); color:#fff; padding:10px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    header h1 { font-size:1.15rem; margin:0; }
+    header .tag { background:#E87722; color:#fff; border-radius:999px; padding:3px 10px; font-size:0.8rem; font-weight:800; }
+    header .sp { flex:1; }
+    header button, .btn { border:0; border-radius:10px; padding:10px 14px; font-weight:800; font-size:0.95rem; cursor:pointer; background:var(--blue); color:#fff; min-height:44px; }
+    .btn.sec { background:#fff; color:var(--dark); border:2px solid var(--dark); }
+    .btn.danger { background:#DA291C; }
+    main { padding:16px; }
+    .card { background:#fff; border-radius:14px; padding:18px; max-width:880px; margin:0 auto 16px; box-shadow:0 1px 3px rgba(0,0,0,0.12); }
+    .card h2 { margin:0 0 8px; font-size:1.3rem; }
+    .muted { color:var(--muted); }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+    label { font-weight:700; }
+    select, input[type=number] { font-size:1rem; padding:8px; border-radius:8px; border:2px solid var(--line); min-height:44px; }
+    .stage { display:none; height:calc(100vh - 64px); padding:10px; gap:10px; }
+    .stage.on { display:grid; grid-template-columns: minmax(420px, 1fr) auto; }
+    .stage.one { grid-template-columns: 1fr; }
+    .cmd { border-radius:12px; overflow:hidden; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+    .phones { display:flex; gap:10px; overflow-x:auto; align-items:flex-start; }
+    .phone { width:390px; flex:0 0 390px; height:100%; display:flex; flex-direction:column; }
+    .phone .lbl { font-weight:800; font-size:0.9rem; padding:4px 6px; color:var(--dark); display:flex; justify-content:space-between; gap:6px; }
+    .phone .lbl a { font-weight:700; font-size:0.8rem; }
+    .phone .frame { flex:1; border:10px solid #111; border-radius:28px; overflow:hidden; background:#000; }
+    iframe { width:100%; height:100%; border:0; display:block; background:#fff; }
+    .links { display:grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap:12px; margin-top:10px; }
+    .link { border:2px solid var(--line); border-radius:12px; padding:10px; text-align:center; }
+    .link b { display:block; margin-bottom:6px; }
+    .link canvas, .link img { width:180px; height:180px; image-rendering:pixelated; }
+    .link a { font-size:0.85rem; word-break:break-all; }
+    .err { color:#DA291C; font-weight:700; }
+    @media (max-width: 900px) { .stage.on { grid-template-columns: 1fr; height:auto; } .cmd { height:80vh; } .phone { height:860px; } }
+</style>
+</head>
+<body>
+<header>
+    <h1>Linked demo</h1><span class="tag">PRACTICE ONLY · MADE-UP CASUALTIES</span>
+    <span class="sp"></span>
+    <span id="hdr-code" class="muted" style="color:#fff;"></span>
+    <button type="button" class="btn sec" id="btn-links" style="display:none;">📱 Other devices</button>
+    <button type="button" class="btn danger" id="btn-end" style="display:none;">End demo</button>
+</header>
+<main id="setup">
+    <div class="card">
+        <h2>Show a whole incident on one computer</h2>
+        <p>This starts a <b>practice incident</b> on the server and opens the <b>commander screen</b> with <b>demo phones</b> beside it, all linked. The phones are the made-up crews from the demo scenario (a stand collapse at a festival). Each phone is a separate copy of the app with its own storage, so they behave like separate phones.</p>
+        <p>Phones can <b>auto-play</b>: each records its made-up casualties by itself, through the real triage questions, one every 15–30 seconds. You can tap any phone yourself at any time; auto-play waits while you use it. Tap the purple 🎬 button on a phone to pause or resume it.</p>
+        <div class="row">
+            <label for="n-phones">Phones</label>
+            <select id="n-phones"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select>
+            <label for="auto">Auto-play</label>
+            <select id="auto"><option value="1" selected>On</option><option value="0">Off (tap the phones yourself)</option></select>
+            <label for="speed">Speed</label>
+            <select id="speed"><option value="0.5">Slow</option><option value="1" selected>Normal</option><option value="2">Fast</option></select>
+        </div>
+        <div class="row">
+            <button type="button" class="btn" id="btn-start">▶ Start the linked demo</button>
+            <span id="err" class="err"></span>
+        </div>
+        <p class="muted">It needs a signal (it uses the real server, with a training incident that is deleted when you press End demo, or after 24 hours). It counts as one of the 10 incidents an address can start in an hour.</p>
+    </div>
+    <div class="card">
+        <h2>On several devices</h2>
+        <p>Start the demo here, then tap <b>📱 Other devices</b>: each demo phone and the commander screen has a QR code. Scan it with a phone or tablet and it joins the same practice incident as that crew (in training mode), with auto-play if you chose it. You can also give people the incident code and the triagers' PIN to join with the app as usual.</p>
+    </div>
+</main>
+<section class="stage" id="stage">
+    <div class="cmd"><iframe id="cmd-frame" title="Commander screen"></iframe></div>
+    <div class="phones" id="phones"></div>
+</section>
+<main id="links" style="display:none;">
+    <div class="card">
+        <h2>Join from other devices</h2>
+        <p class="muted">Scan with the phone's camera. Each link joins the practice incident as one demo crew. The links hold the incident's PIN, so only share them for the demo.</p>
+        <div class="links" id="link-list"></div>
+        <div class="row"><button type="button" class="btn sec" id="btn-back">← Back to the demo</button></div>
+    </div>
+</main>
+<script src="vendor/qrcode.min.js"></script>
+<script src="lib.js"></script>
+<script src="demo.js"></script>
+</body>
+</html>

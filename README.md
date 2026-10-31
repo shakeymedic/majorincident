@@ -164,6 +164,14 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.21.0 build 2026-10-31-demo — linked demo: the commander screen and demo phones together (Jake, 31 October 2026)
+- **demo.html** (▶ Demo → "🖥 Linked demo", or the link on the commander sign-in page) starts a practice incident on the server and shows the commander screen with 1 to 4 demo phones beside it, all linked to that incident, on one computer. Each phone is a separate copy of the app (index.html#sim=N) with its own storage and database, always in training mode, with a simulated position near the demo site (sim-shim.js).
+- **Auto-play** (on by default, three speeds): each demo phone records its made-up casualties from the demo scenario by itself, one every 15–30 seconds at normal speed, through the real TST or MITT questions (it taps the same YES / NO buttons, so the commander screen fills as it would in an incident). Anyone can tap a phone at any time: auto-play waits while it is being used, and the purple 🎬 button on each phone pauses or resumes it.
+- **On other devices:** 📱 Other devices shows a QR code per demo crew (and the commander's sign-in details). A phone or tablet that scans one switches to training mode, sets up as that crew, joins the same practice incident, and auto-plays if chosen (demo-phone.js).
+- **End demo** (tap twice) ends the practice incident for everyone and clears the demo phones' storage on this computer.
+- Pages may now be shown inside a page of the same site (X-Frame-Options SAMEORIGIN, frame-ancestors 'self', frame-src 'self'), which the linked demo needs; other sites still cannot.
+- Service worker cache v55 (also stores demo.html, demo.js, demo-phone.js and sim-shim.js). Web change only: no Android rebuild.
+
 ### v0.20.0 build 2026-10-31-start — simpler start screen and clearer wording (Jake, 31 October 2026)
 - **The start screen asks one thing: Medical or Not medical** (two big buttons), with a smaller "🎖 Running the incident? Start the commander screen" link. The next step asks for the name and, for medical, Paramedic or ambulance clinician / Doctor or nurse. The header shows that role ("Paramedic", "Doctor or nurse", "Not medical").
 - **One name for each action.** ⇄ Hand over sends casualties to another phone and 📷 Receive takes them in, everywhere (it was also "Send patients", "QR Handover", "Receive patient", "Receive (scan)"). The receiver's reply is the "confirmation code" (was "ACK"/"acknowledgement"). Recording who took over care is "Record who took over care", not another "hand over".
