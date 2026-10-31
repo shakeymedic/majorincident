@@ -497,9 +497,9 @@ function createCore(opts) {
         if (!older || snap) {
             const held = heldCount(v, snap);
             if (held !== null && held <= MAX_RECORDS) return { refused: new Set(), hadFull, qk, held: n };
-            // Over the limit on a real count taken in the last minute: refused on that, without listing again, so phones
+            // Over the limit on a real count taken in the last minute that found it full: refused on that, without listing again, so phones
             // re-sending refused casualties with every report cost a few reads, not a listing each (at most one a minute).
-            if (held !== null && snap && now() - (snap.at || 0) < COUNT_FRESH_MS) {
+            if (held !== null && snap && snap.full && now() - (snap.at || 0) < COUNT_FRESH_MS) {
                 const refuse = Math.max(0, Math.min(n, held - MAX_RECORDS));
                 if (refuse) { await store.incr(keyVer(code), { c: -refuse }); await store.incr(qk, { n: -refuse }); }
                 return { refused: new Set(uids.slice(n - refuse)), hadFull, qk, held: n - refuse };
@@ -507,12 +507,15 @@ function createCore(opts) {
         }
         // Possibly over the limit (or never counted): count for real. Only at the limit (at most once a minute while it
         // stays full), or once for an older incident.
-        const real = entries(await store.list(`i/${code}/r/`)).length;
+        // Read in this order: the running total, then reports being written, then those stored. A report finishing
+        // between two reads is then counted twice (a little too cautious) but never missed.
+        const [cur] = await store.counts([keyVer(code)]);
         const t = now();
         const qs = await store.counts([0, 1, 2].map(i => keyInflight(code, t - i * 60000)));
         const writing = Math.max(0, qs.reduce((sum, q) => sum + ((q && q.n) || 0), 0));
-        const [cur] = await store.counts([keyVer(code)]);
-        await store.set(keyCount(code), { real, writing, c: (cur && cur.c) || 0, at: t });
+        const real = entries(await store.list(`i/${code}/r/`)).length;
+        // full: this count found the incident at or over the limit, so reports in the next minute may be refused on it.
+        await store.set(keyCount(code), { real, writing, c: (cur && cur.c) || 0, at: t, full: real + writing >= MAX_RECORDS });
         // Everything stored or being written, this report included, against the limit. Reports sent together at the
         // limit each see the others and may refuse a little too much (never too little); the phones send those again
         // with their next report.

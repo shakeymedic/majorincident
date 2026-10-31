@@ -915,7 +915,7 @@ function rec(uid, id, category, extra) {
         await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('o', 8) }), '1.1.1.1');
         await store.delete(`i/${inc.code}/ver`);   // as an incident made before v0.19.12
         const res = await Promise.all([['DEVA', 'p'], ['DEVB', 'q']].map(([d, pre]) => c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: d, records: many(pre, 3) }), '3.3.3.3')));
-        assert.strictEqual(res[0].body.accepted + res[1].body.accepted, 6, JSON.stringify(res.map(r => r.body.full)));
+        assert.strictEqual(res[0].body.accepted + res[1].body.accepted, 6, JSON.stringify(res.map(r => [r.status, r.body.accepted, r.body.full, r.body.error, r.body.message])));
         assert.strictEqual((await store.list(`i/${inc.code}/r/`)).length, 14);
         // And the count stays usable: 6 more fit, the 7th does not.
         const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('w', 7) }), '1.1.1.1');
