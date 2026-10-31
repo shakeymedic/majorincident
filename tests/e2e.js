@@ -1303,7 +1303,10 @@ async function test(name, fn) {
         await CB.mouse.down(); await CB.waitForTimeout(2400); await CB.mouse.up();
         await CB.waitForFunction(() => duressActive(), null, { timeout: 5000 });
         assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'DURESS_RAISED')));
+        // v0.19.14: it says HELP CALLED only once the server has it.
+        await CB.waitForFunction(() => duressState() === 'sent', null, { timeout: 10000 });
         assert.match(await btn.textContent(), /HELP CALLED/);
+        assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'DURESS_DELIVERED')));
         assert.ok(await CB.evaluate(() => document.getElementById('duress-btn').classList.contains('live')));
         await CB.waitForFunction(() => !CMD.inflight && !CMD.lastError && CMD.lastSentAt > 0, null, { timeout: 10000 });
         // Commander: red banner, red phone, red alert, red marker at the phone's position (sent with the call even though position sharing is off)
@@ -1345,6 +1348,29 @@ async function test(name, fn) {
         await CC.waitForFunction(() => document.getElementById('sos').classList.contains('hidden'), null, { timeout: 8000 });
         assert.strictEqual(await CB.evaluate(() => auditLog.filter(a => a.action === 'DURESS_CLEARED').length), 2);
         await CC.evaluate(() => { ALERTS.list.filter(a => a.sos).forEach(a => dismissAlert(a.id)); ALERTS.sound = true; });
+    });
+    await test('v0.19.14: with no signal a call for help says NOT SENT, unsent casualties show on the home screen, and both go when signal returns', async () => {
+        await CB.evaluate(() => { window.__realFetch = window.__realFetch || window.fetch; window.__noSignal = true; window.fetch = (u, o) => (window.__noSignal && /\/api\//.test(String((u && u.url) || u))) ? Promise.reject(new TypeError('Failed to fetch')) : window.__realFetch(u, o); });
+        await CB.evaluate(() => { const e = incidentLog[incidentLog.length - 1]; e.notes = (e.notes || '') + ' x'; touch(e, ['notes']); saveState(); });
+        await CB.evaluate(() => cmdRaiseDuress('test with no signal'));
+        await CB.waitForFunction(() => duressState() === 'unsent', null, { timeout: 10000 });
+        assert.match(await CB.locator('#duress-btn').textContent(), /NOT SENT/);
+        assert.ok(await CB.evaluate(() => document.getElementById('duress-btn').classList.contains('unsent')));
+        await CB.waitForFunction(() => !!document.getElementById('home-cmd-unsent'), null, { timeout: 5000 });
+        assert.match(await CB.evaluate(() => document.getElementById('home-cmd-unsent').textContent), /not yet sent to the commander/);
+        assert.match(await CB.evaluate(() => document.getElementById('cmd-pill').textContent), /not sent/);
+        // Signal returns: retried within seconds (every 5 s while help has not gone)
+        await CB.evaluate(() => { window.__noSignal = false; });
+        await CB.waitForFunction(() => duressState() === 'sent' && CMD.dirty.size === 0, null, { timeout: 15000 });
+        assert.match(await CB.locator('#duress-btn').textContent(), /HELP CALLED/);
+        await CB.waitForFunction(() => !document.getElementById('home-cmd-unsent'), null, { timeout: 5000 });
+        await CB.evaluate(() => { window._cancel = cmdCancelDuress(); });
+        await answerDialog(CB, true);
+        await CB.evaluate(() => window._cancel);
+        await CB.waitForFunction(() => !CMD.inflight && !CMD.cfg.duress, null, { timeout: 10000 });
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => document.getElementById('sos').classList.contains('hidden'), null, { timeout: 8000 });
+        await CC.evaluate(() => { ALERTS.list.filter(a => a.sos).forEach(a => dismissAlert(a.id)); });
     });
     await test('v0.19.0: P1 Hold is hidden until the commander allows it (with a name); a MITT prompt to clinicians lets a phone switch its main button to MITT', async () => {
         const holdHidden = () => CB.evaluate(() => { applyP1HoldOption(); const o = document.querySelector('#p-cat-override option[value="P1_HOLD"]'); return o.hidden && o.disabled; });

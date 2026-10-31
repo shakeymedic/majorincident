@@ -939,6 +939,7 @@
     #duress-btn.live { background:var(--nhs-red, #da291c); color:#fff; border-color:#fff; animation: duress-blink 1.2s ease-in-out infinite; }
     @keyframes duress-fill { from { width:0; } to { width:100%; } }
     @keyframes duress-blink { 0%, 100% { opacity:1; } 50% { opacity:0.55; } }
+    #duress-btn.live.unsent { background:#FFB81C; color:#000; border-color:#000; }
     @media (prefers-reduced-motion: reduce) { #duress-btn.live { animation:none; } }
     @media (max-width: 520px) { #header-device, #header-incident:empty { display:none; } .status-bar { padding:0.4rem 0.7rem; font-size:0.8rem; flex-wrap:wrap; row-gap:0.3rem; overflow-x:hidden; } .status-bar .status-item { margin-right:10px; } #gps-indicator, .status-pills { flex-shrink:0; } }
     @media (max-width: 420px) { #header-user { display:none; } }
@@ -2237,8 +2238,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.13';
-    const APP_BUILD = '2026-10-31-count';
+    const APP_VERSION = '0.19.14';
+    const APP_BUILD = '2026-10-31-signal';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -5501,6 +5502,7 @@
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));
         const mp = mittPromptCard();
         if (mp) box.appendChild(mp);
+        if (typeof CMD !== 'undefined' && cmdActive() && CMD.lastError && CMD.dirty.size) box.appendChild(el('div', { className: 'alert-card', id: 'home-cmd-unsent', onclick: () => cmdPush(true) }, [el('strong', { text: `☁ ✗ ${CMD.dirty.size} casualt${CMD.dirty.size === 1 ? 'y' : 'ies'} not yet sent to the commander` }), ' (no signal). They are kept on this phone and sent as soon as signal returns. If it matters now, tell the commander by radio.', el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to try again now' })]));
         if (typeof CMD !== 'undefined' && CMD.full && CMD.full.size && cmdActive()) box.appendChild(el('div', { className: 'alert-card', id: 'home-cmd-full', onclick: cmdShowDetails }, [el('strong', { text: `⚠ Incident full: ${CMD.full.size} casualt${CMD.full.size === 1 ? 'y' : 'ies'} NOT sent to the commander. ` }), 'They are kept on this phone and it keeps trying. Tell the commander about them another way (radio, paper triage card).']));
         const parts = alertSummary(patientAlerts(Date.now()));
         if (parts.length) box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
@@ -6258,7 +6260,7 @@
     // ================= INCIDENT COMMANDER (live sharing over the internet) =================
     // Records go to /api/incident (Netlify function + Blobs) whenever something changes and there is signal.
     // Nothing here blocks triage: pushes run in the background, retry on failure, and the phone stays the record of truth.
-    const CMD_PUSH_DEBOUNCE_MS = 3000, CMD_HEARTBEAT_MS = 60 * 1000, CMD_FETCH_TIMEOUT_MS = 15 * 1000, CMD_BATCH = 200;
+    const CMD_PUSH_DEBOUNCE_MS = 3000, CMD_HEARTBEAT_MS = 60 * 1000, CMD_FETCH_TIMEOUT_MS = 15 * 1000, CMD_BATCH = 200, CMD_RETRY_MAX_MS = 30 * 1000;
     // full: casualties the server refused because the incident holds its limit (v0.19.12). They stay queued (not sent)
     // and go again with each heartbeat, after everything else.
     const CMD = { cfg: null, dirty: new Set(), seen: {}, timer: null, heartbeat: null, inflight: false, lastSentAt: 0, lastError: '', failStreak: 0, sentTotal: 0, full: new Set(), fullMax: 0, fullWarned: 0 };
@@ -6396,6 +6398,13 @@
                 if (refused.size) cmdIncidentFull(refused, r.body.maxRecords || 0);
                 if (r.body.singlePin && !CMD.cfg.single) { CMD.cfg.single = true; cmdSaveCfg(); }
                 cmdHandleDuressReply(r.body.duress, duressSent);
+                // The server has the call for help: say so (v0.19.13 test: there was no way to tell sent from not sent).
+                if (duressSent && !duressSent.cancelled && CMD.cfg.duress && CMD.cfg.duress.at === duressSent.at && !CMD.cfg.duress.cancelled && !CMD.cfg.duress.sentAt) {
+                    CMD.cfg.duress.sentAt = Date.now(); cmdSaveCfg();
+                    logAudit('DURESS_DELIVERED', '-', `Call for help reached commander ${CMD.cfg.code} (raised ${fmtTime(duressSent.at)})`, Date.now());
+                    triggerHaptic('success');
+                    showToast('🆘 The commander screen has your call for help.', { alert: true, long: true });
+                }
                 if (Array.isArray(r.body.marks) && (r.body.marksAt || 0) !== (CMD.cfg.marksAt || 0)) {
                     const had = (CMD.cfg.marks || []).length;
                     CMD.cfg.marks = MITTLib.normaliseMapMarks(r.body.marks); CMD.cfg.marksAt = r.body.marksAt || 0;
@@ -6429,7 +6438,11 @@
             CMD.lastError = e && e.name === 'AbortError' ? 'timed out' : ((e && e.message) || 'network error');
             if (CMD.failStreak === 1) logAudit('COMMANDER_PUSH_FAILED', '-', `Could not send to commander ${CMD.cfg.code}: ${CMD.lastError}. Will retry.`, Date.now());
             if (manual) showToast(`Could not reach the server (${CMD.lastError}). Will keep trying.`, { alert: true });
-            if (cmdActive()) cmdSchedule(Math.min(5 * 60 * 1000, CMD_HEARTBEAT_MS * Math.min(CMD.failStreak, 5)));
+            const helpWaiting = duressActive() && !CMD.cfg.duress.sentAt;
+            if (helpWaiting && CMD.failStreak === 1) { showToast('🆘 Your call for help has NOT been sent: no signal. The phone keeps trying; use your radio.', { alert: true, long: true }); try { if (navigator.vibrate) navigator.vibrate([500, 200, 500]); } catch (err) {} }
+            // Retried soon, so sending resumes quickly when signal returns (v0.19.13 test: the wait grew to 5 minutes);
+            // every 5 seconds while a call for help has not gone.
+            if (cmdActive()) cmdSchedule(helpWaiting ? 5000 : Math.min(CMD_RETRY_MAX_MS, 5000 * Math.min(CMD.failStreak, 6)));
         } finally {
             CMD.inflight = false;
             cmdRenderStatus();
@@ -6535,11 +6548,15 @@
                 const full = CMD.full.size;
                 const state = CMD.lastError || full ? 'stale' : pending ? 'searching' : 'good';
                 pill.className = 'gps-status loc-' + state;
-                pill.textContent = CMD.lastError ? `☁ ${CMD.cfg.code} ✗` : full ? `☁ ${CMD.cfg.code} ⚠ FULL` : pending ? `☁ ${CMD.cfg.code} …` : `☁ ${CMD.cfg.code} ✓`;
+                pill.textContent = CMD.lastError ? `☁ ${CMD.cfg.code} ✗${pending ? ` ${pending} not sent` : ''}` : full ? `☁ ${CMD.cfg.code} ⚠ FULL` : pending ? `☁ ${CMD.cfg.code} …` : `☁ ${CMD.cfg.code} ✓`;
                 pill.title = CMD.lastError ? `Commander: not sent (${CMD.lastError}). Retrying.` : full ? `Incident full: ${full} casualt${full === 1 ? 'y' : 'ies'} not sent. Kept on this phone; still trying.` : pending ? 'Commander: sending…' : `Commander: up to date${CMD.lastSentAt ? ' ' + fmtTime(CMD.lastSentAt) : ''}`;
             }
         }
         renderRolePill();
+        // A card on the home screen while casualties are waiting to go because there is no signal, so it is seen without
+        // tapping anything (v0.19.13 test: only a small ✗ and a tooltip a phone cannot show).
+        const unsentNow = active && !!CMD.lastError && CMD.dirty.size > 0;
+        if (unsentNow !== !!CMD.unsentCard || (unsentNow && CMD.unsentCard !== CMD.dirty.size)) { CMD.unsentCard = unsentNow ? CMD.dirty.size : 0; renderHomeAlerts(); }
         const off = $('cmd-off'), on = $('cmd-on');
         if (off) off.style.display = active ? 'none' : '';
         if (on) on.style.display = active ? '' : 'none';
@@ -6714,6 +6731,12 @@
     // Duress: while live, every report repeats the same call (same 'at') so a missed report does not lose it.
     // null asks the server to clear it (the phone cancelled); omitted means no change.
     function duressActive() { return !!(cmdActive() && CMD.cfg.duress && !CMD.cfg.duress.cancelled); }
+    // 'sent' once the server has taken this call for help, 'unsent' after a failed attempt to send it, else 'sending'.
+    function duressState() {
+        if (!duressActive()) return '';
+        if (CMD.cfg.duress.sentAt) return 'sent';
+        return CMD.lastError ? 'unsent' : 'sending';
+    }
     function cmdDuressPayload() {
         if (!CMD.cfg || !CMD.cfg.duress) return undefined;
         if (CMD.cfg.duress.cancelled) return null;
@@ -6741,7 +6764,7 @@
         announce('Call for help sent to the commander.', true);
         duressRender();
         const offline = typeof navigator.onLine === 'boolean' && !navigator.onLine;
-        showToast(offline ? '🆘 No signal: your call for help will be sent the moment signal returns. Use the radio.' : '🆘 Calling the commander for help. Tap the 🆘 button to cancel.', { alert: true, long: true });
+        showToast(offline ? '🆘 NOT SENT: no signal. The phone keeps trying; use your radio.' : '🆘 Sending your call for help to the commander…', { alert: true, long: true });
         cmdPush();
     }
     async function cmdCancelDuress() {
@@ -6762,11 +6785,15 @@
         document.body.classList.toggle('cmd-linked', active);
         if (!active) { b.classList.remove('holding', 'live'); return; }
         const live = duressActive();
+        // A call for help says whether the commander's server has it (v0.19.13 test: with no signal it said
+        // "HELP CALLED" and "live on the commander screen" when it had not gone anywhere).
+        const st = duressState();
         b.classList.toggle('live', live);
-        b.querySelector('.d-long').textContent = live ? 'HELP CALLED' : 'Hold for help';
-        b.querySelector('.d-short').textContent = live ? 'CALLED' : 'Hold';
-        b.title = live ? 'Your call for help is live on the commander screen. Tap to cancel it.' : 'Hold for 2 seconds to call the commander for help';
-        b.setAttribute('aria-label', live ? 'Your call for help is live. Press to cancel it.' : 'Call the commander for help: hold for 2 seconds');
+        b.classList.toggle('unsent', live && st === 'unsent');
+        b.querySelector('.d-long').textContent = !live ? 'Hold for help' : st === 'sent' ? 'HELP CALLED ✓' : st === 'unsent' ? 'HELP NOT SENT' : 'SENDING HELP…';
+        b.querySelector('.d-short').textContent = !live ? 'Hold' : st === 'sent' ? 'CALLED' : st === 'unsent' ? 'NOT SENT' : 'SENDING';
+        b.title = !live ? 'Hold for 2 seconds to call the commander for help' : st === 'sent' ? 'The commander screen has your call for help. Tap to cancel it.' : st === 'unsent' ? 'Your call for help has NOT reached the commander: no signal. The phone keeps trying. Use your radio. Tap to cancel it.' : 'Sending your call for help to the commander… Tap to cancel it.';
+        b.setAttribute('aria-label', !live ? 'Call the commander for help: hold for 2 seconds' : st === 'sent' ? 'Your call for help has reached the commander. Press to cancel it.' : st === 'unsent' ? 'Your call for help has not been sent: no signal. Use your radio. Press to cancel it.' : 'Sending your call for help. Press to cancel it.');
         b.setAttribute('aria-pressed', live ? 'true' : 'false');
     }
     const DURESS_HOLD_MS = 2000;
