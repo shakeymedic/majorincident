@@ -121,7 +121,7 @@ async function test(name, fn) {
     await test('name is required before starting', async () => {
         await A.evaluate(() => setUserRole('HCP'));
         await page_visible(A, '#confirm-modal');
-        assert.match(await A.textContent('#confirm-title'), /Name required/);
+        assert.match(await A.textContent('#confirm-title'), /Your name or call sign/);
         await A.click('#confirm-ok');
         await setup(A, 'Medic A');
         assert.strictEqual(await A.evaluate(() => triagerName), 'Medic A');
@@ -697,6 +697,7 @@ async function test(name, fn) {
         const fits = await B.evaluate(() => { const m = document.querySelector('main'); const h = document.getElementById('btn-handover').getBoundingClientRect(); return m.scrollHeight <= m.clientHeight + 2 && h.bottom <= innerHeight; });
         assert.ok(fits, 'result fits without scrolling');
         assert.strictEqual(await B.isVisible('#sec-interventions'), false);
+        await B.waitForTimeout(850);   // taps in the first 0.8 s of the result screen are ignored (v0.22.1)
         await B.click('#btn-patient-more');
         assert.ok(await B.isVisible('#sec-interventions'));
         assert.match(await B.textContent('#pm-id'), /TST-001/);
@@ -757,6 +758,7 @@ async function test(name, fn) {
         assert.ok(await T.isVisible('#btn-mitt-now'));
         assert.match(await T.textContent('#action-box'), /Reassess with MITT as soon as possible/);
         const uid = await T.evaluate(() => currentEntry().uid);
+        await T.waitForTimeout(850);   // taps in the first 0.8 s of the result screen are ignored (v0.22.1)
         await T.click('#btn-mitt-now');
         assert.strictEqual(await T.evaluate(() => currentTool), 'MITT');
         await T.evaluate(() => [false, false, true, true, true, true, true].forEach(a => handleAnswer(a)));
@@ -1904,6 +1906,49 @@ async function test(name, fn) {
         assert.strictEqual(await CF.evaluate(() => CMD.cfg.code), code);
         await CF._ctx.close();
     });
+    await test('v0.22.1: a typed rate that contradicts the answer is checked; a quick second tap does not skip the result; no warning before any answer', async () => {
+        const F = await device('F1', { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+        await setup(F, 'First Timer');
+        // RR 30 typed, YES tapped: asked, "Answer NO" gives P1
+        await F.evaluate(() => { initiateTriage('MITT'); [false, false, true, true, true].forEach(x => handleAnswer(x)); });
+        await F.fill('#q-count-input', '30');
+        await F.evaluate(() => { _lastAnswerTap = 0; answerTap(true); });
+        await page_visible(F, '#confirm-modal');
+        assert.match(await F.textContent('#confirm-title'), /RR 30\/min means NO/);
+        await F.click('#confirm-ok');
+        await F.waitForFunction(() => document.body.dataset.screen === 'result-screen');
+        assert.strictEqual(await F.evaluate(() => currentEntry().category), 'P1');
+        // HR 140 typed, NO tapped, answer kept: P2, and the record says the answer went against the reading
+        await F.evaluate(() => { resetToHome(); initiateTriage('MITT'); [false, false, true, true, true, true].forEach(x => handleAnswer(x)); });
+        await F.fill('#q-count-input', '140');
+        await F.evaluate(() => { _lastAnswerTap = 0; answerTap(false); });
+        await page_visible(F, '#confirm-modal');
+        await F.click('#confirm-cancel');
+        await F.waitForFunction(() => document.body.dataset.screen === 'result-screen');
+        const e = await F.evaluate(() => ({ c: currentEntry().category, a: currentEntry().action }));
+        assert.strictEqual(e.c, 'P2'); assert.match(e.a, /HR 140\/min \(answer kept against this reading\)/);
+        // A second tap on YES lands on "Next casualty" but is ignored in the first 0.8 s
+        await F.evaluate(() => resetToHome());
+        await F.click('#btn-start-triage'); await F.waitForTimeout(500);
+        const box = await F.locator('button.btn-yes:visible').first().boundingBox();
+        await F.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+        await F.waitForTimeout(450);
+        await F.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+        await F.waitForTimeout(300);
+        assert.strictEqual(await F.evaluate(() => document.body.dataset.screen), 'result-screen');
+        // Next casualty, then a reload before any answer: no warning
+        await F.waitForTimeout(900);
+        await F.click('#result-screen .btn-next');
+        await F.waitForFunction(() => document.body.dataset.screen === 'question-screen');
+        await F.reload(); await F.waitForFunction(() => dbReady === true); await F.waitForTimeout(1200);
+        assert.strictEqual(await F.isVisible('#confirm-modal'), false, 'no "Triage not finished" before any answer');
+        // ... but after one answer there is
+        await F.evaluate(() => { initiateTriage('TST'); handleAnswer(false); });
+        await F.reload(); await F.waitForFunction(() => dbReady === true);
+        await page_visible(F, '#confirm-modal');
+        assert.match(await F.textContent('#confirm-title'), /Triage not finished/);
+        await F._ctx.close();
+    });
     await test('v0.22.0 commander: short IDs keep the phone, waits are listed, activity and a situation report', async () => {
         assert.strictEqual(await CC.evaluate(() => shortId('TRAIN-ABCD-MITT-003')), 'ABCD MITT 003');
         assert.strictEqual(await CC.evaluate(() => shortId('TRAIN-EFGH-MITT-003')), 'EFGH MITT 003');
@@ -2046,7 +2091,7 @@ async function test(name, fn) {
         const P = await K._ctx.newPage();
         P.on('pageerror', e => errors.push(`DemoCmdPage: ${e.message}`));
         await P.goto(url.replace('index.html', 'commander.html#' + share.code));
-        await P.waitForFunction(() => /8 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 10000 });
+        await P.waitForFunction(() => /of 8 casualties recorded/.test(document.getElementById('counts').textContent), null, { timeout: 10000 });
         assert.match(await P.textContent('#phones'), /HART 1/);
         assert.match(await P.textContent('#phones'), /Nurse CCZ/);
         await K._ctx.close(); await F._ctx.close(); await C._ctx.close();
@@ -2065,10 +2110,10 @@ async function test(name, fn) {
         assert.match(await P.textContent('#training-banner'), /DEMO/);
         assert.ok(await P.isHidden('#signin'));
         assert.strictEqual(await P.$$eval('#rows tr', r => r.length), 21, 'on-scene casualties');
-        assert.match(await P.textContent('#counts'), /24 casualties in total/);
+        assert.match(await P.textContent('#counts'), /of 24 casualties recorded/);
         assert.strictEqual(await P.$$eval('#phones .phone', r => r.length), 4);
         await P.evaluate(() => { __skip(5 * 60 * 1000); refreshNow(); });
-        await P.waitForFunction(() => /26 casualties in total/.test(document.getElementById('counts').textContent), null, { timeout: 5000 });
+        await P.waitForFunction(() => /of 26 casualties recorded/.test(document.getElementById('counts').textContent), null, { timeout: 5000 });
         // any row opens the patient's full details; TST-only patients are marked and can be filtered
         assert.ok(await P.evaluate(() => document.querySelectorAll('#rows .tool-chip.tst').length > 0 && document.querySelectorAll('#rows .tool-chip.mitt').length > 0), 'both TST-only and MITT chips shown');
         await P.click('#rows tr:first-child');
