@@ -14,6 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="MI Triage">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Major Incident Triage</title>
+<script src="sim-shim.js"></script>
 <script src="vendor/qrcode.min.js"></script>
 <script src="vendor/html5-qrcode.min.js"></script>
 <script src="vendor/pako_inflate.min.js"></script>
@@ -2275,7 +2276,9 @@
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
-    const DB_NAME = TRAINING ? 'MITT_TRAINING_DB' : 'MITT_DB';
+    // A demo phone on a shared computer (index.html#sim=N, sim-shim.js) has its own database as well as its own storage.
+    const SIM = window.MITT_SIM || 0;
+    const DB_NAME = SIM ? `MITT_SIM${SIM}_DB` : TRAINING ? 'MITT_TRAINING_DB' : 'MITT_DB';
     const TRAINING_SEPARATE_KEYS = new Set(['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_incident_code', 'mit_commander', 'mit_tally', 'mit_triage_open', 'mit_device_keys']);
     // Name, role, sector and ID prefix: training starts with the real-use values but keeps its own changes (the demo sets
     // them to the phone you play), so nothing typed in training is carried back into real use.
@@ -7148,7 +7151,7 @@
     function watchForOtherCopies() {
         if (typeof BroadcastChannel === 'undefined') return;
         const me = MITTLib.makeUid();
-        const mode = TRAINING ? 'training' : 'live';
+        const mode = SIM ? 'sim' + SIM : TRAINING ? 'training' : 'live';
         const others = new Set();
         const ch = new BroadcastChannel('mitt-instances');
         const show = () => setStorageBanner(others.size ? 'Major Incident Triage is open in another tab or window on this phone. Close the other copy now — two copies can overwrite each other\'s patients.' : '', 'other-copy');
@@ -7196,5 +7199,6 @@
         if (_allChunkStore.transferId && Object.keys(_allChunkStore.chunks || {}).length) showToast(`Unfinished multi-part transfer ${_allChunkStore.transferId} (${Object.keys(_allChunkStore.chunks).length}/${_allChunkStore.totalChunks}). Tap "Receive (scan)" to continue.`, { long: true });
     };
 </script>
+<script src="demo-phone.js"></script>
 </body>
 </html>
