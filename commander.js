@@ -853,20 +853,16 @@ function markerIcon(r) {
     return L.divIcon({ html: `<div class="mk${r.tool === 'TST' ? ' mk-tst' : ''}${r.evacuated ? ' mk-evac' : ''}${stage(r) === 'ccs' ? ' mk-atccs' : ''}" style="background:${info.colour};color:${info.text};">${esc(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
 }
 // A bubble of grouped casualties takes the colour of the most urgent category inside it, and shows how many of each
-// (3,000-casualty test: bubbles were coloured by size, so a "green" bubble held four P1s and a Not Breathing).
-// Urgency follows the app's priority order: P1, P1 Hold, P2, P3, Not Breathing, Dead. Evacuated casualties only
-// colour a bubble that holds nobody else.
-const MAP_ORDER = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+// (3,000-casualty test: bubbles were coloured by size, so a "green" bubble held four P1s and a Not Breathing). The
+// order is MITTLib.MAP_URGENCY: P1, Not Breathing, P1 Hold, P2, P3, Dead. Evacuated casualties only colour a bubble
+// that holds nobody else.
 function clusterIcon(cl) {
     const ms = cl.getAllChildMarkers();
-    const here = {}, all = {};
-    ms.forEach(m => { const c = m.options.cat || ''; all[c] = (all[c] || 0) + 1; if (!m.options.evac) here[c] = (here[c] || 0) + 1; });
-    const use = Object.keys(here).length ? here : all;
-    const top = MAP_ORDER.find(c => use[c]) || '';
-    const info = MITTLib.CATEGORY_INFO[top] || { colour: '#4C6272', text: '#fff' };
-    const chips = MAP_ORDER.filter(c => use[c]).map(c => { const i = MITTLib.CATEGORY_INFO[c]; return `<i style="background:${i.colour};color:${i.text}" title="${esc(i.short)}">${use[c]}</i>`; }).join('');
-    const label = MAP_ORDER.filter(c => use[c]).map(c => `${use[c]} ${MITTLib.CATEGORY_INFO[c].short}`).join(', ');
-    return L.divIcon({ html: `<div class="cl${Object.keys(here).length ? '' : ' cl-evac'}" style="background:${info.colour};color:${info.text}" aria-label="${esc(ms.length + ' casualties: ' + label)}"><b>${ms.length}</b><span class="cl-cats">${chips}</span></div>`, className: 'mk-wrap cl-wrap', iconSize: [0, 0] });
+    const s = MITTLib.clusterSummary(ms.map(m => ({ category: m.options.cat || '', evacuated: !!m.options.evac })));
+    const info = MITTLib.CATEGORY_INFO[s.top] || { colour: '#4C6272', text: '#fff' };
+    const chips = s.counts.map(x => { const i = MITTLib.CATEGORY_INFO[x.category]; return `<i style="background:${i.colour};color:${i.text}" title="${esc(i.short)}">${x.n}</i>`; }).join('');
+    const label = s.counts.map(x => `${x.n} ${MITTLib.CATEGORY_INFO[x.category].short}`).join(', ');
+    return L.divIcon({ html: `<div class="cl${s.onScene ? '' : ' cl-evac'}" style="background:${info.colour};color:${info.text}" aria-label="${esc(ms.length + ' casualties: ' + label)}"><b>${ms.length}</b><span class="cl-cats">${chips}</span></div>`, className: 'mk-wrap cl-wrap', iconSize: [0, 0] });
 }
 function ensureMap() {
     if (map || typeof L === 'undefined') return !!map;
