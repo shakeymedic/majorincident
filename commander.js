@@ -9,9 +9,13 @@ let cfg = null;           // { code, pin }
 let data = null;          // last payload
 let etag = '';
 let knownSeq = '';       // sequence number of the data on screen; sent back so an unchanged incident costs a 304
+// v0.19.12: the server's change numbers for what is on screen ("r.d.p.<access>") and when the casualties were last
+// read (server time). Sent back, so an unchanged incident costs a 304 and a changed one sends only what changed.
+let syncVer = '', syncCursor = 0, serverOffset = 0;
 let timer = null;
 let lastOkAt = 0;
 let map = null, cluster = null, ccsMarker = null, circles = null;
+const markerByUid = new Map();   // uid -> { m: marker, sig, r }: markers are updated in place, so an open pop-up stays open
 let firstFit = true;
 let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
 let demoMarks = [];       // map markings placed during the demo (kept in the page only)
@@ -70,7 +74,7 @@ function signIn() {
 }
 function signOut() {
     if (demo) { demo = null; firstFit = true; try { history.replaceState(null, '', location.pathname); } catch (e) {} $('training-banner').textContent = 'TRAINING INCIDENT — practice data, not real patients'; }
-    cfg = null; data = null; etag = ''; knownSeq = '';
+    cfg = null; data = null; etag = ''; knownSeq = ''; syncVer = ''; syncCursor = 0;
     try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
     if (timer) clearTimeout(timer);
     $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none'; $('btn-start-page').style.display = 'none'; $('btn-sound').style.display = 'none'; $('btn-print').style.display = 'none'; $('btn-sound-unlock').style.display = 'none';
@@ -126,7 +130,7 @@ setInterval(tickClock, 1000); tickClock();
 // are evacuated over the first few minutes. Nothing is fetched or sent.
 function startDemo() {
     if (timer) clearTimeout(timer);
-    cfg = null; etag = ''; knownSeq = ''; firstFit = true;
+    cfg = null; etag = ''; knownSeq = ''; syncVer = ''; syncCursor = 0; firstFit = true;
     try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
     demo = { startedAt: Date.now() };
     // The demo has a P1 Hold casualty, so the demo starts with P1 Hold allowed.
@@ -163,13 +167,11 @@ async function refreshNow() {
     if (timer) clearTimeout(timer);
     $('btn-refresh').disabled = true;
     try {
-        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const to = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
         const headers = hdrs();
-        if (etag) headers['If-None-Match'] = etag;
-        if (knownSeq) headers['X-Incident-Seq'] = knownSeq;
-        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}`, { headers, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
-        if (to) clearTimeout(to);
+        headers['x-incident-sync'] = '2';
+        if (data && data.sync === 2 && syncVer) { headers['x-incident-ver'] = syncVer; headers['x-incident-cursor'] = String(syncCursor); }
+        else { if (etag) headers['If-None-Match'] = etag; if (knownSeq) headers['X-Incident-Seq'] = knownSeq; }
+        const r = await getIncident(headers);
         if (r.status === 304) { lastOkAt = Date.now(); setStatus('live', 'Live'); setUpdated(`Checked ${time(Date.now())} • no change`); $('conn-warn').classList.add('hidden'); render({ sameData: true }); return; }
         if (r.status === 401 || r.status === 404 || r.status === 410 || r.status === 429) {
             let msg = 'Could not open this incident.', why = '';
@@ -186,11 +188,44 @@ async function refreshNow() {
             return;
         }
         if (!r.ok) throw new Error('Server error ' + r.status);
-        data = await r.json();
+        const body = await r.json();
+        if (body.sync === 2) {
+            if (body.delta && data && data.sync === 2) {
+                data = mergeDelta(data, body);
+                // Changes from just before the last read are only listed (check): fetch any this screen does not have.
+                const have = new Map((data.records || []).map(x => [x.uid, x.reportedAt || 0]));
+                const missing = [];
+                (body.check || []).forEach(c => (c.u || []).forEach(u => { if (!have.has(u) || have.get(u) < (c.at || 0)) missing.push(u); }));
+                for (let i = 0; i < missing.length; i += 50) {
+                    const mr = await getIncident(Object.assign(hdrs(), { 'x-incident-sync': '2', 'x-incident-uids': missing.slice(i, i + 50).join(',') }));
+                    if (!mr.ok) throw new Error('Server error ' + mr.status);
+                    data = mergeDelta(data, { records: (await mr.json()).records || [] });
+                }
+            }
+            else {
+                // A first load comes in parts (a big incident with long notes would not fit one reply).
+                let recs = body.records || [], more = body.more;
+                while (more) {
+                    setUpdated(`Loading casualties… ${recs.length} so far`);
+                    const pr = await getIncident(Object.assign(hdrs(), { 'x-incident-sync': '2', 'x-incident-page': more }));
+                    if (!pr.ok) throw new Error('Server error ' + pr.status);
+                    const pb = await pr.json();
+                    recs = recs.concat(pb.records || []); more = pb.more;
+                }
+                body.records = recs;
+                data = body;
+            }
+            sortRecords(data.records || []);
+            syncVer = body.ver || ''; syncCursor = body.cursor || 0;
+            serverOffset = (body.serverTime || Date.now()) - Date.now();
+        } else {
+            data = body;   // a server from before v0.19.12
+            syncVer = '';
+            etag = r.headers.get('ETag') || '';
+            knownSeq = r.headers.get('X-Incident-Seq') || (data.seq !== undefined ? String(data.seq) : '');
+        }
         if (data.accessKey && data.accessKey !== cfg.key) { cfg.key = data.accessKey; saveCfg(); }
         document.body.classList.remove('incident-gone');
-        etag = r.headers.get('ETag') || '';
-        knownSeq = r.headers.get('X-Incident-Seq') || (data.seq !== undefined ? String(data.seq) : '');
         lastOkAt = Date.now();
         setStatus('live', 'Live');
         setUpdated(`Updated ${time(Date.now())}`);
@@ -205,6 +240,26 @@ async function refreshNow() {
         if (cfg) timer = setTimeout(refreshNow, document.hidden ? HIDDEN_REFRESH_MS : REFRESH_MS);
     }
 }
+// One GET of the incident, given up after 20 s.
+async function getIncident(headers) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const to = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
+    try { return await fetch(`/api/incident/${encodeURIComponent(cfg.code)}`, { headers, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined }); }
+    finally { if (to) clearTimeout(to); }
+}
+// Only what changed since the last read: changed casualties replace their old copies; phones, decisions and
+// markings replace the old lists when they are sent; the incident's own details always come.
+function mergeDelta(old, body) {
+    const next = Object.assign({}, old, body);
+    if (Array.isArray(body.records)) {
+        const byId = new Map((old.records || []).map(r => [r.uid, r]));
+        body.records.forEach(r => { if (r && r.uid) byId.set(r.uid, r); });
+        next.records = Array.from(byId.values());
+    } else next.records = old.records || [];
+    return next;
+}
+const CAT_ORDER = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
+function sortRecords(list) { list.sort((x, y) => ((x.category in CAT_ORDER ? CAT_ORDER[x.category] : 99) - (y.category in CAT_ORDER ? CAT_ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0)); return list; }
 function time(ts) { return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
 function hm(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : ''; }
 function age(ts) { return ts ? MITTLib.formatLocationAge(ts, Date.now()) : '—'; }
@@ -212,8 +267,11 @@ function place(r) { return [r.sector, r.landmark, r.floor ? 'Floor ' + r.floor :
 function loc(r) { return r.currentLocation || r.location || null; }
 function cat(c) { const i = MITTLib.CATEGORY_INFO[c] || { short: c, colour: '#4C6272', text: '#fff' }; return `<span class="cat-chip" style="background:${i.colour};color:${i.text}">${esc(i.short)}</span>`; }
 let stageFilter = 'scene';   // scene | field | ccs | evacuated | all
+const TABLE_STEP = 200, ATT_MAX = 100;
+let tableLimit = TABLE_STEP;
 function setStageFilter(f) {
     stageFilter = f;
+    tableLimit = TABLE_STEP;
     $('show-evac').checked = f === 'all' || f === 'evacuated';
     document.querySelectorAll('#stage-seg button').forEach(b => b.classList.toggle('on', b.getAttribute('data-stage') === f));
     render();
@@ -257,8 +315,10 @@ function render(opts) {
         `<div class="stage evac"><div class="n">${sc.evacuated}</div><div><div class="lbl">Evacuated</div><div class="sub">${hospSub}</div></div></div>` +
         (() => { const t = onScene.filter(r => !hadMitt(r)); const sub = order.filter(c => t.some(r => r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${t.filter(r => r.category === c).length}</b>`).join(' • '); return `<div class="stage tst"><div class="n">${t.length}</div><div><div class="lbl">TST only</div><div class="sub">${t.length ? 'no MITT sort yet: ' + sub : 'everyone on scene has had MITT'}</div></div></div>`; })();
     setText('counts-note', `Big number = on scene now (field + casualty clearing station); "in total" includes evacuated. CCS on the small labels = casualty clearing station (set on the phone, or inferred from the sector name). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
-    // phones
+    // phones (from v0.19.12 the phone list is only sent when it changes, so "not heard from" is worked out here)
     const devs = data.devices || [];
+    if (data.sync === 2) devs.forEach(d => { d.stale = (now + serverOffset) - (d.lastSeen || 0) > 5 * 60 * 1000; });
+    renderFull();
     $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}${d.oldApp ? ' <span class="cat-chip" style="background:#c9a700;color:#000;font-size:0.72rem;padding:1px 6px" title="This phone is on an old version of the app">Old app version</span>' : ''}</b><span class="ph-meta">${d.oldApp ? '<b>Old app version: ask them to close and reopen the app to update, then join again.</b> ' : ''}${d.role === 'creator' ? 'Started sharing • ' : ''}${d.commander ? 'Incident commander • ' : d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
     setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes${devs.some(d => d.position) ? ' • 📍 = shares its position (opt-in on the phone)' : ''}`);
     renderSos(devs);
@@ -275,17 +335,23 @@ function render(opts) {
     const att = [];
     onScene.forEach(r => {
         const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
-        if (rs.state === 'overdue') att.push({ k: 0, r, t: `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min` });
+        const overdue = rs.state === 'overdue' ? `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min` : '';
+        // A Not Breathing casualty is listed once, with its overdue time on the same line (v0.19.12: it was listed twice).
+        if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' + (overdue ? ' • ' + overdue.toLowerCase() : '') });
+        else if (overdue) att.push({ k: 0, r, t: overdue });
         if (r.interventions && r.interventions.Tourniquet) att.push({ k: 1, r, t: `Tourniquet on since ${esc(r.interventions.Tourniquet.time || '?')}` });
         if (r.highRisk) att.push({ k: 2, r, t: 'Flagged high risk of deterioration' });
-        if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' });
     });
     att.sort((a, b) => a.k - b.k);
-    $('attention').innerHTML = att.length ? `<div class="att">${att.map(a => `<div class="att-row k${a.k}" data-act="openPatient" data-uid="${esc(a.r.uid)}" role="button" tabindex="0">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))} ${toolChip(a.r)}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}</div>` : '<div class="all-clear">Nothing outstanding</div>';
-    setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • overdue first` : 'overdue reassessments, tourniquets, high risk');
+    // At 3,000 casualties this list could hold thousands of rows; the first ATT_MAX are drawn (most urgent first).
+    const attShown = att.slice(0, ATT_MAX);
+    $('attention').innerHTML = att.length ? `<div class="att">${attShown.map(a => `<div class="att-row k${a.k}" data-act="openPatient" data-uid="${esc(a.r.uid)}" role="button" tabindex="0">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))} ${toolChip(a.r)}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}${att.length > attShown.length ? `<p class="muted">…and ${att.length - attShown.length} more. Use the casualty list to see them all.</p>` : ''}</div>` : '<div class="all-clear">Nothing outstanding</div>';
+    setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • overdue first${att.length > attShown.length ? ` • first ${attShown.length} shown` : ''}` : 'overdue reassessments, tourniquets, high risk');
     // table
     const vis = visibleRecords();
-    $('rows').innerHTML = vis.map(r => {
+    // Only the first rows are drawn (3,000 rows made the page freeze on each refresh); more on request.
+    const shownRows = vis.slice(0, tableLimit);
+    const rowsHtml = shownRows.map(r => {
         const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
         const l = loc(r);
         const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : null;
@@ -294,13 +360,15 @@ function render(opts) {
         const fresh = !r.evacuated && (now - (r.updatedAt || r.reportedAt || 0)) < 90000;
         return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" data-act="openPatient" data-uid="${esc(r.uid)}" tabindex="0"><td><span class="id">${esc(r.id)}</span>${r.cardNo ? `<div><b>Card ${esc(r.cardNo)}</b></div>` : ''}<div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
             `<td>${cat(r.category)}<div style="margin-top:4px">${toolChip(r)}</div></td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
-            `<td>${ints || '<span class="muted">none</span>'}</td><td>${re}</td><td>${esc(r.triager || '')}<div class="muted">${esc(r.reportedBy || '')} • ${age(r.updatedAt || r.reportedAt)}</div></td></tr>`;
-    }).join('');
-    setText('list-note', `${vis.length} shown, priority first • tap a row for full details • highlighted = updated in the last 90 s`);
+            `<td>${ints || '<span class="muted">none</span>'}</td><td>${re}</td><td>${esc(r.triager || '')}<div class="muted">${esc(r.reportedBy || '')}${r.firstReportedBy && r.reportedBy && r.firstReportedBy !== r.reportedBy ? ' (first sent by ' + esc(r.firstReportedBy) + ')' : ''} • ${age(r.updatedAt || r.reportedAt)}</div></td></tr>`;
+    }).join('') + (vis.length > shownRows.length ? `<tr class="more-rows"><td colspan="6"><button type="button" class="btn small sec" data-act="moreRows">Show ${Math.min(TABLE_STEP, vis.length - shownRows.length)} more</button> <button type="button" class="btn small sec" data-act="allRows">Show all ${vis.length}</button> <span class="muted">${vis.length - shownRows.length} not shown (slow on big incidents)</span></td></tr>` : '');
+    const rowsEl = $('rows');
+    if (rowsEl._html !== rowsHtml) { rowsEl._html = rowsHtml; rowsEl.innerHTML = rowsHtml; }
+    setText('list-note', `${vis.length} in this view${vis.length > shownRows.length ? `, first ${shownRows.length} shown` : ''}, priority first • tap a row for full details • highlighted = updated in the last 90 s`);
     if (openUid) renderPatient(byUid(openUid));
     renderLegend();
     if (!sameData || !map) renderMap(vis);
-    else renderTeams(devs, now);
+    else renderTeams(devs, now);   // nothing changed: only the triagers' "x min ago" labels move on
     detectAlerts(all, devs, now);
     renderMethane();
     renderHospitals(all);
@@ -366,9 +434,14 @@ function onMapClickMark(ev) {
     saveMarks({ add: [mark] });
 }
 function removeMark(id) { saveMarks({ remove: [id] }); }
+let marksDrawn = null;
 function renderMarks() {
     if (!map) return;
     if (!marksLayer) marksLayer = L.layerGroup().addTo(map);
+    // Redrawn only when the markings change, so an open pop-up on one stays open.
+    const sig = JSON.stringify(data.marks || []);
+    if (sig === marksDrawn) return;
+    marksDrawn = sig;
     marksLayer.clearLayers();
     MITTLib.normaliseMapMarks(data.marks || []).forEach(m => {
         const ty = MITTLib.MAP_MARK_TYPES[m.type];
@@ -561,6 +634,33 @@ function posText(p) {
     const grid = MITTLib.toOsGridRef(Number(p.lat), Number(p.lng));
     return `${grid ? grid + ' • ' : ''}${MITTLib.formatCoords(Number(p.lat), Number(p.lng))}${p.acc ? ' ±' + Math.round(p.acc) + ' m' : ''} • ${age(p.timestamp)}`;
 }
+// ---------- Incident full (v0.19.12) ----------
+// The server holds at most maxRecords casualties per incident. Past that, phones' new casualties are refused: the
+// phones keep them as not sent and keep trying, and the server lists them here so the commander knows they exist
+// (3,000-casualty test: the 3,001st was lost with no warning anywhere).
+let fullSeen = -1;
+function renderFull() {
+    const box = $('full-warn');
+    if (!box) return;
+    const f = data && data.full, max = (data && data.maxRecords) || 0, count = data && typeof data.recordCount === 'number' ? data.recordCount : ((data && data.records) || []).length;
+    const refused = f && f.count ? f.count : 0;
+    if (!refused && !(max && count >= max * 0.9)) { box.classList.add('hidden'); box.innerHTML = ''; fullSeen = 0; return; }
+    const n = (x) => Number(x).toLocaleString('en-GB');
+    if (refused) {
+        const list = (f.list || []).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+        const shown = list.slice(0, 12);
+        box.className = 'danger full-warn';
+        box.innerHTML = `<b>⚠ INCIDENT FULL: ${f.more ? 'more than ' : ''}${n(refused)} casualt${refused === 1 ? 'y' : 'ies'} could not be stored.</b> This incident has reached its limit of ${n(max || count)} casualties. The casualties below are <b>not</b> in the counts, list or map on this screen. The phones that recorded them still hold them, show them as not sent, and keep trying. Keep track of them another way (radio, paper triage cards, Hand over by QR to a phone in a second incident).` +
+            `<ul class="full-list">${shown.map(x => `<li>${cat(x.category)} <b>${esc(shortId(x.id))}</b>${x.cardNo ? ' card ' + esc(x.cardNo) : ''}${x.sector ? ' • ' + esc(x.sector) : ''} • ${esc(x.triager || 'phone')} <span class="muted">${esc(x.device || '')}</span> • ${hm(x.at)}</li>`).join('')}</ul>${list.length > shown.length ? `<p class="muted">…and ${n(refused - shown.length)}${f.more ? '+' : ''} more.</p>` : ''}`;
+    } else {
+        box.className = 'danger full-warn near';
+        box.innerHTML = `<b>Incident nearly full:</b> ${n(count)} of the ${n(max)} casualties one incident can hold. New casualties past ${n(max)} will not be stored; the phones will say so and keep them.`;
+    }
+    box.classList.remove('hidden');
+    // A sound and an alert when more casualties are refused (not on the first load: the box says it).
+    if (fullSeen >= 0 && refused > fullSeen) { ALERTS.list.unshift({ id: ++ALERTS.id, at: Date.now(), red: true, msg: `Incident full: ${n(refused - fullSeen)} more casualt${refused - fullSeen === 1 ? 'y' : 'ies'} could not be stored`, sub: 'see the red box at the top; the phones still hold them' }); ALERTS.list = ALERTS.list.slice(0, 20); renderAlerts([ALERTS.id]); beep(3); }
+    fullSeen = refused;
+}
 // Red banner that stays while any phone's call for help is live, with a Clear button for the commander.
 function renderSos(devs) {
     const box = $('sos');
@@ -594,24 +694,34 @@ function teamIcon(d, now) {
     const label = d.triager || d.deviceId;
     return L.divIcon({ html: `<div class="tm${stale ? ' tm-old' : ''}${sos(d) ? ' tm-sos' : ''}"><span class="tm-dot">${sos(d) ? '🆘' : '👤'}</span><span class="tm-name">${esc(label)}</span><span class="tm-age">${esc(age(d.position.timestamp))}</span></div>`, className: 'mk-wrap', iconSize: [0, 0], iconAnchor: [0, 0] });
 }
+// Triager markers are kept and updated in place (an open pop-up stays open); their accuracy circles are redrawn.
+const teamByDev = new Map();
+let teamCircles = null;
+function teamPopup(d, p, now) { return `<div class="map-pop"><b>${sos(d) ? '🆘 ' : '👤 '}${esc(d.triager || 'Unnamed')}</b> <span class="muted">${esc(d.deviceId)}</span>${sos(d) ? ' <b style="color:#DA291C">NEEDS HELP</b>' : ''}<div class="map-pop-meta">${esc(posText(p))}${posStale(p, now) ? ' • <b>over 5 minutes old</b>' : ''}</div><div class="map-pop-meta">${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${esc(age(d.lastSeen))}</div>${sos(d) && canMark() ? `<button type="button" class="btn small" style="margin-top:6px" data-act="clearDuress" data-dev="${esc(d.deviceId)}">Clear: help is on its way</button>` : ''}</div>`; }
 function renderTeams(devs, now) {
     if (!map) return;
     if (!teamsLayer) teamsLayer = L.layerGroup().addTo(map);
-    teamsLayer.clearLayers();
+    if (!teamCircles) teamCircles = L.layerGroup().addTo(map);
+    teamCircles.clearLayers();
+    const seen = new Set();
     (devs || []).forEach(d => {
         const p = sos(d) && d.duress.position ? d.duress.position : d.position;
         if (!p || !p.lat) return;
         const ll = [Number(p.lat), Number(p.lng)];
-        const m = L.marker(ll, { icon: teamIcon(Object.assign({}, d, { position: p }), now), zIndexOffset: sos(d) ? 2000 : 1000 });
-        m._dev = d.deviceId;
-        m.bindPopup(`<div class="map-pop"><b>${sos(d) ? '🆘 ' : '👤 '}${esc(d.triager || 'Unnamed')}</b> <span class="muted">${esc(d.deviceId)}</span>${sos(d) ? ' <b style="color:#DA291C">NEEDS HELP</b>' : ''}<div class="map-pop-meta">${esc(posText(p))}${posStale(p, now) ? ' • <b>over 5 minutes old</b>' : ''}</div><div class="map-pop-meta">${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${esc(age(d.lastSeen))}</div>${sos(d) && canMark() ? `<button type="button" class="btn small" style="margin-top:6px" data-act="clearDuress" data-dev="${esc(d.deviceId)}">Clear: help is on its way</button>` : ''}</div>`);
-        teamsLayer.addLayer(m);
-        if (p.acc && p.acc > 15) teamsLayer.addLayer(L.circle(ll, { radius: Number(p.acc), color: sos(d) ? '#DA291C' : '#330072', weight: 1, opacity: 0.5, fillOpacity: 0.06, interactive: false }));
+        seen.add(d.deviceId);
+        let m = teamByDev.get(d.deviceId);
+        const icon = teamIcon(Object.assign({}, d, { position: p }), now);
+        if (!m) { m = L.marker(ll, { icon }); m._dev = d.deviceId; m.bindPopup(''); teamsLayer.addLayer(m); teamByDev.set(d.deviceId, m); }
+        else { m.setLatLng(ll); m.setIcon(icon); }
+        m.setZIndexOffset(sos(d) ? 2000 : 1000);
+        m.setPopupContent(teamPopup(d, p, now));
+        if (p.acc && p.acc > 15) teamCircles.addLayer(L.circle(ll, { radius: Number(p.acc), color: sos(d) ? '#DA291C' : '#330072', weight: 1, opacity: 0.5, fillOpacity: 0.06, interactive: false }));
     });
+    teamByDev.forEach((m, id) => { if (!seen.has(id)) { teamsLayer.removeLayer(m); teamByDev.delete(id); } });
 }
 function showTeamOnMap(deviceId) {
     if (!map || !teamsLayer) return;
-    const m = teamsLayer.getLayers().find(l => l._dev === deviceId);
+    const m = teamByDev.get(deviceId);
     if (!m) return;
     try { $('map').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
     map.setView(m.getLatLng(), Math.max(map.getZoom(), 17));
@@ -742,49 +852,116 @@ function markerIcon(r) {
     const tail = String(r.id || '').replace(/^.*-/, '').slice(-4) || '•';
     return L.divIcon({ html: `<div class="mk${r.tool === 'TST' ? ' mk-tst' : ''}${r.evacuated ? ' mk-evac' : ''}${stage(r) === 'ccs' ? ' mk-atccs' : ''}" style="background:${info.colour};color:${info.text};">${esc(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
 }
+// A bubble of grouped casualties takes the colour of the most urgent category inside it, and shows how many of each
+// (3,000-casualty test: bubbles were coloured by size, so a "green" bubble held four P1s and a Not Breathing).
+// Urgency follows the app's priority order: P1, P1 Hold, P2, P3, Not Breathing, Dead. Evacuated casualties only
+// colour a bubble that holds nobody else.
+const MAP_ORDER = ['P1', 'P1_HOLD', 'P2', 'P3', 'NOT_BREATHING', 'DEAD'];
+function clusterIcon(cl) {
+    const ms = cl.getAllChildMarkers();
+    const here = {}, all = {};
+    ms.forEach(m => { const c = m.options.cat || ''; all[c] = (all[c] || 0) + 1; if (!m.options.evac) here[c] = (here[c] || 0) + 1; });
+    const use = Object.keys(here).length ? here : all;
+    const top = MAP_ORDER.find(c => use[c]) || '';
+    const info = MITTLib.CATEGORY_INFO[top] || { colour: '#4C6272', text: '#fff' };
+    const chips = MAP_ORDER.filter(c => use[c]).map(c => { const i = MITTLib.CATEGORY_INFO[c]; return `<i style="background:${i.colour};color:${i.text}" title="${esc(i.short)}">${use[c]}</i>`; }).join('');
+    const label = MAP_ORDER.filter(c => use[c]).map(c => `${use[c]} ${MITTLib.CATEGORY_INFO[c].short}`).join(', ');
+    return L.divIcon({ html: `<div class="cl${Object.keys(here).length ? '' : ' cl-evac'}" style="background:${info.colour};color:${info.text}" aria-label="${esc(ms.length + ' casualties: ' + label)}"><b>${ms.length}</b><span class="cl-cats">${chips}</span></div>`, className: 'mk-wrap cl-wrap', iconSize: [0, 0] });
+}
 function ensureMap() {
     if (map || typeof L === 'undefined') return !!map;
     map = L.map('map').setView([54.0, -2.0], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
     L.control.scale({ imperial: false }).addTo(map);
-    cluster = L.markerClusterGroup({ maxClusterRadius: 32, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19 });
+    cluster = L.markerClusterGroup({ maxClusterRadius: 40, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19, chunkedLoading: true, iconCreateFunction: clusterIcon });
     map.addLayer(cluster);
     circles = L.layerGroup().addTo(map);
     map.on('click', onMapClickMark);
+    map.on('moveend', scheduleCircles);
+    cluster.on('animationend', scheduleCircles);
     return true;
 }
+function markerSig(r) {
+    const l = loc(r) || {};
+    return [r.category, r.tool, r.evacuated ? 1 : 0, stage(r), l.lat, l.lng, l.acc, r.id, hadMitt(r) ? 1 : 0, r.highRisk ? 1 : 0, r.updatedAt || 0, r.triager || '', place(r)].join('|');
+}
+function markerPopup(r) {
+    const l = loc(r) || {};
+    const grid = l.lat ? MITTLib.toOsGridRef(Number(l.lat), Number(l.lng)) : '';
+    return `<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div><button type="button" class="btn small" style="margin-top:6px" data-act="openPatient" data-uid="${esc(r.uid)}">Full details</button></div>`;
+}
+// Markers are kept between refreshes and only changed where a casualty changed, so an open pop-up stays open and a
+// big incident is not redrawn from scratch every 30 seconds (3,000-casualty test).
 function renderMap(records) {
     if (!ensureMap()) { setText('map-note', 'map library did not load'); return; }
-    cluster.clearLayers(); circles.clearLayers();
-    if (ccsMarker) { map.removeLayer(ccsMarker); ccsMarker = null; }
-    let n = 0;
-    records.forEach(r => {
-        const l = loc(r);
-        if (!l || !l.lat) return;
-        n++;
-        const ll = [Number(l.lat), Number(l.lng)];
-        const grid = MITTLib.toOsGridRef(ll[0], ll[1]);
-        const m = L.marker(ll, { icon: markerIcon(r) });
-        m.bindPopup(`<div class="map-pop"><b>${esc(r.id)}</b> ${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <b style="color:#DA291C">HIGH RISK</b>' : ''}<div class="map-pop-meta">${esc(place(r) || 'No place label')}</div><div class="map-pop-meta">${grid ? esc(grid) + ' • ' : ''}${l.acc ? '±' + Math.round(l.acc) + ' m • ' : ''}${esc(r.triager || '')} • ${age(r.updatedAt)}</div><button type="button" class="btn small" style="margin-top:6px" data-act="openPatient" data-uid="${esc(r.uid)}">Full details</button></div>`);
-        m._uid = r.uid;
-        cluster.addLayer(m);
-        if (l.acc && l.acc > 15) circles.addLayer(L.circle(ll, { radius: Number(l.acc), color: MITTLib.CATEGORY_INFO[r.category] ? MITTLib.CATEGORY_INFO[r.category].colour : '#005EB8', weight: 1, opacity: 0.6, fillOpacity: 0.08 }));
+    const want = new Map();
+    records.forEach(r => { const l = loc(r); if (l && l.lat) want.set(r.uid, r); });
+    const toRemove = [], toAdd = [], restyled = [];
+    markerByUid.forEach((v, uid) => { if (!want.has(uid)) { toRemove.push(v.m); markerByUid.delete(uid); } });
+    want.forEach((r, uid) => {
+        const sig = markerSig(r);
+        const cur = markerByUid.get(uid);
+        const l = loc(r), ll = [Number(l.lat), Number(l.lng)];
+        if (!cur) {
+            const m = L.marker(ll, { icon: markerIcon(r), cat: r.category, evac: !!r.evacuated });
+            m.bindPopup(markerPopup(r));
+            m._uid = uid;
+            markerByUid.set(uid, { m, sig, r });
+            toAdd.push(m);
+            return;
+        }
+        cur.r = r;
+        if (cur.sig === sig) { if (cur.m.isPopupOpen && cur.m.isPopupOpen()) cur.m.setPopupContent(markerPopup(r)); return; }
+        const moved = !cur.m.getLatLng().equals(L.latLng(ll));
+        cur.sig = sig;
+        cur.m.options.cat = r.category; cur.m.options.evac = !!r.evacuated;
+        cur.m.setIcon(markerIcon(r));
+        cur.m.setPopupContent(markerPopup(r));
+        if (moved) { toRemove.push(cur.m); cur.m.setLatLng(ll); toAdd.push(cur.m); }
+        else restyled.push(cur.m);
     });
+    if (toRemove.length) cluster.removeLayers(toRemove);
+    if (toAdd.length) cluster.addLayers(toAdd);
+    if (restyled.length) cluster.refreshClusters(restyled);
+    const n = want.size;
     if (data.ccs && data.ccs.lat) {
-        ccsMarker = L.marker([Number(data.ccs.lat), Number(data.ccs.lng)], { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty clearing station').addTo(map);
-    }
+        const ll = [Number(data.ccs.lat), Number(data.ccs.lng)];
+        if (!ccsMarker) ccsMarker = L.marker(ll, { icon: L.divIcon({ html: '<div class="mk mk-ccs">CCS</div>', className: 'mk-wrap', iconSize: [40, 28], iconAnchor: [20, 14] }) }).bindPopup('Casualty clearing station').addTo(map);
+        else ccsMarker.setLatLng(ll);
+    } else if (ccsMarker) { map.removeLayer(ccsMarker); ccsMarker = null; }
     renderMarks();
     renderTeams(data.devices, Date.now());
     const nt = (data.devices || []).filter(d => d.position || (sos(d) && d.duress.position)).length;
-    setText('map-note', `${n} with a position${records.length - n ? `, ${records.length - n} without` : ''}${nt ? ` • ${nt} triager${nt === 1 ? '' : 's'}` : ''}`);
+    setText('map-note', `${n} with a position${records.length - n ? `, ${records.length - n} without` : ''}${nt ? ` • ${nt} triager${nt === 1 ? '' : 's'}` : ''} • bubbles take the colour of their most urgent casualty`);
     if (firstFit && (n || ccsMarker || nt)) { firstFit = false; fitMap(); }
+    scheduleCircles();
     setTimeout(() => map.invalidateSize(), 100);
+}
+// Accuracy circles are drawn only round casualties shown on their own (not grouped in a bubble) and in view, so they
+// group with the bubbles (3,000-casualty test: 2,060 circles sat on top of the bubbles when zoomed out).
+const CIRCLES_MAX = 300;
+let circlesTimer = null;
+function scheduleCircles() { if (circlesTimer) clearTimeout(circlesTimer); circlesTimer = setTimeout(() => { circlesTimer = null; updateCircles(); }, 150); }
+function updateCircles() {
+    if (!map || !circles) return;
+    circles.clearLayers();
+    const b = map.getBounds();
+    let n = 0;
+    markerByUid.forEach(({ m, r }) => {
+        if (n >= CIRCLES_MAX) return;
+        const l = loc(r);
+        if (!l || !(Number(l.acc) > 15)) return;
+        if (!b.contains(m.getLatLng()) || cluster.getVisibleParent(m) !== m) return;
+        n++;
+        circles.addLayer(L.circle(m.getLatLng(), { radius: Number(l.acc), color: MITTLib.CATEGORY_INFO[r.category] ? MITTLib.CATEGORY_INFO[r.category].colour : '#005EB8', weight: 1, opacity: 0.6, fillOpacity: 0.08, interactive: false }));
+    });
 }
 function fitMap() {
     if (!map) return;
-    const layers = cluster.getLayers().slice();
+    const layers = [];
+    markerByUid.forEach(v => layers.push(v.m));
     if (ccsMarker) layers.push(ccsMarker);
-    if (teamsLayer) teamsLayer.getLayers().forEach(l => { if (l.getLatLng) layers.push(l); });
+    teamByDev.forEach(m => layers.push(m));
     if (!layers.length) return;
     const b = L.featureGroup(layers).getBounds();
     map.fitBounds(b.pad(0.2), { maxZoom: 18 });
@@ -845,7 +1022,7 @@ function showPatientOnMap() {
     closePatient();
     if (document.body.classList.contains('wall')) setWall(false);
     map.setView([Number(l.lat), Number(l.lng)], Math.max(map.getZoom(), 18));
-    const m = cluster.getLayers().find(x => x._uid === r.uid);
+    const mm = markerByUid.get(r.uid), m = mm && mm.m;
     if (m) setTimeout(() => cluster.zoomToShowLayer(m, () => m.openPopup()), 200);
     $('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -925,6 +1102,8 @@ const ACTIONS = {
     showTeamOnMap: (t) => showTeamOnMap(t.getAttribute('data-dev')),
     dismissAlert: (t) => dismissAlert(t.hasAttribute('data-id') ? Number(t.getAttribute('data-id')) : undefined),
     toggleTimeline: () => { timelineAll = !timelineAll; renderTimeline((data && data.records) || []); },
+    moreRows: () => { tableLimit += TABLE_STEP; render({ sameData: true }); },
+    allRows: () => { tableLimit = Infinity; render({ sameData: true }); },
 };
 document.addEventListener('click', e => {
     if (e.target === $('ask-modal')) { askAnswer(false); return; }

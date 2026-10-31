@@ -2232,8 +2232,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.19.11';
-    const APP_BUILD = '2026-10-31-retest';
+    const APP_VERSION = '0.19.12';
+    const APP_BUILD = '2026-10-31-scale';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -5496,6 +5496,7 @@
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));
         const mp = mittPromptCard();
         if (mp) box.appendChild(mp);
+        if (typeof CMD !== 'undefined' && CMD.full && CMD.full.size && cmdActive()) box.appendChild(el('div', { className: 'alert-card', id: 'home-cmd-full', onclick: cmdShowDetails }, [el('strong', { text: `⚠ Incident full: ${CMD.full.size} casualt${CMD.full.size === 1 ? 'y' : 'ies'} NOT sent to the commander. ` }), 'They are kept on this phone and it keeps trying. Tell the commander about them another way (radio, paper triage card).']));
         const parts = alertSummary(patientAlerts(Date.now()));
         if (parts.length) box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
         if (TRAINING && exerciseRole()) box.appendChild(el('div', { className: 'alert-card info', id: 'home-exercise', style: 'border-left-color:#7B3F00;', onclick: showExerciseGuide }, [el('strong', { text: '🎯 Live exercise. ' }), `You are ${exerciseRole().label}. Tap for the facilitator guide.`]));
@@ -6242,7 +6243,9 @@
     // Records go to /api/incident (Netlify function + Blobs) whenever something changes and there is signal.
     // Nothing here blocks triage: pushes run in the background, retry on failure, and the phone stays the record of truth.
     const CMD_PUSH_DEBOUNCE_MS = 3000, CMD_HEARTBEAT_MS = 60 * 1000, CMD_FETCH_TIMEOUT_MS = 15 * 1000, CMD_BATCH = 200;
-    const CMD = { cfg: null, dirty: new Set(), seen: {}, timer: null, heartbeat: null, inflight: false, lastSentAt: 0, lastError: '', failStreak: 0, sentTotal: 0 };
+    // full: casualties the server refused because the incident holds its limit (v0.19.12). They stay queued (not sent)
+    // and go again with each heartbeat, after everything else.
+    const CMD = { cfg: null, dirty: new Set(), seen: {}, timer: null, heartbeat: null, inflight: false, lastSentAt: 0, lastError: '', failStreak: 0, sentTotal: 0, full: new Set(), fullMax: 0, fullWarned: 0 };
     function cmdActive() { return !!(CMD.cfg && CMD.cfg.code && CMD.cfg.pin); }
     function cmdSaveCfg() { ls('mit_commander', CMD.cfg ? JSON.stringify(CMD.cfg) : null); if (CMD.cfg && CMD.cfg.deviceKey) cmdRememberDeviceKey(CMD.cfg.code, CMD.cfg.deviceKey); }
     // This phone's device key for each incident it has linked to, kept after "Stop sharing", so it can join the
@@ -6361,7 +6364,8 @@
         // A casualty set to Dead by hand is held back while its time-of-death box is open, so the commander never sees a
         // Dead that is then undone (v0.19.10 retest). Reports and calls for help still go meanwhile.
         const held = pendingDeadEntry && pendingDeadEntry.overrideUid;
-        const uids = Array.from(CMD.dirty).filter(u => u !== held);
+        // Casualties the incident had no room for go last, so they never hold up changes to casualties already sent.
+        const uids = Array.from(CMD.dirty).filter(u => u !== held).sort((a, b) => (CMD.full.has(a) ? 1 : 0) - (CMD.full.has(b) ? 1 : 0));
         const batch = uids.map(u => incidentLog[indexByUid(u)]).filter(Boolean).slice(0, CMD_BATCH).map(e => { const c = MITTLib.clonePatientRecord(e); c.uid = e.uid; return c; });
         uids.forEach(u => { if (indexByUid(u) === -1) CMD.dirty.delete(u); });
         CMD.inflight = true;
@@ -6369,7 +6373,12 @@
             const duressSent = CMD.cfg.duress ? Object.assign({}, CMD.cfg.duress) : null;
             const r = await cmdFetch(`/api/incident/${encodeURIComponent(CMD.cfg.code)}/records`, { method: 'PUT', pin: CMD.cfg.pin, body: { deviceId, clientNow: Date.now(), triager: triagerName, app: APP_VERSION, totalRecords: incidentLog.length - (CMD.cfg.skip ? incidentLog.filter(e => cmdHeld(e.uid)).length : 0), records: batch, sector: currentSector || '', userRole: userRole || undefined, commander: !!CMD.cfg.commander, ccs: cachedCcsLocation || undefined, methane: methaneHistory.length ? methaneHistory[methaneHistory.length - 1] : undefined, battery: batteryPercent(), charging: BAT.charging === null ? undefined : !!BAT.charging, position: cmdPositionPayload(), duress: cmdDuressPayload(), marksAt: CMD.cfg.marksAt || 0 } });
             if (r.status === 200) {
-                batch.forEach(x => CMD.dirty.delete(x.uid));
+                // The incident is full: refused casualties stay queued as not sent (v0.19.12: they were marked sent and lost).
+                const refused = new Set(Array.isArray(r.body.full) ? r.body.full : []);
+                batch.forEach(x => { if (refused.has(x.uid)) CMD.full.add(x.uid); else { CMD.dirty.delete(x.uid); CMD.full.delete(x.uid); } });
+                Array.from(CMD.full).forEach(u => { if (indexByUid(u) === -1) CMD.full.delete(u); });
+                if (refused.size) cmdIncidentFull(refused, r.body.maxRecords || 0);
+                if (r.body.singlePin && !CMD.cfg.single) { CMD.cfg.single = true; cmdSaveCfg(); }
                 cmdHandleDuressReply(r.body.duress, duressSent);
                 if (Array.isArray(r.body.marks) && (r.body.marksAt || 0) !== (CMD.cfg.marksAt || 0)) {
                     const had = (CMD.cfg.marks || []).length;
@@ -6386,7 +6395,7 @@
                 CMD.failStreak = 0; CMD.lastError = '';
                 if (batch.length) logAudit('COMMANDER_PUSH', '-', `${batch.length} record(s) sent to commander ${CMD.cfg.code}: ${r.body.accepted || 0} accepted, ${r.body.kept || 0} already newer, ${(r.body.rejected || []).length} rejected`, Date.now(), { uids: batch.map(x => x.uid) });
                 if (manual) showToast(batch.length ? `Sent ${batch.length} record(s) to the commander.` : 'Commander is up to date.');
-                if (Array.from(CMD.dirty).some(u => u !== held)) cmdSchedule(300);
+                if (Array.from(CMD.dirty).some(u => u !== held && !CMD.full.has(u))) cmdSchedule(300);
             } else if (r.status === 410) {
                 // Only a clear "ended" or "expired" from the server unlinks the phone. A server or storage error
                 // (5xx) is retried: it used to read as "not found" and unlinked every phone (v0.19.5 test).
@@ -6409,6 +6418,19 @@
             CMD.inflight = false;
             cmdRenderStatus();
         }
+    }
+    // The incident has reached the most casualties the server holds. Warn once per new refusal (screen, vibration,
+    // audit), keep the casualties here and keep trying; the commander screen lists them too.
+    function cmdIncidentFull(refused, max) {
+        CMD.fullMax = max || CMD.fullMax;
+        const ids = Array.from(refused).map(u => { const i = indexByUid(u); return i > -1 ? incidentLog[i].id : u; });
+        if (CMD.full.size > CMD.fullWarned) {
+            logAudit('COMMANDER_INCIDENT_FULL', '-', `Incident ${CMD.cfg.code} is full${CMD.fullMax ? ` (${CMD.fullMax} casualties)` : ''}: ${ids.join(', ')} NOT stored by the commander. Kept on this phone as not sent; will keep trying.`, Date.now(), { uids: Array.from(refused) });
+            showBlockingError('Incident full: not sent to the commander', `The incident has reached its limit${CMD.fullMax ? ` of ${CMD.fullMax.toLocaleString('en-GB')} casualties` : ''}, so ${ids.length === 1 ? ids[0] + ' was' : ids.length + ' casualties (' + ids.slice(0, 5).join(', ') + (ids.length > 5 ? '…' : '') + ') were'} NOT stored. The commander screen shows that they were refused, but they are not in its counts.\n\nThey are kept on this phone and marked as not sent; it keeps trying. Make sure the commander knows about them another way (radio, paper triage card).`);
+            try { if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]); } catch (e) {}
+        }
+        CMD.fullWarned = CMD.full.size;
+        renderHomeAlerts();
     }
     // ---------- Incident decisions from the commander (P1 Hold allowed; MITT now in use) ----------
     function cmdPolicy() { return (cmdActive() && CMD.cfg.policy) ? MITTLib.normalisePolicy(CMD.cfg.policy) : {}; }
@@ -6494,10 +6516,11 @@
             pill.style.display = active ? '' : 'none';
             if (active) {
                 const pending = CMD.dirty.size;
-                const state = CMD.lastError ? 'stale' : pending ? 'searching' : 'good';
+                const full = CMD.full.size;
+                const state = CMD.lastError || full ? 'stale' : pending ? 'searching' : 'good';
                 pill.className = 'gps-status loc-' + state;
-                pill.textContent = CMD.lastError ? `☁ ${CMD.cfg.code} ✗` : pending ? `☁ ${CMD.cfg.code} …` : `☁ ${CMD.cfg.code} ✓`;
-                pill.title = CMD.lastError ? `Commander: not sent (${CMD.lastError}). Retrying.` : pending ? 'Commander: sending…' : `Commander: up to date${CMD.lastSentAt ? ' ' + fmtTime(CMD.lastSentAt) : ''}`;
+                pill.textContent = CMD.lastError ? `☁ ${CMD.cfg.code} ✗` : full ? `☁ ${CMD.cfg.code} ⚠ FULL` : pending ? `☁ ${CMD.cfg.code} …` : `☁ ${CMD.cfg.code} ✓`;
+                pill.title = CMD.lastError ? `Commander: not sent (${CMD.lastError}). Retrying.` : full ? `Incident full: ${full} casualt${full === 1 ? 'y' : 'ies'} not sent. Kept on this phone; still trying.` : pending ? 'Commander: sending…' : `Commander: up to date${CMD.lastSentAt ? ' ' + fmtTime(CMD.lastSentAt) : ''}`;
             }
         }
         renderRolePill();
@@ -6507,7 +6530,7 @@
         const posCb = $('set-share-pos');
         if (posCb) posCb.checked = posShareOn();
         duressRender();
-        const txt = !active ? 'Not sharing.' : `Sharing as ${CMD.cfg.role === 'creator' ? 'the phone that started' : 'a member of'} incident ${CMD.cfg.code}. ${CMD.lastError ? `Last attempt failed (${CMD.lastError}); ${CMD.dirty.size} change(s) waiting.` : CMD.dirty.size ? `${CMD.dirty.size} change(s) waiting to send.` : CMD.lastSentAt ? `Up to date, last sent ${fmtTime(CMD.lastSentAt)}.` : 'Nothing sent yet.'}${posShareOn() ? ' Your position goes with each report.' : ''}${duressActive() ? ' 🆘 Your call for help is live.' : ''}`;
+        const txt = !active ? 'Not sharing.' : `Sharing as ${CMD.cfg.role === 'creator' ? 'the phone that started' : 'a member of'} incident ${CMD.cfg.code}. ${CMD.full.size ? `INCIDENT FULL: ${CMD.full.size} casualt${CMD.full.size === 1 ? 'y' : 'ies'} on this phone could not be stored by the commander (the incident holds its limit${CMD.fullMax ? ' of ' + CMD.fullMax.toLocaleString('en-GB') : ''}). They stay here as not sent; tell the commander another way. ` : ''}${CMD.lastError ? `Last attempt failed (${CMD.lastError}); ${CMD.dirty.size} change(s) waiting.` : CMD.dirty.size ? `${CMD.dirty.size} change(s) waiting to send.` : CMD.lastSentAt ? `Up to date, last sent ${fmtTime(CMD.lastSentAt)}.` : 'Nothing sent yet.'}${posShareOn() ? ' Your position goes with each report.' : ''}${duressActive() ? ' 🆘 Your call for help is live.' : ''}`;
         setText('cmd-status', txt);
         setText('cmd-detail-status', txt);
     }
@@ -6551,7 +6574,8 @@
             if (!!r.body.training !== TRAINING) { showBlockingError('Training mismatch', r.body.training ? 'That incident is a training incident, and this phone is in real use. To join it, turn on Training mode at the top of ⚙ Settings, then join again.' : 'That incident is real, and this phone is in training mode. To join it, turn off Training mode at the top of ⚙ Settings, then join again.'); return false; }
             const skip = CMD.cfg && CMD.cfg.code === code && Array.isArray(CMD.cfg.skip) ? CMD.cfg.skip : await cmdAskAboutOlder(r.body.incidentCode || incidentCode);
             // Joined with the commander PIN: this phone may also end the incident.
-            CMD.cfg = { code, pin, cmdPin: r.body.level === 'commander' ? pin : '', deviceKey: r.body.deviceKey || '', accessKey: r.body.accessKey || '', role: 'member', startedAt: Date.now(), skip };
+            // single: an incident started before v0.19.6 has one PIN for everything, so it is also the PIN to link phones.
+            CMD.cfg = { code, pin, cmdPin: r.body.level === 'commander' ? pin : '', single: !!r.body.singlePin, deviceKey: r.body.deviceKey || '', accessKey: r.body.accessKey || '', role: 'member', startedAt: Date.now(), skip };
             cmdSaveCfg();
             logAudit('COMMANDER_JOINED', '-', `Joined live sharing for incident ${code}`, Date.now());
             if (r.body.incidentCode && !incidentCode) setIncidentCode(r.body.incidentCode, 'commander join');
@@ -6581,14 +6605,14 @@
     // triagers' PIN, and must never pass its own on as if it were (v0.19.7 stress test), so it shows none.
     function cmdTriagerPin() {
         if (!CMD.cfg) return '';
-        if (CMD.cfg.role === 'creator') return CMD.cfg.pin;
+        if (CMD.cfg.role === 'creator' || CMD.cfg.single) return CMD.cfg.pin;
         return CMD.cfg.cmdPin && CMD.cfg.cmdPin === CMD.cfg.pin ? '' : CMD.cfg.pin;
     }
     function cmdShowDetails() {
         if (!cmdActive()) { openModesMenu(); return; }
         setText('cmd-code', CMD.cfg.code);
         const tpin = cmdTriagerPin();
-        setText('cmd-pin-label', tpin ? "Triagers' PIN (to link phones)" : "This phone joined with the commander PIN. Ask the incident commander for the triagers' PIN to link other phones.");
+        setText('cmd-pin-label', CMD.cfg.single ? 'PIN (this incident was started on an older version and has one PIN for everything: linking phones and the commander screen)' : tpin ? "Triagers' PIN (to link phones)" : "This phone joined with the commander PIN. Ask the incident commander for the triagers' PIN to link other phones.");
         setText('cmd-pin', tpin);
         $('cmd-cmdpin-wrap').style.display = CMD.cfg.cmdPin && CMD.cfg.cmdPin !== CMD.cfg.pin ? '' : 'none';
         setText('cmd-cmdpin', CMD.cfg.cmdPin || '');
@@ -6612,7 +6636,7 @@
     function cmdStopLocal(reason) {
         const code = CMD.cfg ? CMD.cfg.code : '';
         CMD.cfg = null; cmdSaveCfg();
-        CMD.dirty.clear(); CMD.lastError = ''; CMD.failStreak = 0;
+        CMD.dirty.clear(); CMD.full.clear(); CMD.fullWarned = 0; CMD.lastError = ''; CMD.failStreak = 0;
         if (CMD.timer) { clearTimeout(CMD.timer); CMD.timer = null; }
         if (CMD.heartbeat) { clearInterval(CMD.heartbeat); CMD.heartbeat = null; }
         logAudit('COMMANDER_STOPPED', '-', `${reason || 'Stopped live sharing'} (incident ${code})`, Date.now());

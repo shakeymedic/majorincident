@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v50-2026-10-31-retest';
+const CACHE_NAME = 'mit-triage-v51-2026-10-31-scale';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 // The printed-number reader (vendor/tesseract, ~10 MB, fetched on demand) is kept across app updates too,

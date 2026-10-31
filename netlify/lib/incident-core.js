@@ -50,6 +50,17 @@ const MAX_LOOKUP_RESULTS = 5;
 // their device code (v0.19.9 stress test). From v0.19.10 they are asked to update instead of joining unkeyed.
 const OLD_APP_MSG = 'This phone has an old version of the app. Close the app fully and open it again (with signal) to update it, then join again.';
 const ORDER = { P1: 0, P1_HOLD: 1, P2: 2, P3: 3, NOT_BREATHING: 4, DEAD: 5 };
+// Commander screens from v0.19.12 ask for changes only (x-incident-sync: 2). Each incident keeps a small counter
+// document (i/<CODE>/ver) with a change number for its casualties (r), phones (d) and decisions (p), and its stored
+// casualty count (c), so an unchanged incident costs a few reads whatever its size (3,000-casualty test).
+// Casualties that change are listed in a change feed (i/<CODE>/ch/<time>...), read back from the screen's last
+// read time less FEED_MARGIN_MS (a report may finish writing a little after the time in its key).
+const FEED_MARGIN_MS = 30 * 1000;
+const FEED_MAX = 600;                         // more change-feed entries than this since the last read: read everything again
+const SYNC_MAX_AGE_MS = 6 * 60 * 60 * 1000;   // a screen away longer than this reads everything again
+const PAGE_BYTES = 2 * 1024 * 1024;           // a first load is sent in parts of about this size (notes can be long)
+const PAGE_DOCS = 400;
+const FULL_LIST_MAX = 200;                    // casualties refused because the incident was full, listed on the commander screen
 
 function randomCode(rng) {
     const bytes = rng(CODE_LENGTH);
@@ -116,6 +127,26 @@ async function deleteEach(store, keys) {
     if (typeof store.deleteMany === 'function') return store.deleteMany(keys);
     for (let i = 0; i < keys.length; i += READ_BATCH) await Promise.all(keys.slice(i, i + READ_BATCH).map(k => store.delete(k)));
 }
+// Documents whose keys start with prefix and sort after `after`, in key order, at most limit of them, with their
+// values: [{ key, value }]. Uses the store's own range read when it has one (Firestore: one query, one read per
+// document returned, no separate listing), otherwise a listing and a bulk read.
+async function rangeOf(store, prefix, after, limit) {
+    if (typeof store.range === 'function') return store.range(prefix, after || '', limit);
+    const keys = entries(await store.list(prefix)).map(e => e.key).filter(k => !after || k > after).slice(0, limit);
+    const vals = keys.length ? await getEach(store, keys) : [];
+    return keys.map((key, i) => ({ key, value: vals[i] })).filter(x => x.value);
+}
+// Every document under prefix, read in ranges.
+async function rangeAll(store, prefix, after) {
+    const out = [];
+    let from = after || '';
+    for (;;) {
+        const part = await rangeOf(store, prefix, from, 500);
+        out.push(...part);
+        if (part.length < 500) return out;
+        from = part[part.length - 1].key;
+    }
+}
 // METHANE as the phones store it: seven short texts plus who saved it and when.
 function cleanMethane(m) {
     if (!m || typeof m !== 'object') return null;
@@ -134,6 +165,9 @@ function createCore(opts) {
     const now = opts.now || (() => Date.now());
     const rng = opts.random || ((n) => crypto.randomBytes(n));
     const log = opts.log || (() => {});
+    // Tests can set a lower casualty limit or page size; the live site uses the constants.
+    const MAX_RECORDS = opts.maxRecords || MAX_RECORDS_PER_INCIDENT;
+    const PAGE_LIMIT = opts.pageBytes || PAGE_BYTES;
 
     const keyMeta = (code) => `i/${code}/meta`;
     const keyRec = (code, uid) => `i/${code}/r/${uid}`;
@@ -149,6 +183,11 @@ function createCore(opts) {
     const keyMarks = (code) => `i/${code}/marks`;               // pre-v0.19.10 incidents: every marking in one document
     const keyMark = (code, id) => `i/${code}/mk/${id}`;         // v0.19.10: one document per marking (two screens at once lose nothing)
     const keyClear = (code, id) => `i/${code}/dc/${id}`;
+    const keyVer = (code) => `i/${code}/ver`;                   // v0.19.12 counters: r, d, p (change numbers), c (casualties stored)
+    let feedSeq = 0;
+    const keyFeedAt = (code, at) => `i/${code}/ch/` + Math.max(0, at).toString(36).padStart(9, '0');
+    const feedKey = (code, at) => keyFeedAt(code, at) + '-' + String(++feedSeq).padStart(6, '0') + '-' + crypto.randomBytes(2).toString('hex');
+    const keyFull = (code, uid) => `i/${code}/full/${uid}`;     // a casualty refused because the incident was full
     const keyTomb = (code) => `t/${code}`;
     const keyCodeFail = (code) => `rk/${code}`;
     // A key only the server can make, given to a phone or screen once it has shown a right PIN. Presenting it lets
@@ -156,13 +195,15 @@ function createCore(opts) {
     // The device key ties a phone's reports to its device code, so another phone cannot send under that code.
     // The access key is tied to the PIN level it was given for (v0.19.8): it only lets through a PIN of that level or
     // lower, so a triager's or observer's key cannot be used to guess the commander PIN past the lock-out.
-    // Keys handed out before v0.19.8 (no level) count as the triagers' level.
+    // Keys handed out before v0.19.8 (no level) counted as the triagers' level; from v0.19.12 they count as view-only,
+    // so an old key gets nobody past the lock-out with a triagers' PIN. Phones and screens get a levelled key the next
+    // time they join or read.
     const accessKey = (meta, level) => meta.keySecret ? shortHash(meta.keySecret + ':access:' + meta.code + (level ? ':' + level : '')) + shortHash(meta.code + ':' + meta.keySecret + (level ? ':' + level : '')) : '';
     const LEVEL_RANK = { view: 0, member: 1, commander: 2 };
     function keyLevel(meta, key) {
         if (!key || !meta.keySecret) return '';
         for (const l of ['commander', 'member', 'view']) if (safeEqual(String(key), accessKey(meta, l))) return l;
-        return safeEqual(String(key), accessKey(meta)) ? 'member' : '';
+        return safeEqual(String(key), accessKey(meta)) ? 'view' : '';
     }
     const deviceKey = (meta, id) => meta.keySecret ? shortHash(meta.keySecret + ':device:' + id) + shortHash(id + ':' + meta.keySecret) : '';
     // The client address itself is never stored. The hash is salted with a server-only secret (RATE_LIMIT_SALT),
@@ -288,17 +329,26 @@ function createCore(opts) {
         const base = legacy ? { policy: legacy.policy || {}, policyAt: legacy.policyAt || 0, decisions: legacy.decisions || [] } : { policy: meta.policy || {}, policyAt: meta.policyAt || 0, decisions: [] };
         const policy = Object.assign({}, base.policy);
         let policyAt = base.policyAt;
-        if (p1 && (p1.at || 0) >= ((policy.p1Hold && policy.p1Hold.at) || 0)) { policy.p1Hold = p1; policyAt = Math.max(policyAt, p1.at || 0); }
-        if (mitt && (mitt.at || 0) >= ((policy.mitt && policy.mitt.at) || 0)) { policy.mitt = mitt; policyAt = Math.max(policyAt, mitt.at || 0); }
-        return { policy, policyAt, legacyDecisions: base.decisions };
+        if (p1 && (p1.at || 0) >= ((policy.p1Hold && policy.p1Hold.at) || 0)) { policy.p1Hold = bare(p1); policyAt = Math.max(policyAt, p1.at || 0); }
+        if (mitt && (mitt.at || 0) >= ((policy.mitt && policy.mitt.at) || 0)) { policy.mitt = bare(mitt); policyAt = Math.max(policyAt, mitt.at || 0); }
+        return { policy, policyAt, legacyDecisions: base.decisions, logged: [p1, mitt].filter(Boolean) };
     }
+    // A decision document without its log copy fields (logKey, entry).
+    function bare(d) { if (!d || typeof d !== 'object') return d; const o = Object.assign({}, d); delete o.logKey; delete o.entry; return o; }
     // The decision log: the older single document's entries plus one document per entry since, newest last.
-    async function loadPolicy(code, meta, decKeys) {
+    // From v0.19.12 each decision document (P1 Hold, MITT, markings, a cleared call for help) also carries its own
+    // log entry, so if the log entry's own write is lost (Netlify Blobs cannot write two documents together), the
+    // entry is still shown. allKeys: every log entry key there is (decKeys may be only the newest).
+    async function loadPolicy(code, meta, decKeys, allKeys, otherLogged) {
         const f = await loadPolicyFields(code, meta);
-        const keys = decKeys || entries(await store.list(`i/${code}/dec/`)).map(e => e.key);
+        const all = allKeys || decKeys || entries(await store.list(`i/${code}/dec/`)).map(e => e.key);
+        const keys = decKeys || all.slice().sort().slice(-DECISIONS_MAX);
         const extra = keys.length ? await getEach(store, keys) : [];
         const fromDocs = keys.map((k, i) => ({ k, d: extra[i] })).filter(x => x.d).sort((a, b) => a.k < b.k ? -1 : a.k > b.k ? 1 : 0).map(x => x.d);
-        const decisions = f.legacyDecisions.concat(fromDocs).slice(-DECISIONS_MAX);
+        const have = new Set(all);
+        const healed = f.logged.concat(otherLogged || []).filter(d => d && d.logKey && d.entry && !have.has(d.logKey)).map(d => d.entry);
+        const merged = healed.length ? fromDocs.concat(healed).sort((a, b) => (a.at || 0) - (b.at || 0)) : fromDocs;
+        const decisions = f.legacyDecisions.concat(merged).slice(-DECISIONS_MAX);
         return { policy: f.policy, policyAt: f.policyAt, decisions };
     }
     // The map markings: one document per marking (v0.19.10) laid over the older single document, if there is one.
@@ -326,7 +376,7 @@ function createCore(opts) {
         const marks = lib.normaliseMapMarks(Array.from(byId.values()).sort((a, b) => ((a.at || 0) - (b.at || 0)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)));
         const marksAt = st ? st.at || 0 : (legacyDoc ? legacyDoc.marksAt || 0 : (fresh ? 0 : meta.marksAt || 0));
         const by = st ? st.by || '' : (legacyDoc ? legacyDoc.by || '' : '');
-        return { marks, marksAt, by };
+        return { marks, marksAt, by, status: st || null };
     }
     // Meta changes are written onto a fresh copy, so two requests at once lose as little as possible.
     async function touchMeta(code, change) {
@@ -385,6 +435,8 @@ function createCore(opts) {
         const meta = { v: 2, code, salt, keySecret: crypto.randomBytes(16).toString('hex'), pinHash: hashPin(salt, pin), cmdHash: hashPin(salt, commanderPin), viewHash: hashPin(salt, viewPin), name: str(body.name, 80), incidentCode: lib.normaliseIncidentCode(body.incidentCode), training: !!body.training, createdAt: t, updatedAt: t, createdBy: { deviceId, triager: str(body.triager, 80) }, ccs: null, methane: null, seq: 1 };
         await store.set(keyMeta(code), meta);
         await store.set(keyDev(code, deviceId), Object.assign({ deviceId, triager: str(body.triager, 80), role: 'creator', joinedAt: t, lastSeen: t, records: 0, app: str(body.app, 40), keyed: true }));
+        // The change numbers and the stored casualty count start here (v0.19.12).
+        await store.incr(keyVer(code), { r: 1, d: 1, p: 1, c: 0 });
         log('created', code);
         return reply(201, { code, pin, commanderPin, viewPin, deviceKey: deviceKey(meta, deviceId), accessKey: accessKey(meta, 'commander'), createdAt: t, expiresAt: t + TTL_MS, ttlMs: TTL_MS });
     }
@@ -407,8 +459,30 @@ function createCore(opts) {
         const devDoc = Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40), keyed: true });
         delete devDoc.oldApp;
         await store.set(keyDev(code, deviceId), devDoc);
+        await store.incr(keyVer(code), { d: 1 });
         log('joined', code, deviceId);
-        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, deviceKey: deviceKey(a.meta, deviceId), accessKey: accessKey(a.meta, a.level) });
+        return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, singlePin: !a.meta.cmdHash, deviceKey: deviceKey(a.meta, deviceId), accessKey: accessKey(a.meta, a.level) });
+    }
+
+    // Room for new casualties, from the incident's stored count (i/<CODE>/ver field c), added to atomically before it is
+    // read back, so reports sent together cannot all slip under the limit. Returns the uids refused because the
+    // incident is full, and whether casualties have been refused before (hadFull).
+    async function reserveRecords(code, uids) {
+        const n = uids.length;
+        const [v] = await store.counts([keyVer(code)]);
+        const hadFull = !!(v && v.f > 0);
+        // An incident from before v0.19.12 has no stored count: the records are counted once, then the count is kept.
+        if (!v || typeof v.c !== 'number') await store.incr(keyVer(code), { c: entries(await store.list(`i/${code}/r/`)).length + n });
+        else await store.incr(keyVer(code), { c: n });
+        const [after] = await store.counts([keyVer(code)]);
+        const total = (after && after.c) || 0;
+        if (total <= MAX_RECORDS) return { refused: new Set(), hadFull };
+        // Over the limit: this report's share of the excess is refused and taken off the count again. Reports sent at
+        // the same moment can each see the other's share and refuse a little too much; the phones send those again
+        // with their next report, so they get in then.
+        const refuse = Math.min(n, total - MAX_RECORDS);
+        await store.incr(keyVer(code), { c: -refuse });
+        return { refused: new Set(uids.slice(n - refuse)), hadFull };
     }
 
     async function push(code, pin, body, client, key, devKey) {
@@ -431,7 +505,6 @@ function createCore(opts) {
         const t = now();
         let accepted = 0, kept = 0;
         const rejected = [];
-        let known = null;
         // Clean every record, read what the server already has for them in one go, then write the batch together.
         const cleaned = [];
         const seenUid = new Set();
@@ -447,30 +520,47 @@ function createCore(opts) {
             cleaned.push(rec);
         }
         const current = cleaned.length ? await getEach(store, cleaned.map(r => keyRec(code, r.uid))) : [];
-        const writes = [];
+        const writes = [], fresh = [];
+        const curOf = new Map();
         cleaned.forEach((rec, i) => {
             const cur = current[i];
             if (cur && (cur.updatedAt || 0) > (rec.updatedAt || 0)) { kept++; return; } // an older copy never overwrites a newer one
-            if (!cur) {
-                if (known === null) known = -1; // counted below, once
-                rec._new = true;
-            }
+            if (cur) curOf.set(rec.uid, cur); else fresh.push(rec.uid);
             writes.push(rec);
         });
-        if (writes.some(r => r._new)) known = entries(await store.list(`i/${code}/r/`)).length;
+        // New casualties are counted against the incident's limit with a stored count, not by listing every record
+        // (v0.19.12: 3,000 reads per report at 3,000 casualties).
+        const res = fresh.length ? await reserveRecords(code, fresh) : { refused: new Set(), hadFull: false };
+        const full = [];
         const toWrite = [];
         for (const rec of writes) {
-            if (rec._new) {
-                delete rec._new;
-                if (known >= MAX_RECORDS_PER_INCIDENT) { rejected.push(rec.uid); continue; }
-                known++;
-            }
+            if (res.refused.has(rec.uid)) { full.push(rec); continue; }
             rec.reportedBy = deviceId;
             rec.reportedAt = t;
+            // Which phone first sent this casualty, so the commander screen can show when another phone changed it.
+            const cur = curOf.get(rec.uid);
+            rec.firstReportedBy = cur ? (cur.firstReportedBy || cur.reportedBy || deviceId) : deviceId;
             toWrite.push([keyRec(code, rec.uid), rec]);
         }
         await setEach(store, toWrite);
         accepted = toWrite.length;
+        // The change feed: which casualties this report changed, so commander screens read only those.
+        if (accepted) await store.set(feedKey(code, now()), { at: t, u: toWrite.map(x => x[1].uid) });
+        // The incident is full: the casualties it refused are kept (who and what only) so the commander screen can say
+        // they exist, and the phone keeps them as not sent and tries again (v0.19.12: they were silently lost).
+        let decisionsChanged = false;
+        if (full.length) {
+            const fk = full.map(r => keyFull(code, r.uid));
+            const had = await getEach(store, fk);
+            const add = full.filter((r, i) => !had[i]).map(r => [keyFull(code, r.uid), { uid: r.uid, id: r.id, cardNo: r.cardNo || '', category: r.category, sector: r.sector || '', device: deviceId, triager: str(r.triager || body.triager, 80), at: t }]);
+            if (add.length) { await setEach(store, add); await store.incr(keyVer(code), { f: add.length }); decisionsChanged = true; }
+            log('full', code, full.length);
+        }
+        // A casualty refused earlier and taken now (room was made, or the count was corrected) is no longer listed as refused.
+        if (res.hadFull && accepted) {
+            const nowIn = toWrite.map(x => x[1].uid).filter(u => fresh.indexOf(u) > -1);
+            if (nowIn.length) { await deleteEach(store, nowIn.map(u => keyFull(code, u))); decisionsChanged = true; }
+        }
         let newCcs = null;
         if (body.ccs && num(body.ccs.lat) !== null && num(body.ccs.lng) !== null) {
             const ccs = lib.normaliseLocation(body.ccs);
@@ -530,11 +620,19 @@ function createCore(opts) {
         }
         // Map markings ride back on reports and heartbeats, so linked phones pick them up without another request.
         // A phone that says which markings it has (marksAt, from v0.19.10) gets them only when they have changed.
+        // Commander screens learn what changed from the change numbers: the phones list always (a report is also a
+        // heartbeat), the casualties when one was taken or the CCS or METHANE changed, decisions when the refused list changed.
+        await store.incr(keyVer(code), Object.assign({ d: 1 }, (accepted || newCcs || newMethane) ? { r: 1 } : {}, decisionsChanged ? { p: 1 } : {}));
         const phoneMarksAt = num(body.marksAt);
         const [pol, mAt, clr] = await Promise.all([loadPolicyFields(code, m), loadMarksAt(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
         const mk = phoneMarksAt !== null && phoneMarksAt === mAt.marksAt ? null : await loadMarks(code, m);
         const out = { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: m.updatedAt + TTL_MS, marksAt: mk ? mk.marksAt : mAt.marksAt, policy: pol.policy, policyAt: pol.policyAt, duress: withClear(dev.duress, clr) || null, clockSkewMs: Math.round(skew) };
         if (mk) out.marks = mk.marks;
+        // The incident is full: these casualties were not stored (they are also in rejected, for older phones). The
+        // phone keeps them as not sent, warns its user and tries again with later reports.
+        if (full.length) { full.forEach(r => rejected.push(r.uid)); out.full = full.map(r => r.uid); out.incidentFull = true; out.maxRecords = MAX_RECORDS; }
+        // An incident from before v0.19.6 has one PIN for everything: the phone shows it as the PIN to link phones.
+        if (!meta.cmdHash) out.singlePin = true;
         return reply(200, out);
     }
 
@@ -569,14 +667,111 @@ function createCore(opts) {
         const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return o; });
         // Only the newest entries of the decision log are read and shown; none is ever deleted before the incident is
         // (v0.19.10 retest: pruning removed decisions from the record), so the cost of a read stays bounded.
-        const decKeys = extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key).sort().slice(-DECISIONS_MAX);
-        const [pol, mk] = await Promise.all([loadPolicy(code, meta, decKeys), loadMarks(code, meta, extra.filter(e => e.key.indexOf('/mk/') > -1).map(e => e.key))]);
+        const allDec = extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key).sort();
+        const mk = await loadMarks(code, meta, extra.filter(e => e.key.indexOf('/mk/') > -1).map(e => e.key));
+        const pol = await loadPolicy(code, meta, allDec.slice(-DECISIONS_MAX), allDec, Object.keys(clears).map(k => clears[k]).concat(mk.status ? [mk.status] : []));
         records.sort((x, y) => ((x.category in ORDER ? ORDER[x.category] : 99) - (y.category in ORDER ? ORDER[y.category] : 99)) || (x.timestamp || 0) - (y.timestamp || 0));
         devices.sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         log('read', code);
         // The triagers' PIN opens the screen as view only: only the commander PIN can change anything.
         const viewOnly = a.level !== 'commander';
         return reply(200, { code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, marks: mk.marks, marksAt: mk.marksAt, marksBy: mk.by, policy: pol.policy, policyAt: pol.policyAt, decisions: pol.decisions, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta, a.level), devices, records, serverTime: t, seq }, { ETag: etag, 'X-Incident-Seq': seq });
+    }
+
+    // One part of the incident's casualties for a first load, in record-key order after `after` (a record key), up to
+    // about PAGE_LIMIT bytes, so a big incident with long notes never makes one reply too big or too slow (v0.19.12:
+    // 6.7 MB in one reply at 3,000 casualties). more: the uid to ask for the next part from, or null.
+    async function recordPage(code, after) {
+        const prefix = `i/${code}/r/`;
+        const records = [];
+        let bytes = 0, from = after || '', last = '';
+        for (;;) {
+            const part = await rangeOf(store, prefix, from, PAGE_DOCS);
+            for (const x of part) {
+                const size = JSON.stringify(x.value).length;
+                if (records.length && bytes + size > PAGE_LIMIT) return { records, more: last.slice(prefix.length) };
+                records.push(x.value); bytes += size; last = x.key;
+            }
+            if (part.length < PAGE_DOCS) return { records, more: null };
+            from = part[part.length - 1].key;
+        }
+    }
+    // Commander screens from v0.19.12 (x-incident-sync: 2). The screen sends back the change numbers it has (ver,
+    // "r.d.p.<access>") and when it last read the casualties (cursor, server time). Nothing changed: 304 for a few
+    // reads. Otherwise only what changed comes back: the casualties in the change feed since the cursor (less a
+    // margin), the phones if they changed, the decisions if they changed (delta: true). A first load, a screen away
+    // for hours or a very busy spell gets everything, the casualties in parts (more, then x-incident-page).
+    async function readSync(code, pin, client, key, h) {
+        const a = await authed(code, pin, client, 'read', key);
+        if (a.status) return a;
+        const meta = a.meta;
+        const t = now();
+        // Particular casualties the screen found it was missing (from a delta's check list), at most 50 at a time.
+        if (h.uids) {
+            const uids = String(h.uids).split(',').map(u => u.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)).filter(Boolean).slice(0, 50);
+            return reply(200, { sync: 2, page: true, records: uids.length ? await getMany(store, uids.map(u => keyRec(code, u))) : [], more: null, serverTime: t });
+        }
+        if (h.page) {
+            const pg = await recordPage(code, keyRec(code, String(h.page).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)));
+            return reply(200, { sync: 2, page: true, records: pg.records, more: pg.more, serverTime: t });
+        }
+        const lv = a.level === 'commander' ? 'c' : a.level === 'member' ? 'm' : 'v';
+        let [v] = await store.counts([keyVer(code)]);
+        // An incident from before v0.19.12 gets its change numbers on its first read.
+        if (!v || !v.r || !v.d || !v.p) { await store.incr(keyVer(code), { r: v && v.r ? 0 : 1, d: v && v.d ? 0 : 1, p: v && v.p ? 0 : 1 }); [v] = await store.counts([keyVer(code)]); }
+        v = v || {};
+        const ver = [v.r || 0, v.d || 0, v.p || 0].join('.') + '.' + lv;
+        const given = String(h.ver || '');
+        if (given && given === ver) return { status: 304, body: null, headers: { 'X-Incident-Ver': ver, 'Cache-Control': 'no-store' } };
+        const parts = given.split('.');
+        const cursor = num(h.cursor);
+        let delta = parts.length === 4 && parts[3] === lv && cursor !== null && cursor > 0 && cursor <= t && t - cursor < SYNC_MAX_AGE_MS;
+        let changedR = !delta || Number(parts[0]) !== (v.r || 0);
+        let feedRecs = null, check = null;
+        if (delta && changedR) {
+            const feed = await rangeOf(store, `i/${code}/ch/`, keyFeedAt(code, cursor - FEED_MARGIN_MS), FEED_MAX + 1);
+            if (feed.length > FEED_MAX) delta = false;
+            else {
+                // Entries timed after the cursor are new: their casualties are sent. Entries from the margin before it
+                // were probably sent last time, so only which casualties and when are sent (check); the screen asks for
+                // any it does not have (x-incident-uids). A busy spell is then not sent again on every refresh.
+                const from = keyFeedAt(code, cursor);
+                const uidsOf = (x) => Array.isArray(x.value.u) ? x.value.u : [];
+                const uids = Array.from(new Set([].concat(...feed.filter(x => x.key >= from).map(uidsOf))));
+                const got = new Set(uids);
+                check = feed.filter(x => x.key < from).map(x => ({ at: x.value.at || 0, u: uidsOf(x).filter(u => !got.has(u)) })).filter(x => x.u.length);
+                feedRecs = uids.length ? await getMany(store, uids.map(u => keyRec(code, u))) : [];
+                if (JSON.stringify(feedRecs).length > PAGE_LIMIT) { delta = false; feedRecs = null; check = null; }
+            }
+        }
+        if (!delta) changedR = true;
+        const changedP = !delta || Number(parts[2]) !== (v.p || 0);
+        const changedD = changedP || !delta || Number(parts[1]) !== (v.d || 0);
+        const viewOnly = a.level !== 'commander';
+        const out = { sync: 2, ver, delta, code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta, a.level), serverTime: t, maxRecords: MAX_RECORDS, recordCount: typeof v.c === 'number' ? v.c : null, cursor: changedR ? t : cursor };
+        if (changedR) {
+            if (feedRecs) { out.records = feedRecs; if (check && check.length) out.check = check; }
+            else { const pg = await recordPage(code, ''); out.records = pg.records; out.more = pg.more; }
+        }
+        let clears = [];
+        if (changedD) {
+            const [devVals, clrVals] = await Promise.all([rangeAll(store, `i/${code}/d/`), rangeAll(store, `i/${code}/dc/`)]);
+            clears = clrVals.map(x => x.value);
+            const byDev = {};
+            clears.forEach(c => { if (c && c.deviceId) byDev[c.deviceId] = c; });
+            out.devices = devVals.map(x => x.value).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, byDev[o.deviceId]); return o; }).sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
+        }
+        if (changedP) {
+            const [f, decs, mk, fulls] = await Promise.all([loadPolicyFields(code, meta), rangeAll(store, `i/${code}/dec/`), loadMarks(code, meta), rangeOf(store, `i/${code}/full/`, '', FULL_LIST_MAX + 1)]);
+            const have = new Set(decs.map(x => x.key));
+            const healed = f.logged.concat(clears, mk.status ? [mk.status] : []).filter(d => d && d.logKey && d.entry && !have.has(d.logKey)).map(d => d.entry);
+            const own = healed.length ? decs.map(x => x.value).concat(healed).sort((x, y) => (x.at || 0) - (y.at || 0)) : decs.map(x => x.value);
+            Object.assign(out, { marks: mk.marks, marksAt: mk.marksAt, marksBy: mk.by, policy: f.policy, policyAt: f.policyAt, decisions: f.legacyDecisions.concat(own).slice(-DECISIONS_MAX) });
+            // Casualties refused because the incident was full: who and what, so the commander knows they exist.
+            out.full = { count: Math.min(fulls.length, FULL_LIST_MAX), more: fulls.length > FULL_LIST_MAX, list: fulls.slice(0, FULL_LIST_MAX).map(x => x.value) };
+        }
+        log('read', code, delta ? 'delta' : 'full');
+        return reply(200, out, { 'X-Incident-Ver': ver });
     }
 
     // Commander screen: replace the incident's map markings (cordons, RVP, loading point...). Full PIN only.
@@ -594,18 +789,15 @@ function createCore(opts) {
         const t = now();
         let clr = await store.get(keyClear(code, deviceId));
         if (dev.duress && !withClear(dev.duress, clr).clearedAt) {
-            clr = { deviceId, at: dev.duress.at, clearedAt: t, clearedBy: by };
+            const logKey = decKey(code, t), entry = { at: t, what: 'duress-cleared', device: deviceId, triager: dev.triager || '', by };
+            clr = { deviceId, at: dev.duress.at, clearedAt: t, clearedBy: by, logKey, entry };
             await store.set(keyClear(code, deviceId), clr);
-            await addDecision(code, a.meta, { what: 'duress-cleared', device: deviceId, triager: dev.triager || '', by });
+            await store.set(logKey, entry);
             await touchMeta(code);
+            await store.incr(keyVer(code), { p: 1, d: 1 });
             log('duress-cleared', code, deviceId);
         }
         return reply(200, { ok: true, duress: withClear(dev.duress, clr) || null });
-    }
-    // Every commander decision is kept with who made it and when (shown on the commander screen).
-    async function addDecision(code, meta, d) {
-        const at = now();
-        await store.set(decKey(code, at), Object.assign({ at }, d));
     }
 
     // Commander screen: add or remove map markings (cordons, RVP, loading point...). Commander PIN only.
@@ -649,9 +841,11 @@ function createCore(opts) {
             await deleteEach(store, newIds.map(id => keyMark(code, id)));
             return error(409, 'too_many_marks', `The map can hold at most ${lib.MAP_MARKS_MAX} markings. Remove one first.`);
         }
-        await store.set(keyPol(code, 'marks'), olderIncident ? { at: t, by, migrated: true } : { at: t, by });
-        await addDecision(code, meta, { what: 'marks', count: after.size, added: add.length, removed: remove.length, by });
+        const logKey = decKey(code, t), entry = { at: t, what: 'marks', count: after.size, added: add.length, removed: remove.length, by };
+        await store.set(keyPol(code, 'marks'), Object.assign(olderIncident ? { at: t, by, migrated: true } : { at: t, by }, { logKey, entry }));
+        await store.set(logKey, entry);
         await touchMeta(code);
+        await store.incr(keyVer(code), { p: 1 });
         const marks = (await loadMarks(code, meta)).marks;
         log('marks', code, marks.length);
         return reply(200, { ok: true, marks, marksAt: t });
@@ -679,17 +873,22 @@ function createCore(opts) {
         if (!p1By && !mittBy) return error(400, 'bad_request', 'Nothing to change.');
         // Each field is its own document and each log entry its own document: nothing here reads and rewrites.
         const writes = [];
+        // Each decision document carries its own log entry too, so the log is complete even if the entry's own
+        // document is not written (Netlify Blobs has no writes-together; Firestore writes the batch together).
         if (p1By) {
-            writes.push([keyPol(code, 'p1hold'), { on: !!body.p1Hold.on, at: t, by: p1By }]);
-            writes.push([decKey(code, t), { at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by: p1By }]);
+            const logKey = decKey(code, t), entry = { at: t, what: body.p1Hold.on ? 'p1hold-on' : 'p1hold-off', by: p1By };
+            writes.push([keyPol(code, 'p1hold'), { on: !!body.p1Hold.on, at: t, by: p1By, logKey, entry }]);
+            writes.push([logKey, entry]);
         }
         if (mittBy) {
-            writes.push([keyPol(code, 'mitt'), { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by: mittBy, groups }]);
-            writes.push([decKey(code, t), { at: t, what: 'mitt', groups, by: mittBy }]);
+            const logKey = decKey(code, t), entry = { at: t, what: 'mitt', groups, by: mittBy };
+            writes.push([keyPol(code, 'mitt'), { id: t.toString(36) + crypto.randomBytes(3).toString('hex'), at: t, by: mittBy, groups, logKey, entry }]);
+            writes.push([logKey, entry]);
         }
         await setEach(store, writes);
         const out = lib.normalisePolicy((await loadPolicyFields(code, a.meta)).policy);
         await touchMeta(code);
+        await store.incr(keyVer(code), { p: 1 });
         log('policy', code);
         return reply(200, { ok: true, policy: out, policyAt: t });
     }
@@ -771,6 +970,7 @@ function createCore(opts) {
         if (!body || typeof body !== 'object') body = {};
         try {
             if (method === 'POST' && !parts.length) return await create(body, client);
+            if (method === 'GET' && parts.length === 1 && headers['x-incident-sync'] === '2') return await readSync(code, pin, client, key, { ver: headers['x-incident-ver'] || '', cursor: headers['x-incident-cursor'] || '', page: headers['x-incident-page'] || '', uids: headers['x-incident-uids'] || '' });
             if (method === 'GET' && parts.length === 1) return await read(code, pin, headers['if-none-match'] || '', client, headers['x-incident-seq'] || '', key);
             if (method === 'POST' && action === 'join') return await join(code, pin, body, client, key);
             if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client, key, devKey);
@@ -786,7 +986,7 @@ function createCore(opts) {
         }
     }
 
-    return { handle, cleanup, create, join, push, read, close, setMarks, setPolicy, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_MAX_FAILURES, CREATE_MAX, CODE_LENGTH, PIN_LENGTH, READ_BATCH, TOMBSTONE_MS } };
+    return { handle, cleanup, create, join, push, read, readSync, close, setMarks, setPolicy, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_MAX_FAILURES, CREATE_MAX, CODE_LENGTH, PIN_LENGTH, READ_BATCH, TOMBSTONE_MS } };
 }
 
 // Simple in-memory store (tests and local development). opts.delay (ms) or opts.jitter (ms) make every operation
@@ -804,6 +1004,7 @@ function memoryStore(opts) {
         async incr(k, fields) { await wait(); const cur = m.has(k) ? JSON.parse(m.get(k)) : { n: {} }; const n = cur.n || {}; Object.keys(fields).forEach(f => { n[f] = (n[f] || 0) + fields[f]; }); m.set(k, JSON.stringify({ n })); },
         async counts(keys) { await wait(); return keys.map(k => m.has(k) ? (JSON.parse(m.get(k)).n || null) : null); },
         async list(prefix) { await wait(); return Array.from(m.keys()).filter(k => k.startsWith(prefix)).sort().map(k => ({ key: k, etag: crypto.createHash('sha1').update(m.get(k)).digest('hex').slice(0, 12) })); },
+        async range(prefix, after, limit) { await wait(); return Array.from(m.keys()).filter(k => k.startsWith(prefix) && (!after || k > after)).sort().slice(0, limit).map(k => ({ key: k, value: JSON.parse(m.get(k)) })).filter(x => x.value); },
         size() { return m.size; },
         ops() { return ops; },
     };

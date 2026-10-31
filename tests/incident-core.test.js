@@ -342,7 +342,7 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(g.body.records.length, 249);
         assert.strictEqual(g.body.records.find(x => x.uid === 'b0').category, 'P1');
         const closed = await core.handle('POST', `/api/incident/${c.code}/close`, H(c.commanderPin), '{}', '1.1.1.1');
-        assert.strictEqual(closed.body.deleted, 251);
+        assert.strictEqual(closed.body.deleted, 253); // 249 records, meta, phone, change numbers (v0.19.12) and one change-feed entry
     });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
         // A store where every operation takes a little time, so the two pushes interleave as they would on Netlify.
@@ -819,6 +819,227 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(g.body.decisions.length, 200);
         assert.strictEqual(g.body.decisions[199].by, 'Dr 259');
         assert.strictEqual((await store.list(`i/${inc.code}/dec/`)).length, 260);
+    });
+    // ---------- v0.19.12: 3,000-casualty test ----------
+    const S = (pin, extra) => Object.assign({ 'x-incident-pin': pin, 'x-incident-sync': '2' }, extra || {});
+    const many = (prefix, n, extra) => Array.from({ length: n }, (_, i) => rec(prefix + i, prefix.toUpperCase() + '-' + i, 'P3', Object.assign({ updatedAt: clock }, extra || {})));
+    const joinAs = async (c, inc, dev, ip) => (await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: dev, triager: 'Medic ' + dev }), ip || '3.3.3.3')).body;
+    await test('v0.19.12: a full incident refuses new casualties with "incident full", lists them for the commander, and still takes updates', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock, maxRecords: 5 });
+        const inc = await mk(c);
+        let r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('f', 4) }), '1.1.1.1');
+        assert.strictEqual(r.body.accepted, 4); assert.ok(!r.body.incidentFull);
+        r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('g', 3) }), '1.1.1.1');
+        assert.strictEqual(r.status, 200);
+        assert.strictEqual(r.body.accepted, 1);
+        assert.strictEqual(r.body.incidentFull, true);
+        assert.deepStrictEqual(r.body.full.sort(), ['g1', 'g2']);
+        assert.ok(r.body.rejected.indexOf('g1') > -1, 'older phones see them as rejected too');
+        // Sent again: still refused, and listed once each on the commander screen.
+        clock += 1000;
+        r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('g', 3).slice(1) }), '1.1.1.1');
+        assert.deepStrictEqual(r.body.full.sort(), ['g1', 'g2']);
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        assert.strictEqual(g.body.records.length, 5);
+        assert.strictEqual(g.body.full.count, 2);
+        assert.deepStrictEqual(g.body.full.list.map(x => x.id).sort(), ['G-1', 'G-2']);
+        assert.strictEqual(g.body.full.list[0].device, 'DEVA');
+        // An update to a casualty already stored is still taken.
+        clock += 1000;
+        r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('f0', 'F-0', 'P1', { updatedAt: clock })] }), '1.1.1.1');
+        assert.strictEqual(r.body.accepted, 1); assert.ok(!r.body.incidentFull);
+        assert.strictEqual((await store.counts([`i/${inc.code}/ver`]))[0].c, 5);
+    });
+    await test('v0.19.12: five phones adding at the same moment never take an incident past its limit, and retries fill it exactly', async () => {
+        const store = makeStore({ jitter: 4 });
+        const c = createCore({ store, now: () => clock, maxRecords: 50 });
+        const inc = await mk(c);
+        const devs = ['DEVB', 'DEVC', 'DEVD', 'DEVE', 'DEVF'];
+        for (const d of devs) await joinAs(c, inc, d);
+        const send = (d, recs) => c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: d, records: recs }), '3.3.3.3');
+        const res = await Promise.all(devs.map(d => send(d, many(d.toLowerCase(), 20))));
+        const stored = () => store.list(`i/${inc.code}/r/`).then(l => l.length);
+        assert.ok(await stored() <= 50, 'never past the limit: ' + await stored());
+        assert.strictEqual(res.reduce((n, r) => n + r.body.accepted + (r.body.full || []).length, 0), 100);
+        // Each phone sends its refused casualties again (as the app does with its next report).
+        clock += 60000;
+        for (let i = 0; i < devs.length; i++) { const left = new Set(res[i].body.full || []); await send(devs[i], many(devs[i].toLowerCase(), 20).filter(x => left.has(x.uid))); }
+        assert.strictEqual(await stored(), 50);
+    });
+    await test('v0.19.12: an incident from before the stored count is counted once, then kept', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock, maxRecords: 6 });
+        const inc = await mk(c);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('h', 4) }), '1.1.1.1');
+        await store.delete(`i/${inc.code}/ver`);   // as an incident made before v0.19.12
+        const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('k', 3) }), '1.1.1.1');
+        assert.strictEqual(r.body.accepted, 2);
+        assert.strictEqual(r.body.full.length, 1);
+    });
+    await test('v0.19.12: a commander screen gets 304 for a few reads when nothing changed, and only the changes otherwise', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        for (let i = 0; i < 3; i++) await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('s' + i + '_', 200) }), '1.1.1.1');
+        const CH = (extra) => S(inc.commanderPin, extra);
+        // (Changes from the 30 seconds before a read are read again next time, in case one finished writing late.)
+        clock += 120000;
+        let g = await c.handle('GET', `/api/incident/${inc.code}`, CH(), '', '2.2.2.2');
+        assert.strictEqual(g.body.sync, 2); assert.strictEqual(g.body.delta, false);
+        assert.strictEqual(g.body.records.length, 600); assert.ok(!g.body.more);
+        assert.ok(Array.isArray(g.body.devices) && g.body.policy && Array.isArray(g.body.decisions));
+        let ver = g.body.ver, cursor = g.body.cursor;
+        clock += 1000;
+        const before = store.ops ? store.ops() : 0;
+        g = await c.handle('GET', `/api/incident/${inc.code}`, CH({ 'x-incident-ver': ver, 'x-incident-cursor': String(cursor) }), '', '2.2.2.2');
+        assert.strictEqual(g.status, 304);
+        if (store.ops) assert.ok(store.ops() - before <= 6, 'no-change read cost ' + (store.ops() - before) + ' store operations');
+        // One casualty changes: only it comes back, with the phones (that report was also a heartbeat), not the decisions.
+        clock += 1000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('s1_7', 'S1_-7', 'P1', { updatedAt: clock })] }), '1.1.1.1');
+        clock += 1000;
+        g = await c.handle('GET', `/api/incident/${inc.code}`, CH({ 'x-incident-ver': ver, 'x-incident-cursor': String(cursor) }), '', '2.2.2.2');
+        assert.strictEqual(g.body.delta, true);
+        assert.deepStrictEqual(g.body.records.map(r => r.uid), ['s1_7']);
+        assert.strictEqual(g.body.records[0].category, 'P1');
+        assert.ok(Array.isArray(g.body.devices));
+        assert.strictEqual(g.body.decisions, undefined);
+        ver = g.body.ver; cursor = g.body.cursor;
+        // A heartbeat only: phones, no casualties.
+        clock += 1000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [], battery: 40 }), '1.1.1.1');
+        g = await c.handle('GET', `/api/incident/${inc.code}`, CH({ 'x-incident-ver': ver, 'x-incident-cursor': String(cursor) }), '', '2.2.2.2');
+        assert.strictEqual(g.body.records, undefined);
+        assert.strictEqual(g.body.devices[0].battery, 40);
+        assert.strictEqual(g.body.cursor, cursor, 'the casualty cursor only moves when casualties are read');
+        ver = g.body.ver;
+        // A decision: the decisions come back.
+        clock += 1000;
+        await c.handle('POST', `/api/incident/${inc.code}/policy`, H(inc.commanderPin), JSON.stringify({ p1Hold: { on: true, by: 'Dr Z' } }), '2.2.2.2');
+        g = await c.handle('GET', `/api/incident/${inc.code}`, CH({ 'x-incident-ver': ver, 'x-incident-cursor': String(cursor) }), '', '2.2.2.2');
+        assert.strictEqual(g.body.policy.p1Hold.on, true);
+        assert.strictEqual(g.body.decisions[g.body.decisions.length - 1].by, 'Dr Z');
+        assert.strictEqual(g.body.policy.p1Hold.logKey, undefined, 'the log copy stays on the server');
+    });
+    await test('v0.19.12: a change written a little after the time in its key is still picked up', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        let g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        const ver = g.body.ver, cursor = g.body.cursor;
+        clock -= 20000;   // a report that started 20 s before the screen's read finishes after it
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('late1', 'L-1', 'P2', { updatedAt: clock })] }), '1.1.1.1');
+        clock += 25000;
+        g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-ver': ver, 'x-incident-cursor': String(cursor) }), '', '2.2.2.2');
+        assert.strictEqual(g.body.delta, true);
+        // It is timed before the screen's last read, so it is listed to check (not sent), and the screen asks for it.
+        assert.deepStrictEqual(g.body.records, []);
+        assert.deepStrictEqual(g.body.check.map(x => x.u), [['late1']]);
+        const m = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-uids': 'late1,nope' }), '', '2.2.2.2');
+        assert.deepStrictEqual(m.body.records.map(r => r.uid), ['late1']);
+    });
+    await test('v0.19.12: a busy spell just before a read is not sent again in full on the next refresh', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('busy', 200) }), '1.1.1.1');
+        clock += 2000;
+        let g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        clock += 5000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('busy3', 'BUSY-3', 'P1', { updatedAt: clock })] }), '1.1.1.1');
+        clock += 1000;
+        g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-ver': g.body.ver, 'x-incident-cursor': String(g.body.cursor) }), '', '2.2.2.2');
+        assert.strictEqual(g.body.delta, true);
+        assert.deepStrictEqual(g.body.records.map(r => r.uid), ['busy3']);
+        assert.strictEqual(g.body.check[0].u.length, 199, 'the earlier 200 only listed (less the one sent)');
+    });
+    await test('v0.19.12: a big first load comes in parts, and the parts hold every casualty once', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock, pageBytes: 20000 });
+        const inc = await mk(c);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('p', 120, { notes: 'x'.repeat(500) }) }), '1.1.1.1');
+        let g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        assert.ok(g.body.more, 'first part says there is more');
+        const got = g.body.records.slice();
+        let parts = 1;
+        while (g.body.more) {
+            g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-page': g.body.more }), '', '2.2.2.2');
+            assert.strictEqual(g.body.page, true);
+            assert.ok(JSON.stringify(g.body).length < 30000);
+            got.push(...g.body.records); parts++;
+        }
+        assert.ok(parts > 2);
+        assert.strictEqual(got.length, 120);
+        assert.strictEqual(new Set(got.map(r => r.uid)).size, 120);
+    });
+    await test('v0.19.12: a decision whose log entry was not written still shows in the log', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        await c.handle('POST', `/api/incident/${inc.code}/policy`, H(inc.commanderPin), JSON.stringify({ p1Hold: { on: true, by: 'Dr Y' } }), '2.2.2.2');
+        for (const e of await store.list(`i/${inc.code}/dec/`)) await store.delete(e.key || e);   // as if the second write was lost
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        assert.strictEqual(g.body.decisions.length, 1);
+        assert.strictEqual(g.body.decisions[0].by, 'Dr Y');
+        const old = await c.handle('GET', `/api/incident/${inc.code}`, H(inc.commanderPin), '', '2.2.2.2');
+        assert.strictEqual(old.body.decisions.length, 1, 'older screens see it too');
+    });
+    await test('a joined phone can change another phone\'s casualty (re-triage); the screen can see who first sent it', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('o1', 'O-1', 'P3', { updatedAt: clock })] }), '1.1.1.1');
+        await joinAs(c, inc, 'DEVB');
+        clock += 1000;
+        const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVB', records: [rec('o1', 'O-1', 'P1', { updatedAt: clock })] }), '3.3.3.3');
+        assert.strictEqual(r.body.accepted, 1);
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        const o = g.body.records.find(x => x.uid === 'o1');
+        assert.strictEqual(o.category, 'P1');
+        assert.strictEqual(o.reportedBy, 'DEVB');
+        assert.strictEqual(o.firstReportedBy, 'DEVA');
+        // ...but an older copy from the first phone does not undo it.
+        const back = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('o1', 'O-1', 'P3', { updatedAt: clock - 500 })] }), '1.1.1.1');
+        assert.strictEqual(back.body.kept, 1);
+    });
+    await test('a phone cannot join under a device code another phone holds (409), nor past the phone limit (409)', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        const taken = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', triager: 'Impostor' }), '6.6.6.6');
+        assert.strictEqual(taken.status, 409); assert.strictEqual(taken.body.error, 'device_taken');
+        const dk = {};
+        for (let i = 1; i < 200; i++) { const j = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'P' + i, triager: 'x' }), '3.3.3.3'); assert.strictEqual(j.status, 200); dk['P' + i] = j.body.deviceKey; }
+        const over = await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'P200', triager: 'x' }), '3.3.3.3');
+        assert.strictEqual(over.status, 409); assert.strictEqual(over.body.error, 'too_many_devices');
+        // A phone already in the incident can still join again.
+        assert.strictEqual((await c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: 'P5', triager: 'x', deviceKey: dk.P5 }), '3.3.3.3')).status, 200);
+    });
+    await test('v0.19.12: an incident with one PIN (before v0.19.6) tells phones so, so they show it', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        const meta = await store.get(`i/${inc.code}/meta`); delete meta.cmdHash; delete meta.viewHash; await store.set(`i/${inc.code}/meta`, meta);
+        const j = await joinAs(c, inc, 'DEVB');
+        assert.strictEqual(j.level, 'commander'); assert.strictEqual(j.singlePin, true);
+        const p = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVB', records: [] }), '3.3.3.3');
+        assert.strictEqual(p.body.singlePin, true);
+    });
+    await test('v0.19.12: an access key from before v0.19.8 no longer counts as a triager\'s key', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        const meta = await store.get(`i/${inc.code}/meta`);
+        const crypto = require('crypto');
+        const sh = (x) => crypto.createHash('sha256').update(String(x)).digest('hex').slice(0, 16);
+        const legacyKey = sh(meta.keySecret + ':access:' + meta.code) + sh(meta.code + ':' + meta.keySecret);
+        // Lock the incident with wrong PINs from many addresses, then try the triagers' PIN from an address that has guessed.
+        for (let i = 0; i < 110; i++) await c.handle('GET', `/api/incident/${inc.code}`, H('000000'), '', '10.0.' + Math.floor(i / 20) + '.' + i);
+        const withOld = await c.handle('POST', `/api/incident/${inc.code}/join`, Object.assign(H(inc.pin), { 'x-incident-key': legacyKey }), JSON.stringify({ deviceId: 'DEVQ' }), '10.0.0.1');
+        assert.strictEqual(withOld.status, 429);
+        const withNew = await c.handle('POST', `/api/incident/${inc.code}/join`, Object.assign(H(inc.commanderPin), { 'x-incident-key': inc.accessKey }), JSON.stringify({ deviceId: 'DEVR' }), '10.0.0.1');
+        assert.strictEqual(withNew.status, 200);
     });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);

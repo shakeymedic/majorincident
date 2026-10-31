@@ -78,5 +78,46 @@ function rec(uid, id, category, t) {
     const nc = await core.handle('GET', `/api/incident/${c.code}`, Object.assign(H(c.pin), { 'x-incident-seq': full.headers['X-Incident-Seq'] }), '', '10.0.1.3');
     assert.strictEqual(nc.status, 304);
     console.log(`  ✓ "no change" poll costs ${store.ops() - ops1} store operations`);
+
+    // 6. v0.19.12, at 3,000 casualties: documents read (what Firestore bills) by a phone's report that adds a
+    // casualty, by a commander poll with no change, and by one with one change. A store wrapper counts documents
+    // returned, as Firestore does (a listing costs one read per document listed).
+    const big = memoryStore();
+    let docs = 0;
+    const counted = Object.assign({}, big, {
+        get: async (k) => { docs++; return big.get(k); },
+        list: async (p) => { const l = await big.list(p); docs += Math.max(1, l.length); return l; },
+        range: async (p, a, n) => { const l = await big.range(p, a, n); docs += Math.max(1, l.length); return l; },
+        counts: async (ks) => { docs += ks.length; return big.counts(ks); },
+        incr: big.incr, set: big.set, delete: big.delete,
+    });
+    const bc = createCore({ store: counted, now: () => clock });
+    const b = (await bc.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'BIG', keys: true }), '10.2.0.1')).body;
+    const BH = Object.assign(H(b.pin), { 'x-device-key': b.deviceKey });
+    for (let i = 0; i < 12; i++) await bc.handle('PUT', `/api/incident/${b.code}/records`, BH, JSON.stringify({ deviceId: 'BIG', records: Array.from({ length: 250 }, (_, k) => rec(`b${i}_${k}`, `B${i}-TST-${k}`, 'P3', clock)) }), '10.2.0.1');
+    clock += 60000;
+    docs = 0;
+    await bc.handle('PUT', `/api/incident/${b.code}/records`, BH, JSON.stringify({ deviceId: 'BIG', records: [rec('extra1', 'X-1', 'P1', clock)] }), '10.2.0.1');
+    const pushDocs = docs;
+    const S2 = Object.assign(H(b.commanderPin), { 'x-incident-sync': '2' });
+    const first = await bc.handle('GET', `/api/incident/${b.code}`, S2, '', '10.2.0.2');
+    let all = first.body.records.slice(), more = first.body.more;
+    while (more) { const pg = await bc.handle('GET', `/api/incident/${b.code}`, Object.assign({}, S2, { 'x-incident-page': more }), '', '10.2.0.2'); all = all.concat(pg.body.records); more = pg.body.more; }
+    assert.strictEqual(all.length, 3000, 'the 3,001st was refused');
+    clock += 60000;
+    const since = { 'x-incident-ver': first.body.ver, 'x-incident-cursor': String(first.body.cursor) };
+    docs = 0;
+    const same = await bc.handle('GET', `/api/incident/${b.code}`, Object.assign({}, S2, since), '', '10.2.0.2');
+    assert.strictEqual(same.status, 304);
+    const sameDocs = docs;
+    await bc.handle('PUT', `/api/incident/${b.code}/records`, BH, JSON.stringify({ deviceId: 'BIG', records: [rec('b3_7', 'B3-TST-7', 'P1', clock)] }), '10.2.0.1');
+    clock += 1000;
+    docs = 0;
+    const ch = await bc.handle('GET', `/api/incident/${b.code}`, Object.assign({}, S2, since), '', '10.2.0.2');
+    assert.strictEqual(ch.body.delta, true);
+    assert.deepStrictEqual(ch.body.records.map(r => r.uid), ['b3_7']);
+    const chDocs = docs;
+    console.log(`  ✓ 3,000 casualties: a report adding one reads ${pushDocs} documents; a "no change" poll ${sameDocs}; a poll with one change ${chDocs} (the v0.19.11 test estimated about 3,000, 3,000-6,000 and 6,000)`);
+    assert.ok(pushDocs < 30 && sameDocs < 10 && chDocs < 30, 'reads stay small at 3,000 casualties');
     console.log('\n✓ load test passed');
 })().catch(e => { console.error('\n✗ load test failed\n', e && e.stack || e); process.exit(1); });
