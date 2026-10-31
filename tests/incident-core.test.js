@@ -933,7 +933,26 @@ function rec(uid, id, category, extra) {
         clock += 25000;
         g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-ver': ver, 'x-incident-cursor': String(cursor) }), '', '2.2.2.2');
         assert.strictEqual(g.body.delta, true);
-        assert.deepStrictEqual(g.body.records.map(r => r.uid), ['late1']);
+        // It is timed before the screen's last read, so it is listed to check (not sent), and the screen asks for it.
+        assert.deepStrictEqual(g.body.records, []);
+        assert.deepStrictEqual(g.body.check.map(x => x.u), [['late1']]);
+        const m = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-uids': 'late1,nope' }), '', '2.2.2.2');
+        assert.deepStrictEqual(m.body.records.map(r => r.uid), ['late1']);
+    });
+    await test('v0.19.12: a busy spell just before a read is not sent again in full on the next refresh', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('busy', 200) }), '1.1.1.1');
+        clock += 2000;
+        let g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        clock += 5000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('busy3', 'BUSY-3', 'P1', { updatedAt: clock })] }), '1.1.1.1');
+        clock += 1000;
+        g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-ver': g.body.ver, 'x-incident-cursor': String(g.body.cursor) }), '', '2.2.2.2');
+        assert.strictEqual(g.body.delta, true);
+        assert.deepStrictEqual(g.body.records.map(r => r.uid), ['busy3']);
+        assert.strictEqual(g.body.check[0].u.length, 199, 'the earlier 200 only listed (less the one sent)');
     });
     await test('v0.19.12: a big first load comes in parts, and the parts hold every casualty once', async () => {
         const store = makeStore();

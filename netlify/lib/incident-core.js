@@ -706,6 +706,11 @@ function createCore(opts) {
         if (a.status) return a;
         const meta = a.meta;
         const t = now();
+        // Particular casualties the screen found it was missing (from a delta's check list), at most 50 at a time.
+        if (h.uids) {
+            const uids = String(h.uids).split(',').map(u => u.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)).filter(Boolean).slice(0, 50);
+            return reply(200, { sync: 2, page: true, records: uids.length ? await getMany(store, uids.map(u => keyRec(code, u))) : [], more: null, serverTime: t });
+        }
         if (h.page) {
             const pg = await recordPage(code, keyRec(code, String(h.page).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64)));
             return reply(200, { sync: 2, page: true, records: pg.records, more: pg.more, serverTime: t });
@@ -722,14 +727,21 @@ function createCore(opts) {
         const cursor = num(h.cursor);
         let delta = parts.length === 4 && parts[3] === lv && cursor !== null && cursor > 0 && cursor <= t && t - cursor < SYNC_MAX_AGE_MS;
         let changedR = !delta || Number(parts[0]) !== (v.r || 0);
-        let feedRecs = null;
+        let feedRecs = null, check = null;
         if (delta && changedR) {
             const feed = await rangeOf(store, `i/${code}/ch/`, keyFeedAt(code, cursor - FEED_MARGIN_MS), FEED_MAX + 1);
             if (feed.length > FEED_MAX) delta = false;
             else {
-                const uids = Array.from(new Set([].concat(...feed.map(x => Array.isArray(x.value.u) ? x.value.u : []))));
+                // Entries timed after the cursor are new: their casualties are sent. Entries from the margin before it
+                // were probably sent last time, so only which casualties and when are sent (check); the screen asks for
+                // any it does not have (x-incident-uids). A busy spell is then not sent again on every refresh.
+                const from = keyFeedAt(code, cursor);
+                const uidsOf = (x) => Array.isArray(x.value.u) ? x.value.u : [];
+                const uids = Array.from(new Set([].concat(...feed.filter(x => x.key >= from).map(uidsOf))));
+                const got = new Set(uids);
+                check = feed.filter(x => x.key < from).map(x => ({ at: x.value.at || 0, u: uidsOf(x).filter(u => !got.has(u)) })).filter(x => x.u.length);
                 feedRecs = uids.length ? await getMany(store, uids.map(u => keyRec(code, u))) : [];
-                if (JSON.stringify(feedRecs).length > PAGE_LIMIT) { delta = false; feedRecs = null; }
+                if (JSON.stringify(feedRecs).length > PAGE_LIMIT) { delta = false; feedRecs = null; check = null; }
             }
         }
         if (!delta) changedR = true;
@@ -738,7 +750,7 @@ function createCore(opts) {
         const viewOnly = a.level !== 'commander';
         const out = { sync: 2, ver, delta, code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta, a.level), serverTime: t, maxRecords: MAX_RECORDS, recordCount: typeof v.c === 'number' ? v.c : null, cursor: changedR ? t : cursor };
         if (changedR) {
-            if (feedRecs) out.records = feedRecs;
+            if (feedRecs) { out.records = feedRecs; if (check && check.length) out.check = check; }
             else { const pg = await recordPage(code, ''); out.records = pg.records; out.more = pg.more; }
         }
         let clears = [];
@@ -958,7 +970,7 @@ function createCore(opts) {
         if (!body || typeof body !== 'object') body = {};
         try {
             if (method === 'POST' && !parts.length) return await create(body, client);
-            if (method === 'GET' && parts.length === 1 && headers['x-incident-sync'] === '2') return await readSync(code, pin, client, key, { ver: headers['x-incident-ver'] || '', cursor: headers['x-incident-cursor'] || '', page: headers['x-incident-page'] || '' });
+            if (method === 'GET' && parts.length === 1 && headers['x-incident-sync'] === '2') return await readSync(code, pin, client, key, { ver: headers['x-incident-ver'] || '', cursor: headers['x-incident-cursor'] || '', page: headers['x-incident-page'] || '', uids: headers['x-incident-uids'] || '' });
             if (method === 'GET' && parts.length === 1) return await read(code, pin, headers['if-none-match'] || '', client, headers['x-incident-seq'] || '', key);
             if (method === 'POST' && action === 'join') return await join(code, pin, body, client, key);
             if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client, key, devKey);

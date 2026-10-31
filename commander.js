@@ -190,7 +190,18 @@ async function refreshNow() {
         if (!r.ok) throw new Error('Server error ' + r.status);
         const body = await r.json();
         if (body.sync === 2) {
-            if (body.delta && data && data.sync === 2) data = mergeDelta(data, body);
+            if (body.delta && data && data.sync === 2) {
+                data = mergeDelta(data, body);
+                // Changes from just before the last read are only listed (check): fetch any this screen does not have.
+                const have = new Map((data.records || []).map(x => [x.uid, x.reportedAt || 0]));
+                const missing = [];
+                (body.check || []).forEach(c => (c.u || []).forEach(u => { if (!have.has(u) || have.get(u) < (c.at || 0)) missing.push(u); }));
+                for (let i = 0; i < missing.length; i += 50) {
+                    const mr = await getIncident(Object.assign(hdrs(), { 'x-incident-sync': '2', 'x-incident-uids': missing.slice(i, i + 50).join(',') }));
+                    if (!mr.ok) throw new Error('Server error ' + mr.status);
+                    data = mergeDelta(data, { records: (await mr.json()).records || [] });
+                }
+            }
             else {
                 // A first load comes in parts (a big incident with long notes would not fit one reply).
                 let recs = body.records || [], more = body.more;
