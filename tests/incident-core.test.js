@@ -342,7 +342,7 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(g.body.records.length, 249);
         assert.strictEqual(g.body.records.find(x => x.uid === 'b0').category, 'P1');
         const closed = await core.handle('POST', `/api/incident/${c.code}/close`, H(c.commanderPin), '{}', '1.1.1.1');
-        assert.strictEqual(closed.body.deleted, 253); // 249 records, meta, phone, change numbers (v0.19.12) and one change-feed entry
+        assert.strictEqual(closed.body.deleted, 254); // 249 records, meta, phone, change numbers (v0.19.12), one change-feed entry and the minute's being-written count
     });
     await test('two phones pushing at the same moment never leave the commander screen a change behind', async () => {
         // A store where every operation takes a little time, so the two pushes interleave as they would on Netlify.
@@ -876,6 +876,69 @@ function rec(uid, id, category, extra) {
         const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('k', 3) }), '1.1.1.1');
         assert.strictEqual(r.body.accepted, 2);
         assert.strictEqual(r.body.full.length, 1);
+    });
+    await test('v0.19.12 check: a stored count that has run high is put right at the limit, so nothing is refused while there is room', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock, maxRecords: 10 });
+        const inc = await mk(c);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('d', 4) }), '1.1.1.1');
+        // As after resent batches, duplicate new casualties or a failed write: the count says 9, only 4 are stored.
+        await store.incr(`i/${inc.code}/ver`, { c: 5 });
+        const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('e', 6) }), '1.1.1.1');
+        assert.strictEqual(r.body.accepted, 6); assert.ok(!r.body.incidentFull, 'nothing refused: ' + JSON.stringify(r.body.full));
+        const held = async () => (await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2')).body.recordCount;
+        assert.strictEqual(await held(), 10, 'count put right');
+        const r2 = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('x', 1) }), '1.1.1.1');
+        assert.strictEqual(r2.body.full.length, 1);
+        assert.strictEqual(await held(), 10);
+    });
+    await test('v0.19.12 check: the same batch sent twice at once (a phone that timed out) does not use up room', async () => {
+        const store = makeStore({ jitter: 4 });
+        const c = createCore({ store, now: () => clock, maxRecords: 12 });
+        const inc = await mk(c);
+        const batch = JSON.stringify({ deviceId: 'DEVA', records: many('t', 6) });
+        await Promise.all([1, 2, 3].map(() => c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), batch, '1.1.1.1')));
+        // Sent together this close to the limit, the copies may each be refused (never stored twice); the phone sends
+        // the batch again with its next report.
+        clock += 60000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), batch, '1.1.1.1');
+        assert.strictEqual((await store.list(`i/${inc.code}/r/`)).length, 6);
+        const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('u', 6) }), '1.1.1.1');
+        assert.strictEqual(r.body.accepted, 6, 'room for 6 more: ' + JSON.stringify(r.body.full));
+        assert.strictEqual((await store.list(`i/${inc.code}/r/`)).length, 12);
+    });
+    await test('v0.19.12 check: an older incident counted by two reports at once is not counted twice', async () => {
+        const store = makeStore({ jitter: 4 });
+        const c = createCore({ store, now: () => clock, maxRecords: 20 });
+        const inc = await mk(c);
+        await joinAs(c, inc, 'DEVB');
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('o', 8) }), '1.1.1.1');
+        await store.delete(`i/${inc.code}/ver`);   // as an incident made before v0.19.12
+        const res = await Promise.all([['DEVA', 'p'], ['DEVB', 'q']].map(([d, pre]) => c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: d, records: many(pre, 3) }), '3.3.3.3')));
+        assert.strictEqual(res[0].body.accepted + res[1].body.accepted, 6, JSON.stringify(res.map(r => r.body.full)));
+        assert.strictEqual((await store.list(`i/${inc.code}/r/`)).length, 14);
+        // And the count stays usable: 6 more fit, the 7th does not.
+        const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('w', 7) }), '1.1.1.1');
+        assert.strictEqual(r.body.accepted, 6); assert.strictEqual(r.body.full.length, 1);
+    });
+    await test('v0.19.12 check: phones adding at the limit at the same moment, with a count that had run high, never pass the limit', async () => {
+        const store = makeStore({ jitter: 6 });
+        const c = createCore({ store, now: () => clock, maxRecords: 30 });
+        const inc = await mk(c);
+        const devs = ['DEVB', 'DEVC', 'DEVD', 'DEVE', 'DEVF', 'DEVG'];
+        for (const d of devs) await joinAs(c, inc, d);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('a', 20) }), '1.1.1.1');
+        await store.incr(`i/${inc.code}/ver`, { c: 7 });   // run high
+        const send = (d, recs) => c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: d, records: recs }), '3.3.3.3');
+        const res = await Promise.all(devs.map(d => send(d, many(d.toLowerCase(), 5))));
+        const stored = async () => (await store.list(`i/${inc.code}/r/`)).length;
+        assert.ok(await stored() <= 30, 'never past the limit: ' + await stored());
+        // Sent together at the limit, each report counts the others as being written and may refuse too much; the
+        // phones send those again with their next report, one after another, and the incident fills exactly.
+        clock += 60000;
+        for (let i = 0; i < devs.length; i++) { const left = new Set(res[i].body.full || []); if (left.size) await send(devs[i], many(devs[i].toLowerCase(), 5).filter(x => left.has(x.uid))); }
+        assert.strictEqual(await stored(), 30);
+        assert.strictEqual((await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2')).body.recordCount, 30, 'the commander screen is told 30');
     });
     await test('v0.19.12: a commander screen gets 304 for a few reads when nothing changed, and only the changes otherwise', async () => {
         const store = makeStore();

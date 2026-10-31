@@ -1345,6 +1345,18 @@ group('v0.11.0: demo incident', () => {
         assert.strictEqual(ok('NON_HCP', 'P2', 'P2'), true, 'no change');
         assert.match(lib.canChangeCategory('NON_HCP', 'P1', 'P3').why, /Re-triage/);
     });
+    await test('map bubbles: coloured by the most urgent casualty, Not Breathing straight after P1, evacuated only when nobody else', () => {
+        const S = (cats, evac) => lib.clusterSummary(cats.map((c, i) => ({ category: c, evacuated: !!(evac && evac[i]) })));
+        assert.strictEqual(S(['P3', 'P3', 'P3', 'P3', 'P3', 'P3', 'P3', 'P3', 'P3', 'NOT_BREATHING']).top, 'NOT_BREATHING');
+        assert.strictEqual(S(['P2', 'NOT_BREATHING', 'P1']).top, 'P1');
+        assert.strictEqual(S(['P2', 'P1_HOLD', 'NOT_BREATHING']).top, 'NOT_BREATHING');
+        assert.strictEqual(S(['P3', 'DEAD']).top, 'P3');
+        assert.deepStrictEqual(S(['P3', 'P1', 'P3', 'DEAD']).counts, [{ category: 'P1', n: 1 }, { category: 'P3', n: 2 }, { category: 'DEAD', n: 1 }]);
+        const e = S(['P1', 'P3'], [true, false]);
+        assert.strictEqual(e.top, 'P3'); assert.strictEqual(e.onScene, true);
+        const all = S(['P1', 'P3'], [true, true]);
+        assert.strictEqual(all.top, 'P1'); assert.strictEqual(all.onScene, false);
+    });
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);
     process.exit(failed === 0 ? 0 : 1);
 })();

@@ -964,6 +964,11 @@
     .map-row-meta { font-size:0.8rem; color:var(--nhs-grey); overflow-wrap:anywhere; }
     .map-row-dist { font-size:0.85rem; font-weight:bold; white-space:nowrap; }
     .mk-wrap { background:none; border:none; }
+    .cl { position:absolute; transform:translate(-50%, -50%); min-width:38px; padding:3px 5px 4px; border-radius:18px; border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,0.55); display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; white-space:nowrap; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .cl b { font-size:0.95rem; font-weight:900; line-height:1; }
+    .cl.cl-evac { opacity:0.6; }
+    .cl-cats { display:flex; gap:2px; }
+    .cl-cats i { font-style:normal; font-weight:800; font-size:0.66rem; line-height:1; padding:2px 4px; border-radius:6px; border:1px solid rgba(255,255,255,0.85); }
     .mk { width:34px; height:34px; border-radius:50%; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; font-weight:900; font-size:0.72rem; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; letter-spacing:-0.3px; }
     .mk.mk-tst { border:3px dashed #222; }
     .mk.mk-evac { opacity:0.55; }
@@ -5806,7 +5811,7 @@
         tiles.on('tileerror', () => { _mapTilesFailed = true; $('map-offline-note').style.display = 'block'; });
         tiles.on('load', () => { if (_mapTilesFailed) { _mapTilesFailed = false; $('map-offline-note').style.display = 'none'; } });
         L.control.scale({ imperial: false }).addTo(patientMap);
-        mapMarkerCluster = L.markerClusterGroup({ maxClusterRadius: 32, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19 });
+        mapMarkerCluster = L.markerClusterGroup({ maxClusterRadius: 32, spiderfyOnMaxZoom: true, showCoverageOnHover: false, disableClusteringAtZoom: 19, iconCreateFunction: clusterIcon });
         patientMap.addLayer(mapMarkerCluster);
         _mapCircles = L.layerGroup().addTo(patientMap);
         patientMap.on('click', onMapClick);
@@ -5824,6 +5829,17 @@
         const info = MITTLib.CATEGORY_INFO[p.category] || { colour: '#005EB8', text: '#fff' };
         const tail = String(p.id || '').replace(/^.*-/, '').slice(-4) || '•';
         return L.divIcon({ html: `<div class="mk${p.tool === 'TST' ? ' mk-tst' : ''}${p.evacuated ? ' mk-evac' : ''}" style="background:${info.colour};color:${info.text};">${escapeHTML(tail)}</div>`, className: 'mk-wrap', iconSize: [34, 34], iconAnchor: [17, 17], popupAnchor: [0, -14] });
+    }
+    // A bubble of grouped casualties takes the colour of its most urgent casualty (P1, Not Breathing, P1 Hold, P2, P3,
+    // Dead) and shows how many of each, as on the commander screen (v0.19.12 check: the phone's bubbles were still
+    // coloured by size, so a green bubble held four P1s and a Not Breathing).
+    function clusterIcon(cl) {
+        const ms = cl.getAllChildMarkers();
+        const s = MITTLib.clusterSummary(ms.map(m => ({ category: m.options.cat || '', evacuated: !!m.options.evac })));
+        const info = MITTLib.CATEGORY_INFO[s.top] || { colour: '#4C6272', text: '#fff' };
+        const chips = s.counts.map(x => { const i = MITTLib.CATEGORY_INFO[x.category]; return `<i style="background:${i.colour};color:${i.text}">${x.n}</i>`; }).join('');
+        const label = s.counts.map(x => `${x.n} ${MITTLib.CATEGORY_INFO[x.category].short}`).join(', ');
+        return L.divIcon({ html: `<div class="cl${s.onScene ? '' : ' cl-evac'}" style="background:${info.colour};color:${info.text}" aria-label="${escapeHTML(ms.length + ' casualties: ' + label)}"><b>${ms.length}</b><span class="cl-cats">${chips}</span></div>`, className: 'mk-wrap cl-wrap', iconSize: [0, 0] });
     }
     function popupHtml(entry, p) {
         const grid = MITTLib.toOsGridRef(p.lat, p.lng);
@@ -5847,7 +5863,7 @@
             if (!entry) return;
             p.tool = entry.tool;
             const info = MITTLib.CATEGORY_INFO[p.category] || { colour: '#005EB8' };
-            const m = L.marker([p.lat, p.lng], { icon: markerIcon(p), title: `${entry.id} ${catShort(entry.category)}` }).bindPopup(popupHtml(entry, p), { maxWidth: 260 });
+            const m = L.marker([p.lat, p.lng], { icon: markerIcon(p), title: `${entry.id} ${catShort(entry.category)}`, cat: entry.category, evac: !!entry.evacuated }).bindPopup(popupHtml(entry, p), { maxWidth: 260 });
             m._mitUid = p.uid;
             mapMarkerCluster.addLayer(m);
             if (p.acc !== null && p.acc >= 15 && entry.locationConfidence !== 'manual-corrected') _mapCircles.addLayer(L.circle([p.lat, p.lng], { radius: p.acc, color: info.colour, weight: 1, fillColor: info.colour, fillOpacity: 0.08, interactive: false }));

@@ -98,6 +98,10 @@ function rec(uid, id, category, t) {
     clock += 60000;
     docs = 0;
     await bc.handle('PUT', `/api/incident/${b.code}/records`, BH, JSON.stringify({ deviceId: 'BIG', records: [rec('extra1', 'X-1', 'P1', clock)] }), '10.2.0.1');
+    const firstFullDocs = docs;   // the first report past the limit counts for real (a listing), at most once a minute
+    clock += 1000;
+    docs = 0;
+    await bc.handle('PUT', `/api/incident/${b.code}/records`, BH, JSON.stringify({ deviceId: 'BIG', records: [rec('extra1', 'X-1', 'P1', clock)] }), '10.2.0.1');
     const pushDocs = docs;
     const S2 = Object.assign(H(b.commanderPin), { 'x-incident-sync': '2' });
     const first = await bc.handle('GET', `/api/incident/${b.code}`, S2, '', '10.2.0.2');
@@ -117,7 +121,7 @@ function rec(uid, id, category, t) {
     assert.strictEqual(ch.body.delta, true);
     assert.deepStrictEqual(ch.body.records.map(r => r.uid), ['b3_7']);
     const chDocs = docs;
-    console.log(`  ✓ 3,000 casualties: a report adding one reads ${pushDocs} documents; a "no change" poll ${sameDocs}; a poll with one change ${chDocs} (the v0.19.11 test estimated about 3,000, 3,000-6,000 and 6,000)`);
+    console.log(`  ✓ 3,000 casualties: the first report past the limit reads ${firstFullDocs} documents (a real count, at most once a minute); after that a report adding one reads ${pushDocs}; a "no change" poll ${sameDocs}; a poll with one change ${chDocs} (the v0.19.11 test estimated about 3,000, 3,000-6,000 and 6,000)`);
     assert.ok(pushDocs < 30 && sameDocs < 10 && chDocs < 30, 'reads stay small at 3,000 casualties');
     console.log('\n✓ load test passed');
 })().catch(e => { console.error('\n✗ load test failed\n', e && e.stack || e); process.exit(1); });

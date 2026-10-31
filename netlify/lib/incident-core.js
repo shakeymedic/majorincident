@@ -21,6 +21,7 @@ const MAX_BODY_BYTES = 512 * 1024;
 const MAX_RECORDS_PER_PUSH = 250;
 const MAX_RECORDS_PER_INCIDENT = 3000;
 const MAX_DEVICES_PER_INCIDENT = 200;
+const COUNT_FRESH_MS = 60 * 1000;           // a full incident is counted for real at most this often (v0.19.12 check)
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 // A wrong code and a wrong PIN get the same reply, so the reply does not say whether an incident exists.
 // An incident that has ended leaves a tombstone for two days, so its phones and screens are told "ended".
@@ -183,6 +184,8 @@ function createCore(opts) {
     const keyMarks = (code) => `i/${code}/marks`;               // pre-v0.19.10 incidents: every marking in one document
     const keyMark = (code, id) => `i/${code}/mk/${id}`;         // v0.19.10: one document per marking (two screens at once lose nothing)
     const keyClear = (code, id) => `i/${code}/dc/${id}`;
+    const keyInflight = (code, t) => `i/${code}/q/${Math.floor(t / 60000)}`; // casualties being written, by minute
+    const keyCount = (code) => `i/${code}/cnt`;                // last real count of casualties (see heldCount)
     const keyVer = (code) => `i/${code}/ver`;                   // v0.19.12 counters: r, d, p (change numbers), c (casualties stored)
     let feedSeq = 0;
     const keyFeedAt = (code, at) => `i/${code}/ch/` + Math.max(0, at).toString(36).padStart(9, '0');
@@ -467,22 +470,59 @@ function createCore(opts) {
     // Room for new casualties, from the incident's stored count (i/<CODE>/ver field c), added to atomically before it is
     // read back, so reports sent together cannot all slip under the limit. Returns the uids refused because the
     // incident is full, and whether casualties have been refused before (hadFull).
+    // How many casualties the incident holds, as an upper bound that never counts too few. The running total c only
+    // ever goes up when a report starts writing new casualties (and down for ones refused), so it can run high: a phone
+    // that timed out sends its batch again while the first copy is still being written, two copies of the same new
+    // casualty arrive together, or a write fails after its share was counted (v0.19.12 check). So the last real
+    // count is kept beside it (i/<CODE>/cnt: casualties stored plus being written, and what c was then), and the
+    // number is that count plus whatever c has added since. Taking a new real count only ever replaces the whole
+    // document, so two reports doing it at once cannot take anything off twice.
+    function heldCount(ver, snap) {
+        const c = ver && typeof ver.c === 'number' ? ver.c : null;
+        if (snap && typeof snap.c === 'number' && c !== null) return Math.max(0, (snap.real || 0) + (snap.writing || 0) + (c - snap.c));
+        return c;
+    }
     async function reserveRecords(code, uids) {
         const n = uids.length;
-        const [v] = await store.counts([keyVer(code)]);
-        const hadFull = !!(v && v.f > 0);
-        // An incident from before v0.19.12 has no stored count: the records are counted once, then the count is kept.
-        if (!v || typeof v.c !== 'number') await store.incr(keyVer(code), { c: entries(await store.list(`i/${code}/r/`)).length + n });
-        else await store.incr(keyVer(code), { c: n });
-        const [after] = await store.counts([keyVer(code)]);
-        const total = (after && after.c) || 0;
-        if (total <= MAX_RECORDS) return { refused: new Set(), hadFull };
-        // Over the limit: this report's share of the excess is refused and taken off the count again. Reports sent at
-        // the same moment can each see the other's share and refuse a little too much; the phones send those again
-        // with their next report, so they get in then.
-        const refuse = Math.min(n, total - MAX_RECORDS);
-        await store.incr(keyVer(code), { c: -refuse });
-        return { refused: new Set(uids.slice(n - refuse)), hadFull };
+        // What this report is about to write is also counted under the minute it started in (i/<CODE>/q/<minute>) and
+        // taken off again once written, so a real count can include reports still being written, which a listing of
+        // stored casualties does not. It is counted before c, so anything in c is also visible here.
+        const qk = keyInflight(code, now());
+        const [v0] = await store.counts([keyVer(code)]);
+        const hadFull = !!(v0 && v0.f > 0);
+        const older = !v0 || typeof v0.c !== 'number';   // an incident from before v0.19.12 has no running total
+        await store.incr(qk, { n });
+        await store.incr(keyVer(code), { c: n });
+        const [[v], snap] = await Promise.all([store.counts([keyVer(code)]), store.get(keyCount(code))]);
+        if (!older || snap) {
+            const held = heldCount(v, snap);
+            if (held !== null && held <= MAX_RECORDS) return { refused: new Set(), hadFull, qk, held: n };
+            // Over the limit on a real count taken in the last minute: refused on that, without listing again, so phones
+            // re-sending refused casualties with every report cost a few reads, not a listing each (at most one a minute).
+            if (held !== null && snap && now() - (snap.at || 0) < COUNT_FRESH_MS) {
+                const refuse = Math.max(0, Math.min(n, held - MAX_RECORDS));
+                if (refuse) { await store.incr(keyVer(code), { c: -refuse }); await store.incr(qk, { n: -refuse }); }
+                return { refused: new Set(uids.slice(n - refuse)), hadFull, qk, held: n - refuse };
+            }
+        }
+        // Possibly over the limit (or never counted): count for real. Only at the limit (at most once a minute while it
+        // stays full), or once for an older incident.
+        const real = entries(await store.list(`i/${code}/r/`)).length;
+        const t = now();
+        const qs = await store.counts([0, 1, 2].map(i => keyInflight(code, t - i * 60000)));
+        const writing = Math.max(0, qs.reduce((sum, q) => sum + ((q && q.n) || 0), 0));
+        const [cur] = await store.counts([keyVer(code)]);
+        await store.set(keyCount(code), { real, writing, c: (cur && cur.c) || 0, at: t });
+        // Everything stored or being written, this report included, against the limit. Reports sent together at the
+        // limit each see the others and may refuse a little too much (never too little); the phones send those again
+        // with their next report.
+        const refuse = Math.max(0, Math.min(n, real + writing - MAX_RECORDS));
+        if (refuse) { await store.incr(keyVer(code), { c: -refuse }); await store.incr(qk, { n: -refuse }); }
+        return { refused: new Set(uids.slice(n - refuse)), hadFull, qk, held: n - refuse };
+    }
+    // Once written (or failed), a report's casualties are no longer "being written".
+    async function releaseRecords(res) {
+        if (res && res.qk && res.held) { try { await store.incr(res.qk, { n: -res.held }); } catch (e) {} }
     }
 
     async function push(code, pin, body, client, key, devKey) {
@@ -542,7 +582,7 @@ function createCore(opts) {
             rec.firstReportedBy = cur ? (cur.firstReportedBy || cur.reportedBy || deviceId) : deviceId;
             toWrite.push([keyRec(code, rec.uid), rec]);
         }
-        await setEach(store, toWrite);
+        try { await setEach(store, toWrite); } finally { await releaseRecords(res); }
         accepted = toWrite.length;
         // The change feed: which casualties this report changed, so commander screens read only those.
         if (accepted) await store.set(feedKey(code, now()), { at: t, u: toWrite.map(x => x[1].uid) });
@@ -748,7 +788,7 @@ function createCore(opts) {
         const changedP = !delta || Number(parts[2]) !== (v.p || 0);
         const changedD = changedP || !delta || Number(parts[1]) !== (v.d || 0);
         const viewOnly = a.level !== 'commander';
-        const out = { sync: 2, ver, delta, code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta, a.level), serverTime: t, maxRecords: MAX_RECORDS, recordCount: typeof v.c === 'number' ? v.c : null, cursor: changedR ? t : cursor };
+        const out = { sync: 2, ver, delta, code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta, a.level), serverTime: t, maxRecords: MAX_RECORDS, recordCount: heldCount(v, await store.get(keyCount(code))), cursor: changedR ? t : cursor };
         if (changedR) {
             if (feedRecs) { out.records = feedRecs; if (check && check.length) out.check = check; }
             else { const pg = await recordPage(code, ''); out.records = pg.records; out.more = pg.more; }

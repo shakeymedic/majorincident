@@ -2273,6 +2273,18 @@
         hazard: { label: 'Hazard', short: '⚠', colour: '#ED8B00' },
     };
     const MAP_MARKS_MAX = 30;
+    // A bubble of grouped casualties on a map takes the colour of the most urgent casualty in it. Not Breathing comes
+    // straight after P1: it needs a clinician now (v0.19.12 check: 9 P3s and 1 Not Breathing made a green bubble).
+    // Evacuated casualties only colour a bubble that holds nobody still on scene.
+    const MAP_URGENCY = ['P1', 'NOT_BREATHING', 'P1_HOLD', 'P2', 'P3', 'DEAD'];
+    function clusterSummary(items) {
+        const here = {}, all = {};
+        (items || []).forEach(x => { const c = (x && x.category) || ''; all[c] = (all[c] || 0) + 1; if (!(x && x.evacuated)) here[c] = (here[c] || 0) + 1; });
+        const onScene = Object.keys(here).length > 0;
+        const use = onScene ? here : all;
+        const counts = MAP_URGENCY.filter(c => use[c]).map(c => ({ category: c, n: use[c] }));
+        return { top: counts.length ? counts[0].category : '', counts, onScene, total: (items || []).length };
+    }
     function normaliseMapMarks(list) {
         if (!Array.isArray(list)) return [];
         const out = [];
@@ -2367,7 +2379,7 @@
         wgs84ToOsgb36, osgb36ToEastNorth, eastNorthToGridRef, toOsGridRef, formatCoords, mapsLinks, orderNearest, googleMapsRouteUrl, GOOGLE_ROUTE_MAX_POINTS,
         locationPoints, buildGpx, buildKml, buildGeoJson, classifyLocationFix, describeGeoError,
         buildDemoScenario, isDemoRecord, DEMO_INCIDENT,
-        debriefTimings, evacTime, MAP_MARK_TYPES, MAP_MARKS_MAX, normaliseMapMarks, roughCountText,
+        debriefTimings, evacTime, MAP_MARK_TYPES, MAP_MARKS_MAX, normaliseMapMarks, roughCountText, MAP_URGENCY, clusterSummary,
         POLICY_GROUPS_MAX, normalisePolicyGroups, normalisePolicy, policyGroupLabel, policyPromptApplies, p1HoldAllowed,
     };
 
