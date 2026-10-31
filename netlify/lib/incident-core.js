@@ -478,8 +478,10 @@ function createCore(opts) {
     // number is that count plus whatever c has added since. Taking a new real count only ever replaces the whole
     // document, so two reports doing it at once cannot take anything off twice.
     function heldCount(ver, snap) {
-        const c = ver && typeof ver.c === 'number' ? ver.c : null;
-        if (snap && typeof snap.c === 'number' && c !== null) return Math.max(0, (snap.real || 0) + (snap.writing || 0) + (c - snap.c));
+        // c: casualties ever put in for writing; x: of those, refused again at the limit (never taken off c, so the two
+        // can be read at different moments without missing anything; see the slow path in reserveRecords).
+        const c = ver && typeof ver.c === 'number' ? ver.c - (ver.x || 0) : null;
+        if (snap && typeof snap.c === 'number' && c !== null) return Math.max(0, (snap.real || 0) + (snap.writing || 0) + (c - (snap.c - (snap.x || 0))));
         return c;
     }
     async function reserveRecords(code, uids) {
@@ -501,26 +503,29 @@ function createCore(opts) {
             // re-sending refused casualties with every report cost a few reads, not a listing each (at most one a minute).
             if (held !== null && snap && snap.full && now() - (snap.at || 0) < COUNT_FRESH_MS) {
                 const refuse = Math.max(0, Math.min(n, held - MAX_RECORDS));
-                if (refuse) { await store.incr(keyVer(code), { c: -refuse }); await store.incr(qk, { n: -refuse }); }
+                if (refuse) { await store.incr(keyVer(code), { x: refuse }); await store.incr(qk, { n: -refuse }); }
                 return { refused: new Set(uids.slice(n - refuse)), hadFull, qk, held: n - refuse };
             }
         }
         // Possibly over the limit (or never counted): count for real. Only at the limit (at most once a minute while it
         // stays full), or once for an older incident.
-        // Read in this order: the running total, then reports being written, then those stored. A report finishing
-        // between two reads is then counted twice (a little too cautious) but never missed.
+        // Read in this order: c, then reports being written, then x, then those stored. A report adds to "being written"
+        // before c; a refusal adds to x before it leaves "being written"; a report is stored before it leaves "being
+        // written". So a report or refusal happening between two reads is at worst counted twice (a little too
+        // cautious), never missed, and the count can never let an incident past the limit.
         const [cur] = await store.counts([keyVer(code)]);
         const t = now();
         const qs = await store.counts([0, 1, 2].map(i => keyInflight(code, t - i * 60000)));
         const writing = Math.max(0, qs.reduce((sum, q) => sum + ((q && q.n) || 0), 0));
+        const [curx] = await store.counts([keyVer(code)]);
         const real = entries(await store.list(`i/${code}/r/`)).length;
         // full: this count found the incident at or over the limit, so reports in the next minute may be refused on it.
-        await store.set(keyCount(code), { real, writing, c: (cur && cur.c) || 0, at: t, full: real + writing >= MAX_RECORDS });
+        await store.set(keyCount(code), { real, writing, c: (cur && cur.c) || 0, x: (curx && curx.x) || 0, at: t, full: real + writing >= MAX_RECORDS });
         // Everything stored or being written, this report included, against the limit. Reports sent together at the
         // limit each see the others and may refuse a little too much (never too little); the phones send those again
         // with their next report.
         const refuse = Math.max(0, Math.min(n, real + writing - MAX_RECORDS));
-        if (refuse) { await store.incr(keyVer(code), { c: -refuse }); await store.incr(qk, { n: -refuse }); }
+        if (refuse) { await store.incr(keyVer(code), { x: refuse }); await store.incr(qk, { n: -refuse }); }
         return { refused: new Set(uids.slice(n - refuse)), hadFull, qk, held: n - refuse };
     }
     // Once written (or failed), a report's casualties are no longer "being written".

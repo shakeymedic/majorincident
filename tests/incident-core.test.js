@@ -849,7 +849,7 @@ function rec(uid, id, category, extra) {
         clock += 1000;
         r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('f0', 'F-0', 'P1', { updatedAt: clock })] }), '1.1.1.1');
         assert.strictEqual(r.body.accepted, 1); assert.ok(!r.body.incidentFull);
-        assert.strictEqual((await store.counts([`i/${inc.code}/ver`]))[0].c, 5);
+        { const [v] = await store.counts([`i/${inc.code}/ver`]); assert.strictEqual(v.c - (v.x || 0), 5, 'running total less refusals'); }
     });
     await test('v0.19.12: five phones adding at the same moment never take an incident past its limit, and retries fill it exactly', async () => {
         const store = makeStore({ jitter: 4 });
