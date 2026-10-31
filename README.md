@@ -164,6 +164,13 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.19.13 build 2026-10-31-count — fixes from the v0.19.12 check (31 October 2026)
+- **The casualty count can no longer drift and call an incident full early.** The running total could only ever run high (a batch resent after a phone timed out, two copies of the same new casualty at once, a write that failed after being counted) and nothing recounted, so an incident could refuse casualties well before it held 3,000. Nothing is now refused on the running total alone: near the limit the stored casualties are counted for real, together with those other reports are still writing, and that count is kept beside the total (replaced whole, so two reports correcting at once cannot take anything off twice; at most one real count a minute while the incident stays full). Reports sent at the same moment still cannot take an incident past its limit; near the limit they may refuse a little too much, and the phones send those again with their next report. The commander's "nearly full" figure uses the corrected count.
+- **Incidents started before v0.19.12** are counted once, safely, even if two reports arrive together (before, both added the whole incident, so one holding 1,600 could read as 3,200 and refuse everything new).
+- **Map bubbles: Not Breathing now ranks straight after P1** (P1, Not Breathing, P1 Hold, P2, P3, Dead), so a bubble of 9 P3s and 1 Not Breathing is grey, not green.
+- **The phones' map now has the same bubbles as the commander screen** (most urgent colour, a count per category). It still had the map library's default bubbles, coloured by size.
+- Service worker cache v52. Web change only: no Android rebuild.
+
 ### v0.19.12 build 2026-10-31-scale — fixes from Jake's 120-to-3,000-casualty and map test (31 October 2026)
 - **The 3,001st casualty is no longer lost.** When an incident holds its limit (3,000), the server says "incident full" for each casualty it refuses. The phone keeps them queued as not sent (☁ ⚠ FULL on the pill, a red card on the home screen, a warning with vibration and an audit entry) and tries again with later reports, after everything else, so changes to casualties already sent still go. The commander screen shows a red "INCIDENT FULL" box listing the refused casualties (category, ID, sector, phone, time), with an alert sound when more are refused, and an amber "nearly full" box from 90%.
 - **Stored casualty count.** Each incident keeps a counter (added to atomically), so a report that adds casualties no longer reads every record to check the limit. Reports sent at the same moment cannot take an incident past its limit.
