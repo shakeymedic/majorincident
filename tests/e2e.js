@@ -1904,6 +1904,27 @@ async function test(name, fn) {
         assert.strictEqual(await CF.evaluate(() => CMD.cfg.code), code);
         await CF._ctx.close();
     });
+    await test('v0.22.0 commander: short IDs keep the phone, waits are listed, activity and a situation report', async () => {
+        assert.strictEqual(await CC.evaluate(() => shortId('TRAIN-ABCD-MITT-003')), 'ABCD MITT 003');
+        assert.strictEqual(await CC.evaluate(() => shortId('TRAIN-EFGH-MITT-003')), 'EFGH MITT 003');
+        assert.strictEqual(await CC.evaluate(() => shortId('MITT-007')), 'MITT 007');
+        await CC.evaluate(() => refreshNow());
+        await CC.waitForFunction(() => /new in the last 10 min/.test(document.getElementById('activity').textContent), null, { timeout: 8000 });
+        const rep = await CC.evaluate(() => sitrepText());
+        assert.match(rep, /casualt/); assert.match(rep, /On scene \d+/); assert.match(rep, /Evacuated \d+/);
+        // A P1 in the field for over 10 minutes is listed as waiting, longest first
+        const waits = await CC.evaluate(() => {
+            const t0 = Date.now();
+            const keep = data.records;
+            data.records = keep.concat([{ uid: 'w1', id: 'TRAIN-WAIT-TST-001', category: 'P1', tool: 'TST', timestamp: t0 - 25 * 60000, createdAt: t0 - 25 * 60000 }, { uid: 'w2', id: 'TRAIN-WAIT-TST-002', category: 'P1', tool: 'TST', timestamp: t0 - 12 * 60000, createdAt: t0 - 12 * 60000 }]);
+            render({ sameData: true });
+            const rows = Array.from(document.querySelectorAll('#attention .att-row')).map(r => r.textContent).filter(t => /In the field/.test(t));
+            data.records = keep; render({ sameData: true });
+            return rows;
+        });
+        assert.strictEqual(waits.length, 2, JSON.stringify(waits));
+        assert.match(waits[0], /WAIT TST 001/); assert.match(waits[0], /25 min/);
+    });
     await CA._ctx.close(); await CB._ctx.close(); await CC._ctx.close();
 
     console.log('\ne2e: demo incident');
@@ -2266,6 +2287,42 @@ async function test(name, fn) {
         assert.strictEqual(await RT.evaluate(() => window._voiceStarted), 1, 'no voice without a connection');
         await RT._ctx.setOffline(false);
         await RT._ctx.close();
+    });
+
+    console.log('\ne2e: v0.21.0 linked demo (commander and demo phones on one computer)');
+    await test('v0.21.0: demo.html starts a practice incident; the commander screen and two demo phones are linked, with separate storage; auto-play records a casualty through the real questions', async () => {
+        const ctx = await browser.newContext({ viewport: { width: 1800, height: 1000 }, serviceWorkers: 'block' });
+        await ctx.route(/tile\.openstreetmap/, r => r.fulfill({ status: 200, body: '' }));
+        const D = await ctx.newPage();
+        D.on('pageerror', e => errors.push(`Demo: ${e.message}`));
+        await D.goto(url.replace('index.html', 'demo.html'));
+        await D.selectOption('#n-phones', '2');
+        await D.selectOption('#speed', '2');
+        await D.click('#btn-start');
+        await D.waitForFunction(() => document.getElementById('stage').classList.contains('on'), null, { timeout: 8000 });
+        const phones = () => D.frames().filter(f => /#sim=/.test(f.url()));
+        await D.waitForFunction(() => document.querySelectorAll('#phones iframe').length === 2);
+        for (let i = 0; i < 40; i++) { const ok = await Promise.all(phones().map(f => f.evaluate(() => typeof CMD !== 'undefined' && !!CMD.cfg).catch(() => false))); if (ok.length === 2 && ok.every(Boolean)) break; await D.waitForTimeout(500); }
+        const st = await Promise.all(phones().map(f => f.evaluate(() => ({ sim: window.MITT_SIM, training: TRAINING, name: triagerName, code: CMD.cfg && CMD.cfg.code, device: deviceId }))));
+        assert.strictEqual(st.length, 2);
+        assert.deepStrictEqual(st.map(x => x.sim).sort(), [1, 2]);
+        assert.ok(st.every(x => x.training), 'demo phones are practice phones');
+        assert.ok(st[0].code && st[0].code === st[1].code, 'both linked to the same incident');
+        assert.notStrictEqual(st[0].device, st[1].device, 'separate storage: different device codes');
+        assert.deepStrictEqual(st.map(x => x.name).sort(), ['HART 1 (demo)', 'Medic 2 (demo)']);
+        // The demo's storage never touches the browser's own app storage
+        assert.strictEqual(await D.evaluate(() => localStorage.getItem('mit_triager')), null);
+        // Auto-play (fast): a casualty goes through the real questions and reaches the commander screen
+        const cmd = D.frames().find(f => /commander\.html/.test(f.url()));
+        await cmd.waitForFunction(() => !!(typeof data !== "undefined" && data && data.records && data.records.length >= 1), null, { timeout: 60000, polling: 1000 }).catch(async () => { await cmd.evaluate(() => refreshNow()); });
+        await cmd.evaluate(() => refreshNow());
+        await cmd.waitForFunction(() => !!(typeof data !== "undefined" && data && data.records && data.records.length >= 1), null, { timeout: 30000, polling: 1000 });
+        const logs = await Promise.all(phones().map(f => f.evaluate(() => (window.MITT_DEMO_LOG || []).join(' | '))));
+        assert.ok(!/MISMATCH/.test(logs.join(' ')), logs.join(' // '));
+        // End demo: two taps, the incident is closed
+        await D.click('#btn-end'); await D.click('#btn-end');
+        await D.waitForFunction(() => document.getElementById('setup').style.display !== 'none', null, { timeout: 8000 });
+        await ctx.close();
     });
 
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });

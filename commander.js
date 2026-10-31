@@ -279,7 +279,7 @@ function setStageFilter(f) {
 const stage = (r) => MITTLib.patientStage(r);
 // TST = the sieve (first look, anyone); MITT = the sort (clinician). A patient who has only had the sieve still needs the sort.
 function hadMitt(r) { return r.tool === 'MITT' || (r.triageHistory || []).some(t => t.tool === 'MITT'); }
-function toolChip(r) { return hadMitt(r) ? '<span class="tool-chip mitt" title="Has had MITT (sort) triage">MITT</span>' : '<span class="tool-chip tst" title="TST sieve only: no MITT sort yet">TST only</span>'; }
+function toolChip(r) { return hadMitt(r) ? '<span class="tool-chip mitt" title="Has had MITT (sort) triage">MITT</span>' : '<span class="tool-chip tst" title="TST sieve only: not yet triaged with MITT">TST only</span>'; }
 const byUid = (uid) => ((data && data.records) || []).find(r => r.uid === uid) || null;
 function stageTag(r) { const st = stage(r); const i = MITTLib.STAGE_INFO[st]; return `<span class="stage-tag ${st}">${esc(i.short)}</span>`; }
 function visibleRecords() {
@@ -313,8 +313,9 @@ function render(opts) {
     $('stages').innerHTML = `<div class="stage"><div class="n">${sc.field}</div><div><div class="lbl">In the field</div><div class="sub">${fieldSub}</div></div></div>` +
         `<div class="stage ccs"><div class="n">${sc.ccs}</div><div><div class="lbl">At the casualty clearing station</div><div class="sub">${ccsCats}</div></div></div>` +
         `<div class="stage evac"><div class="n">${sc.evacuated}</div><div><div class="lbl">Evacuated</div><div class="sub">${hospSub}</div></div></div>` +
-        (() => { const t = onScene.filter(r => !hadMitt(r)); const sub = order.filter(c => t.some(r => r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${t.filter(r => r.category === c).length}</b>`).join(' • '); return `<div class="stage tst"><div class="n">${t.length}</div><div><div class="lbl">TST only</div><div class="sub">${t.length ? 'no MITT sort yet: ' + sub : 'everyone on scene has had MITT'}</div></div></div>`; })();
-    setText('counts-note', `Big number = on scene now (field + casualty clearing station); "in total" includes evacuated. CCS on the small labels = casualty clearing station (set on the phone, or inferred from the sector name). Server time ${hm(data.serverTime)}; data deleted ${hm(data.expiresAt)} tomorrow unless updated.`);
+        (() => { const t = onScene.filter(r => !hadMitt(r)); const sub = order.filter(c => t.some(r => r.category === c)).map(c => `${esc(MITTLib.CATEGORY_INFO[c].short)} <b>${t.filter(r => r.category === c).length}</b>`).join(' • '); return `<div class="stage tst"><div class="n">${t.length}</div><div><div class="lbl">TST only</div><div class="sub">${t.length ? 'not yet triaged with MITT: ' + sub : 'everyone on scene has had MITT'}</div></div></div>`; })();
+    setText('counts-note', `Big number: on scene now. Small: in the field • at the casualty clearing station (CCS); "in total" includes evacuated. Server time ${hm(data.serverTime)}; the incident is deleted at ${hm(data.expiresAt)} tomorrow unless updated.`);
+    renderActivity(all, now);
     // phones (from v0.19.12 the phone list is only sent when it changes, so "not heard from" is worked out here)
     const devs = data.devices || [];
     if (data.sync === 2) devs.forEach(d => { d.stale = (now + serverOffset) - (d.lastSeen || 0) > 5 * 60 * 1000; });
@@ -339,14 +340,22 @@ function render(opts) {
         // A Not Breathing casualty is listed once, with its overdue time on the same line (v0.19.12: it was listed twice).
         if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' + (overdue ? ' • ' + overdue.toLowerCase() : '') });
         else if (overdue) att.push({ k: 0, r, t: overdue });
-        if (r.interventions && r.interventions.Tourniquet) att.push({ k: 1, r, t: `Tourniquet on since ${esc(r.interventions.Tourniquet.time || '?')}` });
+        const tq = r.interventions && r.interventions.Tourniquet;
+        if (tq) { const on = tq.ts ? now - tq.ts : 0; att.push({ k: on > 2 * 3600000 ? 0 : 1, r, w: on, t: `Tourniquet on ${tq.ts ? 'for ' + mins(on) : 'since ' + esc(tq.time || '?')}` }); }
+        // Waiting: urgent casualties still in the field, and casualties at the clearing station not yet on their way
+        // (v0.22.0: the commander had to work these out from the table).
+        const since = r.timestamp || r.createdAt || 0;
+        const st = stage(r);
+        if (since && st === 'field' && (r.category === 'P1' && now - since > 10 * 60000 || r.category === 'P2' && now - since > 30 * 60000)) att.push({ k: r.category === 'P1' ? 0 : 1, r, w: now - since, t: `In the field ${mins(now - since)} since triage, not at the clearing station yet` });
+        const atCcs = r.ccsAt || 0;
+        if (atCcs && st === 'ccs' && (r.category === 'P1' && now - atCcs > 30 * 60000 || r.category === 'P2' && now - atCcs > 60 * 60000)) att.push({ k: 1, r, w: now - atCcs, t: `At the clearing station ${mins(now - atCcs)}, not evacuated yet` });
         if (r.highRisk) att.push({ k: 2, r, t: 'Flagged high risk of deterioration' });
     });
-    att.sort((a, b) => a.k - b.k);
+    att.sort((a, b) => a.k - b.k || (b.w || 0) - (a.w || 0));
     // At 3,000 casualties this list could hold thousands of rows; the first ATT_MAX are drawn (most urgent first).
     const attShown = att.slice(0, ATT_MAX);
     $('attention').innerHTML = att.length ? `<div class="att">${attShown.map(a => `<div class="att-row k${a.k}" data-act="openPatient" data-uid="${esc(a.r.uid)}" role="button" tabindex="0">${cat(a.r.category)}<span class="id">${esc(shortId(a.r.id))} ${toolChip(a.r)}</span><span class="why"><b>${a.t}</b><span>${stageTag(a.r)} ${esc(place(a.r) || 'no place recorded')}</span></span><span class="age">${age(a.r.updatedAt || a.r.reportedAt)}</span></div>`).join('')}${att.length > attShown.length ? `<p class="muted">…and ${att.length - attShown.length} more. Use the casualty list to see them all.</p>` : ''}</div>` : '<div class="all-clear">Nothing outstanding</div>';
-    setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • overdue first${att.length > attShown.length ? ` • first ${attShown.length} shown` : ''}` : 'overdue reassessments, tourniquets, high risk');
+    setText('attention-note', att.length ? `${att.length} item${att.length === 1 ? '' : 's'} • most urgent and longest waiting first${att.length > attShown.length ? ` • first ${attShown.length} shown` : ''}` : 'overdue checks, long waits, tourniquets, high risk');
     // table
     const vis = visibleRecords();
     // Only the first rows are drawn (3,000 rows made the page freeze on each refresh); more on request.
@@ -356,7 +365,7 @@ function render(opts) {
         const l = loc(r);
         const grid = l && l.lat ? MITTLib.toOsGridRef(l.lat, l.lng) : null;
         const ints = Object.keys(r.interventions || {}).map(k => `${esc(k)} ${esc((r.interventions[k] && r.interventions[k].time) || '')}`.trim()).join(', ');
-        const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? 'Due now' : `Due ${hm(rs.dueAt)}`;
+        const re = rs.state === 'na' ? '—' : rs.state === 'overdue' ? `<b style="color:#DA291C">Overdue ${Math.round(rs.overdueMs / 60000)} min</b>` : rs.state === 'due-soon' ? `Due soon (${hm(rs.dueAt)})` : `Due ${hm(rs.dueAt)}`;
         const fresh = !r.evacuated && (now - (r.updatedAt || r.reportedAt || 0)) < 90000;
         return `<tr class="pt ${r.evacuated ? 'evac' : ''}${rs.state === 'overdue' && !r.evacuated ? ' overdue' : ''}${fresh ? ' fresh' : ''}" data-act="openPatient" data-uid="${esc(r.uid)}" tabindex="0"><td><span class="id">${esc(r.id)}</span>${r.cardNo ? `<div><b>Card ${esc(r.cardNo)}</b></div>` : ''}<div class="muted">${hm(r.timestamp)}${r.highRisk ? ' • <span class="flag">HIGH RISK</span>' : ''}${r.evacuated ? ' • evacuated' + (r.evacDest ? ' to ' + esc(r.evacDest) : '') : ''}</div></td>` +
             `<td>${cat(r.category)}<div style="margin-top:4px">${toolChip(r)}</div></td><td>${stageTag(r)}${r.evacuated ? ` <b>${esc(r.evacDest || 'destination not recorded')}</b>${r.evacVehicle ? ' <span class="muted">' + esc(r.evacVehicle) + '</span>' : ''}` : r.atCcs && r.ccsAt ? ` <span class="muted">since ${hm(r.ccsAt)}</span>` : ''}<div>${esc(place(r) || '—')}</div>${grid ? `<div class="muted">${esc(grid)}${l.acc ? ' ±' + Math.round(l.acc) + ' m' : ''}</div>` : '<div class="muted">no position</div>'}</td>` +
@@ -478,7 +487,7 @@ function renderDecisions() {
     const m = p.mitt;
     const groups = sectorGroups();
     const opt = (g, label) => `<label><input type="checkbox" class="mitt-grp" value="${esc(g)}"> ${esc(label)} <span class="muted">(${phonesIn(g)} phone${phonesIn(g) === 1 ? '' : 's'})</span></label>`;
-    const mittHtml = `<div class="dec"><h3>MITT now in use</h3><div class="state">${m ? `Prompt sent ${hm(m.at)} to ${esc(m.groups.map(MITTLib.policyGroupLabel).join(', '))}${m.by ? ' by ' + esc(m.by) : ''}` : 'No prompt sent. Phones use TST unless a clinician switches.'}</div>` +
+    const mittHtml = `<div class="dec"><h3>Tell clinicians to use MITT</h3><div class="state">${m ? `Prompt sent ${hm(m.at)} to ${esc(m.groups.map(MITTLib.policyGroupLabel).join(', '))}${m.by ? ' by ' + esc(m.by) : ''}` : 'No prompt sent. Phones use TST unless a clinician switches.'}</div>` +
         `<p class="muted" style="margin:4px 0">Sends a prompt to the phones you choose. Clinicians can switch their main button to MITT; non-clinical phones are told to carry on with TST. Anyone can also switch on their own phone without a prompt.</p>` +
         (can ? `<div class="groups">${opt('hcp', 'All clinicians')}${groups.map(g => opt('sector:' + g, g)).join('')}${opt('all', 'Every phone')}</div><button type="button" class="btn small" data-act="sendMittPrompt">Send MITT prompt</button> <span class="muted" id="mitt-hint"></span>` : '') + `</div>`;
     // Redrawn on every refresh, so keep what the commander has ticked or typed but not yet sent.
@@ -844,7 +853,52 @@ function printSummary() {
 }
 function batteryTag(d) { if (typeof d.battery !== 'number' || d.charging || d.battery > 25) return ''; return ` <span class="cat-chip" style="background:${d.battery <= 10 ? '#DA291C' : '#c9a700'};color:#fff;font-size:0.72rem;padding:1px 6px" title="Battery">🔋 ${d.battery}%</span>`; }
 // The phone's ID is "<prefix>-<TOOL>-<number>"; on the wall the prefix is noise, so show "TST 014" style.
-function shortId(id) { const m = /^(?:.*-)?(TST|MITT)-(\d+)$/.exec(String(id || '')); return m ? `${m[1]} ${m[2]}` : String(id || ''); }
+// Short form of an automatic ID that still tells phones apart: TRAIN-2XMB-MITT-001 -> "2XMB MITT 001" (v0.22.0: two phones'
+// casualties both showed as "MITT 003" on this screen).
+function shortId(id) { const m = /^(?:.*?-)?([A-Z0-9]{2,8})-(TST|MITT)-(\d+)$/.exec(String(id || '')); if (m && m[1] !== 'TRAIN') return `${m[1]} ${m[2]} ${m[3]}`; const n = /^(?:.*-)?(TST|MITT)-(\d+)$/.exec(String(id || '')); return n ? `${n[1]} ${n[2]}` : String(id || ''); }
+function mins(ms) { const m = Math.max(0, Math.round(ms / 60000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; }
+// How fast casualties are being found: new casualties per 5 minutes since the first, with the P1s among them, and
+// the last 10 minutes as a figure (v0.22.0: the screen showed totals only, not whether the incident was still growing).
+function renderActivity(all, now) {
+    const box = $('activity');
+    if (!box) return;
+    const times = all.map(r => ({ t: r.createdAt || r.timestamp || 0, p1: (r.triageHistory && r.triageHistory[0] ? r.triageHistory[0].category : r.category) === 'P1' })).filter(x => x.t);
+    if (!times.length) { box.innerHTML = ''; return; }
+    const B = 5 * 60000;
+    const first = Math.min.apply(null, times.map(x => x.t));
+    const start = Math.floor(first / B) * B;
+    const n = Math.max(12, Math.min(48, Math.ceil((now - start) / B)));   // at least an hour, at most 4 hours, of 5-minute bars
+    const from = Math.floor((now - (n - 1) * B) / B) * B;   // the last bar holds now
+    const bars = Array.from({ length: n }, () => ({ all: 0, p1: 0 }));
+    times.forEach(x => { const i = Math.floor((x.t - from) / B); if (i >= 0 && i < n) { bars[i].all++; if (x.p1) bars[i].p1++; } });
+    const max = Math.max(1, ...bars.map(b => b.all));
+    const W = 600, H = 70, gap = 2, bw = Math.max(2, (W - gap * n) / n);
+    const svg = bars.map((b, i) => { const x = i * (bw + gap), h = Math.round((b.all / max) * (H - 14)), h1 = Math.round((b.p1 / max) * (H - 14)); return `<rect class="act-bar" x="${x.toFixed(1)}" y="${H - 12 - h}" width="${bw.toFixed(1)}" height="${h}"><title>${hm(from + i * B)}: ${b.all} new${b.p1 ? `, ${b.p1} P1` : ''}</title></rect>` + (h1 ? `<rect class="act-bar p1" x="${x.toFixed(1)}" y="${H - 12 - h1}" width="${bw.toFixed(1)}" height="${h1}"></rect>` : ''); }).join('');
+    const last10 = times.filter(x => now - x.t <= 10 * 60000).length;
+    const p1Field = all.filter(r => r.category === 'P1' && stage(r) === 'field');
+    const longest = p1Field.reduce((m, r) => Math.max(m, now - (r.timestamp || r.createdAt || now)), 0);
+    box.innerHTML = `<div class="act-fig"><b>${last10}</b><span>new in the last 10 min</span></div>` +
+        `<div class="act-fig"><b>${p1Field.length ? mins(longest) : '—'}</b><span>longest wait, P1 in the field</span></div>` +
+        `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="New casualties every 5 minutes since ${hm(from)}; red = P1">${svg}</svg><span class="muted act-cap">New casualties every 5 minutes, ${hm(from)} to now (red: P1)</span>`;
+}
+// One line the commander can read over the radio or paste into a log or message (v0.22.0).
+function sitrepText() {
+    if (!data) return '';
+    const all = data.records || [];
+    const on = all.filter(r => !r.evacuated);
+    const n = (c) => on.filter(r => r.category === c).length;
+    const sc = MITTLib.stageCounts(all);
+    const parts = [['P1', 'P1'], ['P1_HOLD', 'P1 Hold'], ['P2', 'P2'], ['P3', 'P3'], ['NOT_BREATHING', 'not breathing'], ['DEAD', 'dead']].filter(([c]) => n(c)).map(([c, l]) => `${l} ${n(c)}`);
+    const hosp = Object.keys(sc.hospitals).map(h => `${h} ${sc.hospitals[h]}`).join(', ');
+    return `${data.incidentCode || data.code} at ${hm(Date.now())}: ${all.length} casualt${all.length === 1 ? 'y' : 'ies'}. On scene ${on.length}${parts.length ? ' (' + parts.join(', ') + ')' : ''}: ${sc.field} in the field, ${sc.ccs} at the casualty clearing station. Evacuated ${sc.evacuated}${hosp ? ' (' + hosp + ')' : ''}.${data.training ? ' TRAINING.' : ''}`;
+}
+async function copySitrep() {
+    const t = sitrepText();
+    setText('sitrep-text', t);
+    try { await navigator.clipboard.writeText(t); setText('btn-sitrep', '✓ Copied'); }
+    catch (e) { setText('btn-sitrep', 'Select the text to copy it'); }
+    setTimeout(() => setText('btn-sitrep', '📋 Copy situation report'), 2500);
+}
 let legendDone = false;
 function renderLegend() {
     if (legendDone) return; legendDone = true;
@@ -1090,7 +1144,7 @@ function exportCsv() {
 }
 // ---------- Clicks, changes and keys: one listener each, no inline handlers ----------
 const ACTIONS = {
-    refreshNow, toggleWall, toggleFullscreen, toggleSound, unlockSound, printSummary, signOut, signIn, fitMap, exportCsv, startMarking,
+    copySitrep, refreshNow, toggleWall, toggleFullscreen, toggleSound, unlockSound, printSummary, signOut, signIn, fitMap, exportCsv, startMarking,
     showPatientOnMap, closePatient, addHospitalRow,
     exportFile: (t) => exportFile(t.getAttribute('data-arg')),
     setStageFilter: (t) => setStageFilter(t.getAttribute('data-stage')),

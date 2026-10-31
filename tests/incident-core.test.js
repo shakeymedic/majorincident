@@ -849,7 +849,7 @@ function rec(uid, id, category, extra) {
         clock += 1000;
         r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [rec('f0', 'F-0', 'P1', { updatedAt: clock })] }), '1.1.1.1');
         assert.strictEqual(r.body.accepted, 1); assert.ok(!r.body.incidentFull);
-        assert.strictEqual((await store.counts([`i/${inc.code}/ver`]))[0].c, 5);
+        { const [v] = await store.counts([`i/${inc.code}/ver`]); assert.strictEqual(v.c - (v.x || 0), 5, 'running total less refusals'); }
     });
     await test('v0.19.12: five phones adding at the same moment never take an incident past its limit, and retries fill it exactly', async () => {
         const store = makeStore({ jitter: 4 });
@@ -915,7 +915,7 @@ function rec(uid, id, category, extra) {
         await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('o', 8) }), '1.1.1.1');
         await store.delete(`i/${inc.code}/ver`);   // as an incident made before v0.19.12
         const res = await Promise.all([['DEVA', 'p'], ['DEVB', 'q']].map(([d, pre]) => c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: d, records: many(pre, 3) }), '3.3.3.3')));
-        assert.strictEqual(res[0].body.accepted + res[1].body.accepted, 6, JSON.stringify(res.map(r => r.body.full)));
+        assert.strictEqual(res[0].body.accepted + res[1].body.accepted, 6, JSON.stringify(res.map(r => [r.status, r.body.accepted, r.body.full, r.body.error, r.body.message])));
         assert.strictEqual((await store.list(`i/${inc.code}/r/`)).length, 14);
         // And the count stays usable: 6 more fit, the 7th does not.
         const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('w', 7) }), '1.1.1.1');
