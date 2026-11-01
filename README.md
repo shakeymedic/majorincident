@@ -164,6 +164,15 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.22.2 build 2026-11-01-clinical — clinical wording decisions (Jake, 1 November 2026)
+
+- **Breathing (TST and MITT)**: the question stays "Breathing?"; the instruction now says to open the airway, then check for breathing again.
+- **P3 walking (TST)**: "Send them to the casualty clearing station, or where instructed."
+- **Age (MITT)**: "Aged 2 years or over?" (NO → P1), so children under 2 are P1 in both TST and MITT (the card's "over 2" made a 2-year-old P1 in MITT only). New records give the reason "Aged Under 2"; older records keep "Aged 2 or Under".
+- **Penetrating injury (TST P1)**: "Open wound to the chest or back: chest seal if trained" (also in the severe-bleeding care prompts).
+- Quick reference updated to match.
+- Confirmed unchanged: TST "CPR if resources allow" for non-medics; MITT Dead keeps its care prompt; tourniquet alerts (1 h commander alert, 2 h most urgent in Needs attention); the neck counts as torso; commander waiting-time thresholds (P1 10 / 30 min, P2 30 / 60 min).
+
 ### v0.22.1 build 2026-10-31-ftu — first-time-user fixes (Jake, 31 October 2026)
 
 From a walk-through as a first-time user with no training, and an edge-case test.
