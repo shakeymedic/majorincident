@@ -42,6 +42,9 @@ const CREATE_MAX = 10;                        // incidents created per client pe
 const CLOCK_FIX_MS = 10 * 1000;               // phone clocks further out than this are corrected. 60 s let a phone up to a
                                               // minute slow lose a genuine update (v0.19.9 stress test); 2 s treated a
                                               // slow delivery as a wrong clock (v0.19.10 retest). 10 s is past most delays.
+const TIME_BEFORE_MS = 24 * 3600 * 1000;      // a time more than this before the incident started, or in the future, cannot be right (v0.22.1 stress test)
+const TIME_AHEAD_MS = 60 * 1000;
+const RECORD_TIME_FIELDS = ['timestamp', 'createdAt', 'evacAt', 'ccsAt', 'lastReassessed', 'lastDeteriorationAt', 'handoverAt'];
 const CLOCK_SKEW_MS = 60 * 1000;              // ...and further out than this, the record is labelled with the skew
 const STALE_DEVICE_MS = 5 * 60 * 1000;
 const READ_BATCH = 25;                        // blobs fetched at once when the commander screen reads
@@ -400,6 +403,18 @@ function createCore(opts) {
         return duress;
     }
 
+    // Times on a record that cannot be right: more than a day before the incident started, or in the future. Each is
+    // taken off the record (set to null; triage and creation times are filled in by the caller) and returned with
+    // its original value, or null when every time is plausible.
+    function implausibleTimes(rec, meta, t) {
+        const lo = ((meta && meta.createdAt) || t) - TIME_BEFORE_MS, hi = t + TIME_AHEAD_MS;
+        const bad = (raw) => { if (raw === null || raw === undefined || raw === '') return false; const v = num(raw); return v === null || v < lo || v > hi; };
+        let out = null;
+        RECORD_TIME_FIELDS.forEach(f => { if (bad(rec[f])) { out = out || {}; out[f] = rec[f]; rec[f] = null; } });
+        Object.keys(rec.interventions || {}).forEach(k => { const it = rec.interventions[k]; if (it && bad(it.ts)) { out = out || {}; out['interventions.' + k] = it.ts; it.ts = null; } });
+        return out;
+    }
+
     function cleanRecord(raw) {
         const s = lib.sanitisePatientRecord(raw);
         if (!s || !s.uid || !/^[A-Za-z0-9_-]{1,64}$/.test(s.uid) || !s.id || !s.category) return null;
@@ -464,6 +479,14 @@ function createCore(opts) {
         const devDoc = Object.assign({ role: 'member', joinedAt: t, records: 0 }, existing || {}, { deviceId, triager: str(body.triager, 80) || (existing && existing.triager) || '', lastSeen: t, app: str(body.app, 40), keyed: true });
         delete devDoc.oldApp;
         await store.set(keyDev(code, deviceId), devDoc);
+        // Phones joining at the same moment could each see room and together pass the limit (v0.22.1 stress test: 205
+        // phones with a limit of 200). Checked again after writing, as for map markings: a new phone that finds the
+        // incident over the limit takes itself back. The last phone to check sees every phone that stayed, so the
+        // limit cannot be passed; at the limit, phones joining together may both be refused and can try again.
+        if (!existing && entries(await store.list(`i/${code}/d/`)).length > MAX_DEVICES_PER_INCIDENT) {
+            await store.delete(keyDev(code, deviceId));
+            return error(409, 'too_many_devices', 'This incident already has the maximum number of phones.');
+        }
         await store.incr(keyVer(code), { d: 1 });
         log('joined', code, deviceId);
         return reply(200, { ok: true, code, name: a.meta.name, incidentCode: a.meta.incidentCode, training: a.meta.training, createdAt: a.meta.createdAt, expiresAt: a.meta.updatedAt + TTL_MS, level: a.level, singlePin: !a.meta.cmdHash, deviceKey: deviceKey(a.meta, deviceId), accessKey: accessKey(a.meta, a.level) });
@@ -565,6 +588,12 @@ function createCore(opts) {
             // Triage and creation times are moved onto the server's clock too (v0.19.7 stress test).
             if (fixing) { if (num(rec.timestamp)) rec.timestamp = fixTime(rec.timestamp); if (num(rec.createdAt)) rec.createdAt = fixTime(rec.createdAt); }
             if (Math.abs(skew) > CLOCK_SKEW_MS) rec.clockSkewMs = Math.round(skew);
+            // A time that cannot be right (v0.22.1 stress test: a casualty dated 1 January 1970 topped Needs attention as
+            // "overdue by 29,892,612 min"). The server already corrects a phone whose clock is wrong as it sends, but not a
+            // casualty recorded while the clock was wrong and sent after it was put right. Such a time is kept in timeDoubt
+            // (so nothing is lost) and not used: the triage time becomes the time the server first had the casualty.
+            const doubt = implausibleTimes(rec, meta, t);
+            if (doubt) rec.timeDoubt = doubt;
             if (seenUid.has(rec.uid)) { const i = cleaned.findIndex(x => x.uid === rec.uid); if ((rec.updatedAt || 0) >= (cleaned[i].updatedAt || 0)) cleaned[i] = rec; continue; }
             seenUid.add(rec.uid);
             cleaned.push(rec);
@@ -576,6 +605,9 @@ function createCore(opts) {
             const cur = current[i];
             if (cur && (cur.updatedAt || 0) > (rec.updatedAt || 0)) { kept++; return; } // an older copy never overwrites a newer one
             if (cur) curOf.set(rec.uid, cur); else fresh.push(rec.uid);
+            if (rec.timeDoubt) {
+                ['timestamp', 'createdAt'].forEach(f => { if (f in rec.timeDoubt) rec[f] = cur && num(cur[f]) ? cur[f] : t; });
+            }
             writes.push(rec);
         });
         // New casualties are counted against the incident's limit with a stored count, not by listing every record
@@ -777,7 +809,7 @@ function createCore(opts) {
         const cursor = num(h.cursor);
         let delta = parts.length === 4 && parts[3] === lv && cursor !== null && cursor > 0 && cursor <= t && t - cursor < SYNC_MAX_AGE_MS;
         let changedR = !delta || Number(parts[0]) !== (v.r || 0);
-        let feedRecs = null, check = null;
+        let feedRecs = null, check = null, pending = null;
         if (delta && changedR) {
             const feed = await rangeOf(store, `i/${code}/ch/`, keyFeedAt(code, cursor - FEED_MARGIN_MS), FEED_MAX + 1);
             if (feed.length > FEED_MAX) delta = false;
@@ -791,7 +823,18 @@ function createCore(opts) {
                 const got = new Set(uids);
                 check = feed.filter(x => x.key < from).map(x => ({ at: x.value.at || 0, u: uidsOf(x).filter(u => !got.has(u)) })).filter(x => x.u.length);
                 feedRecs = uids.length ? await getMany(store, uids.map(u => keyRec(code, u))) : [];
-                if (JSON.stringify(feedRecs).length > PAGE_LIMIT) { delta = false; feedRecs = null; check = null; }
+                if (JSON.stringify(feedRecs).length > PAGE_LIMIT) {
+                    // More changed than fits in one reply. A screen that says it can (x-incident-pending, v0.22.3) gets
+                    // what fits and the list of the rest, which it fetches by uid straight away; before, every screen
+                    // reloaded the whole incident (v0.22.1 stress test: 3.9 MB in 9.4 s after a big burst).
+                    if (h.pending) {
+                        let size = 2; const fit = [];
+                        for (const r of feedRecs) { if (!r) continue; const n = JSON.stringify(r).length + 1; if (fit.length && size + n > PAGE_LIMIT) break; fit.push(r); size += n; }
+                        const sent = new Set(fit.map(r => r.uid));
+                        pending = feedRecs.filter(r => r && !sent.has(r.uid)).map(r => r.uid);
+                        feedRecs = fit;
+                    } else { delta = false; feedRecs = null; check = null; }
+                }
             }
         }
         if (!delta) changedR = true;
@@ -800,7 +843,7 @@ function createCore(opts) {
         const viewOnly = a.level !== 'commander';
         const out = { sync: 2, ver, delta, code, name: meta.name, incidentCode: meta.incidentCode, training: meta.training, createdAt: meta.createdAt, updatedAt: meta.updatedAt, expiresAt: meta.updatedAt + TTL_MS, ccs: meta.ccs, methane: meta.methane || null, viewOnly, access: a.level === 'commander' ? 'commander' : a.level === 'member' ? 'triager' : 'view', hasViewPin: !!meta.viewHash, hasCommanderPin: !!meta.cmdHash, accessKey: accessKey(meta, a.level), serverTime: t, maxRecords: MAX_RECORDS, recordCount: heldCount(v, await store.get(keyCount(code))), cursor: changedR ? t : cursor };
         if (changedR) {
-            if (feedRecs) { out.records = feedRecs; if (check && check.length) out.check = check; }
+            if (feedRecs) { out.records = feedRecs; if (check && check.length) out.check = check; if (pending && pending.length) out.pending = pending; }
             else { const pg = await recordPage(code, ''); out.records = pg.records; out.more = pg.more; }
         }
         let clears = [];
@@ -1020,7 +1063,7 @@ function createCore(opts) {
         if (!body || typeof body !== 'object') body = {};
         try {
             if (method === 'POST' && !parts.length) return await create(body, client);
-            if (method === 'GET' && parts.length === 1 && headers['x-incident-sync'] === '2') return await readSync(code, pin, client, key, { ver: headers['x-incident-ver'] || '', cursor: headers['x-incident-cursor'] || '', page: headers['x-incident-page'] || '', uids: headers['x-incident-uids'] || '' });
+            if (method === 'GET' && parts.length === 1 && headers['x-incident-sync'] === '2') return await readSync(code, pin, client, key, { ver: headers['x-incident-ver'] || '', cursor: headers['x-incident-cursor'] || '', page: headers['x-incident-page'] || '', uids: headers['x-incident-uids'] || '', pending: headers['x-incident-pending'] === '1' });
             if (method === 'GET' && parts.length === 1) return await read(code, pin, headers['if-none-match'] || '', client, headers['x-incident-seq'] || '', key);
             if (method === 'POST' && action === 'join') return await join(code, pin, body, client, key);
             if ((method === 'PUT' || method === 'POST') && action === 'records') return await push(code, pin, body, client, key, devKey);

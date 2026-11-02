@@ -169,6 +169,7 @@ async function refreshNow() {
     try {
         const headers = hdrs();
         headers['x-incident-sync'] = '2';
+        headers['x-incident-pending'] = '1';   // v0.22.3: a big change comes in parts (see pending below)
         if (data && data.sync === 2 && syncVer) { headers['x-incident-ver'] = syncVer; headers['x-incident-cursor'] = String(syncCursor); }
         else { if (etag) headers['If-None-Match'] = etag; if (knownSeq) headers['X-Incident-Seq'] = knownSeq; }
         const r = await getIncident(headers);
@@ -196,10 +197,19 @@ async function refreshNow() {
                 const have = new Map((data.records || []).map(x => [x.uid, x.reportedAt || 0]));
                 const missing = [];
                 (body.check || []).forEach(c => (c.u || []).forEach(u => { if (!have.has(u) || have.get(u) < (c.at || 0)) missing.push(u); }));
-                for (let i = 0; i < missing.length; i += 50) {
-                    const mr = await getIncident(Object.assign(hdrs(), { 'x-incident-sync': '2', 'x-incident-uids': missing.slice(i, i + 50).join(',') }));
-                    if (!mr.ok) throw new Error('Server error ' + mr.status);
-                    data = mergeDelta(data, { records: (await mr.json()).records || [] });
+                // More changed than fits in one reply (v0.22.3): the rest are listed (pending) and always fetched, 4 parts
+                // of 50 at a time. Before, a big burst made the screen reload the whole incident (9.4 s at 3,000).
+                const want = Array.from(new Set((body.pending || []).concat(missing)));
+                const parts = [];
+                for (let i = 0; i < want.length; i += 50) parts.push(want.slice(i, i + 50));
+                if (parts.length > 4) setUpdated(`Loading changes… ${want.length} casualties`);
+                for (let i = 0; i < parts.length; i += 4) {
+                    const got = await Promise.all(parts.slice(i, i + 4).map(async ids => {
+                        const mr = await getIncident(Object.assign(hdrs(), { 'x-incident-sync': '2', 'x-incident-uids': ids.join(',') }));
+                        if (!mr.ok) throw new Error('Server error ' + mr.status);
+                        return (await mr.json()).records || [];
+                    }));
+                    data = mergeDelta(data, { records: [].concat(...got) });
                 }
             }
             else {
@@ -265,6 +275,13 @@ function hm(ts) { return ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '
 function age(ts) { return ts ? MITTLib.formatLocationAge(ts, Date.now()) : '—'; }
 function place(r) { return [r.sector, r.landmark, r.floor ? 'Floor ' + r.floor : '', r.area].filter(Boolean).join(', '); }
 function loc(r) { return r.currentLocation || r.location || null; }
+// A position that can be put on the map: both numbers present and in range (v0.22.1 stress test: one casualty at
+// latitude 999 made Fit map zoom out to the whole world). Servers from v0.22.3 never store one that is not.
+// A time that can be right: not more than a day before the incident started and not in the future. Servers from
+// v0.22.3 replace any other (v0.22.1 stress test: a casualty dated 1970 showed "overdue by 29,892,612 min" at the
+// top of Needs attention); this keeps such a time out of waits and charts on an incident stored before that.
+function timeOk(t) { const x = Number(t); if (!x) return false; const start = (data && data.createdAt) || x; return x >= start - 24 * 3600000 && x <= Date.now() + 5 * 60000; }
+function placeOk(l) { if (!l || l.lat === undefined || l.lat === null || l.lat === '') return false; const a = Number(l.lat), b = Number(l.lng); return isFinite(a) && isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0); }
 function cat(c) { const i = MITTLib.CATEGORY_INFO[c] || { short: c, colour: '#4C6272', text: '#fff' }; return `<span class="cat-chip" style="background:${i.colour};color:${i.text}">${esc(i.short)}</span>`; }
 let stageFilter = 'scene';   // scene | field | ccs | evacuated | all
 const TABLE_STEP = 200, ATT_MAX = 100;
@@ -336,15 +353,15 @@ function render(opts) {
     const att = [];
     onScene.forEach(r => {
         const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
-        const overdue = rs.state === 'overdue' ? (Math.round(rs.overdueMs / 60000) < 1 ? 'Reassessment due now' : `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min`) : '';
+        const overdue = rs.state === 'overdue' && timeOk(rs.dueAt) ? (Math.round(rs.overdueMs / 60000) < 1 ? 'Reassessment due now' : `Reassessment overdue by ${Math.round(rs.overdueMs / 60000)} min`) : '';
         // A Not Breathing casualty is listed once, with its overdue time on the same line (v0.19.12: it was listed twice).
         if (r.category === 'NOT_BREATHING') att.push({ k: 0, r, t: 'Breathing not detected — needs a clinician (MITT)' + (overdue ? ' • ' + overdue.toLowerCase() : '') });
         else if (overdue) att.push({ k: 0, r, t: overdue });
         const tq = r.interventions && r.interventions.Tourniquet;
-        if (tq) { const on = tq.ts ? now - tq.ts : 0; att.push({ k: on > 2 * 3600000 ? 0 : 1, r, w: on, t: `Tourniquet on ${tq.ts ? 'for ' + mins(on) : 'since ' + esc(tq.time || '?')}` }); }
+        if (tq) { const on = timeOk(tq.ts) ? now - tq.ts : 0; att.push({ k: on > 2 * 3600000 ? 0 : 1, r, w: on, t: `Tourniquet on ${timeOk(tq.ts) ? 'for ' + mins(on) : 'since ' + esc(tq.time || '?')}` }); }
         // Waiting: urgent casualties still in the field, and casualties at the clearing station not yet on their way
         // (v0.22.0: the commander had to work these out from the table).
-        const since = r.timestamp || r.createdAt || 0;
+        const since = [r.timestamp, r.createdAt].find(timeOk) || 0;
         const st = stage(r);
         if (since && st === 'field' && (r.category === 'P1' && now - since > 10 * 60000 || r.category === 'P2' && now - since > 30 * 60000)) att.push({ k: r.category === 'P1' ? 0 : 1, r, w: now - since, t: `In the field ${mins(now - since)} since triage, not at the clearing station yet` });
         const atCcs = r.ccsAt || 0;
@@ -874,7 +891,7 @@ function mins(ms) { const m = Math.max(0, Math.round(ms / 60000)); return m < 60
 function renderActivity(all, now) {
     const box = $('activity');
     if (!box) return;
-    const times = all.map(r => ({ t: r.createdAt || r.timestamp || 0, p1: (r.triageHistory && r.triageHistory[0] ? r.triageHistory[0].category : r.category) === 'P1' })).filter(x => x.t);
+    const times = all.map(r => ({ t: [r.createdAt, r.timestamp].find(timeOk) || 0, p1: (r.triageHistory && r.triageHistory[0] ? r.triageHistory[0].category : r.category) === 'P1' })).filter(x => x.t);
     if (!times.length) { box.innerHTML = ''; return; }
     const B = 5 * 60000;
     const first = Math.min.apply(null, times.map(x => x.t));
@@ -891,7 +908,7 @@ function renderActivity(all, now) {
     const svg = bars.map((b, i) => { const x = i * (bw + gap), h = Math.round((b.all / max) * (H - 14)), h1 = Math.round((b.p1 / max) * (H - 14)); return `<rect class="act-bar" x="${x.toFixed(1)}" y="${H - 12 - h}" width="${bw.toFixed(1)}" height="${h}"><title>${hm(from + i * B)}: ${b.all} new${b.p1 ? `, ${b.p1} P1` : ''}</title></rect>` + (h1 ? `<rect class="act-bar p1" x="${x.toFixed(1)}" y="${H - 12 - h1}" width="${bw.toFixed(1)}" height="${h1}"></rect>` : ''); }).join('');
     const last10 = times.filter(x => now - x.t <= 10 * 60000).length;
     const p1Field = all.filter(r => r.category === 'P1' && stage(r) === 'field');
-    const longest = p1Field.reduce((m, r) => Math.max(m, now - (r.timestamp || r.createdAt || now)), 0);
+    const longest = p1Field.reduce((m, r) => Math.max(m, now - ([r.timestamp, r.createdAt].find(timeOk) || now)), 0);
     box.innerHTML = `<div class="act-fig"><b>${last10}</b><span>new in the last 10 min</span></div>` +
         `<div class="act-fig"><b>${p1Field.length ? mins(longest) : '—'}</b><span>longest wait, P1 in the field</span></div>` +
         `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="New casualties every 5 minutes since ${hm(from)}; red = P1">${svg}</svg><span class="muted act-cap">New casualties every 5 minutes, ${hm(from)} to now (red: P1)</span>`;
@@ -965,7 +982,7 @@ function markerPopup(r) {
 function renderMap(records) {
     if (!ensureMap()) { setText('map-note', 'map library did not load'); return; }
     const want = new Map();
-    records.forEach(r => { const l = loc(r); if (l && l.lat) want.set(r.uid, r); });
+    records.forEach(r => { if (placeOk(loc(r))) want.set(r.uid, r); });
     const toRemove = [], toAdd = [], restyled = [];
     markerByUid.forEach((v, uid) => { if (!want.has(uid)) { toRemove.push(v.m); markerByUid.delete(uid); } });
     want.forEach((r, uid) => {
@@ -1088,7 +1105,7 @@ function closePatient() {
 }
 function showPatientOnMap() {
     const r = byUid(openUid); const l = r && loc(r);
-    if (!l || !l.lat || !map) return;
+    if (!placeOk(l) || !map) return;
     closePatient();
     if (document.body.classList.contains('wall')) setWall(false);
     map.setView([Number(l.lat), Number(l.lng)], Math.max(map.getZoom(), 18));
@@ -1104,7 +1121,7 @@ function renderPatient(r) {
     const rs = MITTLib.reassessmentStatus(r, now, MITTLib.REASSESS_INTERVALS);
     const st = stage(r);
     setText('pt-id', r.id);
-    $('pt-chips').innerHTML = `${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <span class="cat-chip" style="background:#DA291C;color:#fff">HIGH RISK</span>' : ''}${rs.state === 'overdue' ? ` <span class="cat-chip" style="background:#DA291C;color:#fff">${Math.round(rs.overdueMs / 60000) < 1 ? 'Reassessment due now' : `Reassessment overdue ${Math.round(rs.overdueMs / 60000)} min`}</span>` : ''}`;
+    $('pt-chips').innerHTML = `${cat(r.category)} ${toolChip(r)} ${stageTag(r)}${r.highRisk ? ' <span class="cat-chip" style="background:#DA291C;color:#fff">HIGH RISK</span>' : ''}${r.timeDoubt ? ` <span class="cat-chip" style="background:#ED8B00;color:#000" title="${esc(Object.keys(r.timeDoubt).map(k => k + ': ' + (Number(r.timeDoubt[k]) ? new Date(Number(r.timeDoubt[k])).toISOString() : r.timeDoubt[k])).join('; '))}">⚠ The phone's clock was wrong: times shown are when the server received this casualty</span>` : ''}${rs.state === 'overdue' ? ` <span class="cat-chip" style="background:#DA291C;color:#fff">${Math.round(rs.overdueMs / 60000) < 1 ? 'Reassessment due now' : `Reassessment overdue ${Math.round(rs.overdueMs / 60000)} min`}</span>` : ''}`;
     const hist = (r.triageHistory || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
     const triage = `<ul class="tl">${hist.length ? hist.map(t => `<li><span class="t">${dhm(t.ts)}</span><span><b>${esc(t.tool || '')} ${esc(MITTLib.categoryShort(t.category))}</b> ${esc(t.reason || '')}${t.kind && t.kind !== 'triage' ? ` <span class="muted">(${esc(t.kind)})</span>` : ''}${t.by ? ` <span class="muted">by ${esc(t.by)}</span>` : ''}${t.action ? `<div class="muted">${esc(t.action)}</div>` : ''}</span></li>`).join('') : `<li><span class="t">${dhm(r.timestamp)}</span><span><b>${esc(r.tool || '')} ${esc(MITTLib.categoryShort(r.category))}</b> ${esc(r.reason || '')}</span></li>`}</ul>`;
     const ints = Object.keys(r.interventions || {});

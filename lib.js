@@ -771,10 +771,12 @@
         const lat = _roundCoord(location.lat !== undefined ? location.lat : location.latitude);
         const lng = _roundCoord(location.lng !== undefined ? location.lng : (location.lon !== undefined ? location.lon : location.longitude));
         const out = {};
-        if (lat !== null) out.lat = lat.toFixed(7);
-        if (lng !== null) out.lng = lng.toFixed(7);
+        // Only a real place is kept: both numbers in range, and not exactly 0, 0 (what a faulty fix reports). v0.22.1 stress
+        // test: a latitude of 999 was stored, and the commander's Fit map zoomed out to the whole world.
+        const placeOk = lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+        if (placeOk) { out.lat = lat.toFixed(7); out.lng = lng.toFixed(7); }
         const accuracy = _roundMetric(location.accuracy !== undefined ? location.accuracy : location.acc);
-        if (accuracy !== null) { out.accuracy = accuracy; out.acc = accuracy; }
+        if (accuracy !== null && accuracy >= 0) { out.accuracy = accuracy; out.acc = accuracy; }
         const altitude = _roundMetric(location.altitude);
         if (altitude !== null) out.altitude = altitude;
         const altitudeAccuracy = _roundMetric(location.altitudeAccuracy);

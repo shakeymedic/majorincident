@@ -164,6 +164,14 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.22.3 build 2026-11-02-stress — fixes from the v0.22.1 stress test (Jake, 2 November 2026)
+
+- **A time that cannot be right is no longer used.** A casualty dated 1 January 1970 went to the top of Needs attention as "Reassessment overdue by 29,892,612 min" and set the longest P1 wait to 498,210 hours. The server now sets aside any time on a casualty (triage, created, reassessed, at the clearing station, evacuated, handed over, tourniquet) that is more than a day before the incident started or in the future. The original is kept on the record (timeDoubt), and the triage time becomes the time the server first had the casualty. The commander screen shows "⚠ The phone's clock was wrong" on that casualty, and leaves such times out of waits, overdue checks and the activity chart, including on incidents stored before this version.
+- **An impossible position is not stored.** A latitude of 999 made Fit map zoom out to the whole world. Positions with a latitude outside ±90, a longitude outside ±180, or exactly 0, 0 are dropped, as is a negative accuracy. This is checked on the phone and the server, and the commander's map also skips them.
+- **The 200-phone limit holds when phones join at the same moment** (the test got 205). As with map markings, each new phone checks again after joining and takes itself back if the incident is over the limit. At the limit, phones joining together may both be refused and can try again.
+- **A very big burst of changes no longer makes the commander screen reload the whole incident** (3.9 MB in 9.4 s at 3,000 casualties). The server sends what fits in one reply and lists the rest, and the screen fetches those in parts of 50, four at a time. Older screens still get the full reload.
+- Service worker cache v59. Web change only: no Android rebuild.
+
 ### v0.22.2 build 2026-11-01-clinical — clinical wording decisions (Jake, 1 November 2026)
 
 - **Breathing (TST and MITT)**: the question stays "Breathing?"; the instruction now says to open the airway, then check for breathing again.
