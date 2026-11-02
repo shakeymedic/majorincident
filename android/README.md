@@ -32,7 +32,7 @@ workflow run to need a fix or two.
 
 **Privacy policy URL:** https://majorincident.netlify.app/privacy.html
 
-**Data safety** (what leaves the device, and only when the user starts or joins live sharing with a commander):
+**Data safety** (what leaves the device: everything except audio only when the user starts or joins live sharing with a commander; audio only when someone dictates a voice note in training mode):
 
 | Data type | Collected? | Shared? | Purpose | Notes |
 |---|---|---|---|---|
@@ -40,6 +40,7 @@ workflow run to need a fix or two.
 | Health info (about casualties, not the user) | Yes, optional | No | App functionality | Triage category, timings, interventions, injuries, free-text notes. No names or NHS numbers are asked for. |
 | User IDs / name | Yes, optional | No | App functionality | The triager's typed name and a random device code, so the commander screen can say who reported what. |
 | Device or other IDs | No | No | | The device code is random and set by the app, not a hardware ID. |
+| Audio: Voice or sound recordings | Yes, optional, **processed ephemerally** | No | App functionality | Voice notes (🎙) in **training mode only**. Chrome turns the speech into text, and it may send the audio to Google's speech service to do that. The app never receives or stores audio, only the text. Hidden in real use (G9). |
 | Crash logs, diagnostics, analytics | No | No | | The app has no analytics and no crash reporting. |
 
 Data is encrypted in transit (HTTPS). Users can delete it: the server copy is deleted 24 hours after the last update,
