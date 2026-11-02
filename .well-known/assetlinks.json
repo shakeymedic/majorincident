@@ -1,11 +1,15 @@
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "org.emevidence.mitriage",
-    "sha256_cert_fingerprints": [
-      "REPLACE_WITH_PLAY_APP_SIGNING_SHA256_FROM_PLAY_CONSOLE",
-      "REPLACE_WITH_UPLOAD_KEY_SHA256_FOR_LOCAL_TEST_BUILDS"
-    ]
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.emevidence.mitriage",
+      "sha256_cert_fingerprints": [
+        "3C:3C:FB:67:20:06:A0:AD:39:51:03:48:85:60:1D:29:BF:DD:CB:C2:70:45:81:E1:B8:2E:79:BE:04:FF:9F:63",
+        "C1:E8:63:12:51:5F:BF:70:5C:6E:AA:96:ED:F2:8E:B0:36:80:63:83:7E:85:6C:0C:C0:1E:3A:D5:63:17:CB:7C"
+      ]
+    }
   }
-}]
+]
