@@ -1587,7 +1587,8 @@
             walking: { yes: { type: 'result', category: 'P3', reason: 'Walking' }, no: { type: 'next', step: 'breathing' } },
             breathing: { yes: { type: 'next', step: 'voice' }, no: { type: 'result', category: 'DEAD', reason: 'Not Breathing' } },
             voice: { yes: { type: 'next', step: 'age' }, no: { type: 'result', category: 'P1', reason: 'Does Not Respond to Voice' } },
-            age: { yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', reason: 'Aged 2 or Under' } },
+            // Children under 2 are P1, as in TST (Jake, 1 Nov 2026: the card's "over 2" made a 2-year-old P1 in MITT but not TST).
+            age: { yes: { type: 'next', step: 'rr' }, no: { type: 'result', category: 'P1', reason: 'Aged Under 2' } },
             rr: { yes: { type: 'next', step: 'hr' }, no: { type: 'result', category: 'P1', reason: 'Breathing Rate Outside 12-23' } },
             // Card: "Heart Rate 100 or More" — YES -> P1, NO -> P2.
             hr: { yes: { type: 'result', category: 'P1', reason: 'Heart Rate 100 or More' }, no: { type: 'result', category: 'P2', reason: 'Heart Rate Under 100' } },
@@ -2049,9 +2050,9 @@
         ],
     };
     const DEMO_ACTIONS = {
-        'TST|Walking': 'P3 — walking. Direct them where instructed (for example the casualty clearing station).',
+        'TST|Walking': 'P3 — walking. Send them to the casualty clearing station, or where instructed.',
         'TST|Severe Bleeding': 'P1 — control bleeding: pressure, tourniquet, packing. Then, if they are not talking but are breathing: open the airway and place them in the recovery position (leave the tourniquet on).',
-        'TST|Penetrating Injury': 'P1 — immediate priority. Open wound to the chest: chest seal if trained.',
+        'TST|Penetrating Injury': 'P1 — immediate priority. Open wound to the chest or back: chest seal if trained.',
         'TST|Talking, No Penetrating Injury': 'P2 — urgent priority.',
         'TST|Not Breathing': 'NOT BREATHING — CPR if resources allow. Must be reassessed by a healthcare responder as soon as possible.',
         'MITT|Catastrophic Bleeding': 'P1 — control bleeding: pressure dressing, tourniquet, haemostatic packing. Then, if not responding to voice: airway and recovery position; open chest wound: chest seal.',
@@ -2059,6 +2060,7 @@
         'MITT|Not Breathing': 'DEAD.',
         'MITT|Does Not Respond to Voice': 'P1 — place in the recovery position.',
         'MITT|Aged 2 or Under': 'P1 — immediate priority. Keep warm and with their carer where possible.',
+        'MITT|Aged Under 2': 'P1 — immediate priority. Keep warm and with their carer where possible.',
         'MITT|Breathing Rate Outside 12-23': 'P1 — immediate priority.',
         'MITT|Heart Rate 100 or More': 'P1 — immediate priority.',
         'MITT|Heart Rate Under 100': 'P2 — urgent priority.',
@@ -2083,7 +2085,7 @@
         { n: 14, p: 0, tool: 'MITT', cat: 'P3', why: 'Walking', t: 24, base: 'ccs', at: [-24, -10], sector: 'Casualty clearing station', landmark: 'P3 area (marquee)', demos: 'Adult M, about 20', notes: 'Twisted ankle.' },
         { n: 15, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 22, base: 'ccs', at: [-12, 0], sector: 'Casualty clearing station', landmark: 'P2 area', demos: 'Adult F, about 55', notes: 'Fractured neck of femur, left.', moved: { to: 'loading', at: [-3, 2], t: 10, sector: 'Loading Point' }, ints: { 'Splintage': 20 }, evac: { dest: 'Heartlands Hospital', vehicle: 'Ambulance 2', t: 8 }, ho: { state: 'handed-over', to: 'Ambulance 2 crew', t: 9 } },
         { n: 16, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 21, base: 'ccs', at: [-22, -15], sector: 'Casualty clearing station', landmark: 'P3 area (marquee)', demos: 'Adult M, about 30', notes: 'Small scalp laceration, no loss of consciousness.' },
-        { n: 17, p: 1, tool: 'MITT', cat: 'P1', why: 'Aged 2 or Under', t: 20, base: 'loading', at: [6, -4], sector: 'Loading Point', landmark: 'Waiting for a paediatric-capable crew', demos: 'Child F, about 18 months', notes: 'With her mother (DEMO-MD-MITT-004). Bruising to the forehead, alert.', ints: { 'Oxygen': 19 }, inj: [[95, 25, 'Bruise', 'minor', 19]], ho: { state: 'pending', to: '', t: 3 } },
+        { n: 17, p: 1, tool: 'MITT', cat: 'P1', why: 'Aged Under 2', t: 20, base: 'loading', at: [6, -4], sector: 'Loading Point', landmark: 'Waiting for a paediatric-capable crew', demos: 'Child F, about 18 months', notes: 'With her mother (DEMO-MD-MITT-004). Bruising to the forehead, alert.', ints: { 'Oxygen': 19 }, inj: [[95, 25, 'Bruise', 'minor', 19]], ho: { state: 'pending', to: '', t: 3 } },
         { n: 18, p: 1, tool: 'MITT', cat: 'P3', why: 'Walking', t: 20, base: 'loading', at: [8, -2], sector: 'Loading Point', landmark: 'With her child (DEMO-MD-MITT-003)', demos: 'Adult F, about 30' },
         { n: 19, p: 1, tool: 'MITT', cat: 'P2', why: 'Heart Rate Under 100', t: 15, base: 'ccs', at: [-6, 12], sector: 'Casualty clearing station', landmark: 'P2 area, moved to P1 area', demos: 'Adult M, about 70', notes: 'Chest wall pain. Became pale and clammy.', tri: [['MITT', 'P1', 'Heart Rate 100 or More', 8, 1]], ints: { 'Oxygen': 8, 'IO Access': 7 }, inj: [[70, 120, 'Chest wall bruising', 'moderate', 15]] },
         { n: 20, p: 3, tool: 'TST', cat: 'P2', why: 'Talking, No Penetrating Injury', t: 12, base: 'site', at: [30, 18], sector: 'Inner Cordon', landmark: 'Beside the sound desk', demos: 'Adult M, about 40', notes: 'Back pain, cannot walk. Waiting for a clinician.' },

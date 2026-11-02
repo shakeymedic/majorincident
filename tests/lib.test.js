@@ -255,8 +255,10 @@ group('triage flows', () => {
     test('MITT: not breathing -> DEAD', () => {
         assert.strictEqual(lib.mittNext('breathing', false).category, 'DEAD');
     });
-    test('MITT: aged 2 or under -> P1; breathing rate outside 12-23 -> P1', () => {
+    test('MITT: under 2 -> P1 (v0.22.2: lined up with TST); breathing rate outside 12-23 -> P1', () => {
         assert.strictEqual(lib.mittNext('age', false).category, 'P1');
+        assert.strictEqual(lib.mittNext('age', false).reason, 'Aged Under 2');
+        assert.strictEqual(lib.mittNext('age', true).step, 'rr');
         assert.strictEqual(lib.mittNext('rr', false).category, 'P1');
     });
     test('MITT: cat_bleed yes -> P1', () => {
