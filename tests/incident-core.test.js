@@ -1036,6 +1036,78 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(got.length, 120);
         assert.strictEqual(new Set(got.map(r => r.uid)).size, 120);
     });
+    await test('v0.22.3: a time that cannot be right (1970, or tomorrow) is kept aside and not used', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        const r = await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', clientNow: clock, records: [
+            rec('t1', 'T-1', 'P1', { timestamp: 1, createdAt: 1, updatedAt: clock, lastReassessed: 5, interventions: { Tourniquet: { time: '00:00', ts: 1 } } }),
+            rec('t2', 'T-2', 'P2', { timestamp: clock + 86400000, updatedAt: clock }),
+            rec('t3', 'T-3', 'P3', { timestamp: clock - 3600000, updatedAt: clock })] }), '1.1.1.1');
+        assert.strictEqual(r.body.accepted, 3);
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        const by = Object.fromEntries(g.body.records.map(x => [x.uid, x]));
+        assert.strictEqual(by.t1.timestamp, clock, 'triage time becomes the time the server first had it');
+        assert.strictEqual(by.t1.createdAt, clock);
+        assert.strictEqual(by.t1.lastReassessed, null);
+        assert.strictEqual(by.t1.interventions.Tourniquet.ts, null);
+        assert.deepStrictEqual(by.t1.timeDoubt, { timestamp: 1, createdAt: 1, lastReassessed: 5, 'interventions.Tourniquet': 1 });
+        assert.strictEqual(by.t2.timestamp, clock); assert.strictEqual(by.t2.timeDoubt.timestamp, clock + 86400000);
+        assert.strictEqual(by.t3.timestamp, clock - 3600000, 'an hour before the incident started is fine');
+        assert.strictEqual(by.t3.timeDoubt, undefined);
+        // Sent again later with the same wrong time: the first time the server had it is kept, not moved on.
+        const first = clock; clock += 60000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', clientNow: clock, records: [rec('t1', 'T-1', 'P1', { timestamp: 1, updatedAt: clock })] }), '1.1.1.1');
+        const m = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-uids': 't1' }), '', '2.2.2.2');
+        assert.strictEqual(m.body.records[0].timestamp, first);
+    });
+    await test('v0.22.3: an impossible position (latitude 999, 0,0) is not stored; a negative accuracy is dropped', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: [
+            rec('g1', 'G-1', 'P1', { updatedAt: clock, currentLocation: { lat: 999, lng: -1.9, acc: 5, timestamp: clock } }),
+            rec('g2', 'G-2', 'P1', { updatedAt: clock, currentLocation: { lat: 0, lng: 0, acc: 5, timestamp: clock } }),
+            rec('g3', 'G-3', 'P1', { updatedAt: clock, currentLocation: { lat: 52.4, lng: -1.9, acc: -5, timestamp: clock } })] }), '1.1.1.1');
+        const g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        const by = Object.fromEntries(g.body.records.map(x => [x.uid, x]));
+        assert.strictEqual((by.g1.currentLocation || {}).lat, undefined);
+        assert.strictEqual((by.g2.currentLocation || {}).lat, undefined);
+        assert.strictEqual(by.g3.currentLocation.lat, '52.4000000');
+        assert.strictEqual(by.g3.currentLocation.acc, undefined);
+    });
+    await test('v0.22.3: phones joining at the same moment cannot take an incident past 200 phones', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock });
+        const inc = await mk(c);
+        const ids = Array.from({ length: 230 }, (_, i) => 'J' + String(i).padStart(3, '0'));
+        const res = [];
+        for (let i = 0; i < ids.length; i += 50) res.push(...await Promise.all(ids.slice(i, i + 50).map(d => c.handle('POST', `/api/incident/${inc.code}/join`, H(inc.pin), JSON.stringify({ deviceId: d, triager: 'X', keys: true }), '3.3.3.' + (i % 200)))));
+        const n = (await store.list(`i/${inc.code}/d/`)).length;
+        assert.ok(n <= 200, `${n} phones stored`);
+        assert.strictEqual(res.filter(r => r.status === 200).length, n - 1, 'every phone told it joined is stored (plus the creator)');
+        assert.ok(res.filter(r => r.status === 409).every(r => r.body.error === 'too_many_devices'));
+    });
+    await test('v0.22.3: a change too big for one reply comes in parts (pending) instead of a full reload', async () => {
+        const store = makeStore();
+        const c = createCore({ store, now: () => clock, pageBytes: 20000 });
+        const inc = await mk(c);
+        let g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin), '', '2.2.2.2');
+        const ver = g.body.ver, cursor = g.body.cursor;
+        clock += 1000;
+        await c.handle('PUT', `/api/incident/${inc.code}/records`, H(inc.pin), JSON.stringify({ deviceId: 'DEVA', records: many('big', 120, { notes: 'x'.repeat(500) }) }), '1.1.1.1');
+        clock += 1000;
+        g = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-ver': ver, 'x-incident-cursor': String(cursor), 'x-incident-pending': '1' }), '', '2.2.2.2');
+        assert.strictEqual(g.body.delta, true);
+        assert.ok(g.body.records.length > 0 && g.body.pending.length > 0);
+        assert.strictEqual(g.body.records.length + g.body.pending.length, 120);
+        assert.ok(JSON.stringify(g.body).length < 30000);
+        const all = new Set(g.body.records.map(r => r.uid).concat(g.body.pending));
+        assert.strictEqual(all.size, 120);
+        // A screen that does not say it can take parts still gets a full reload, as before.
+        const old = await c.handle('GET', `/api/incident/${inc.code}`, S(inc.commanderPin, { 'x-incident-ver': ver, 'x-incident-cursor': String(cursor) }), '', '2.2.2.2');
+        assert.strictEqual(old.body.delta, false);
+    });
     await test('v0.19.12: a decision whose log entry was not written still shows in the log', async () => {
         const store = makeStore();
         const c = createCore({ store, now: () => clock });
