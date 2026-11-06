@@ -164,6 +164,12 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.22.4 build 2026-11-06-stress — fixes from the v0.22.3 stress test (6 November 2026)
+
+- **A phone with a big backlog no longer gets stuck.** The server refuses a report over 512 KB. A phone sent up to 200 casualties per report whatever their size, so 60 casualties with long notes (610 KB, or 540 KB for 30 with notes in a non-Latin script) were refused, and the phone sent the same report every 30 seconds for ever: nothing after it reached the commander. Reports are now filled by size as well as number (at most 384 KB), and if the server still says a report is too large the phone halves it and carries on.
+- **A call for help is readable on a phone-sized commander screen.** At 390 px wide the banner's buttons took the whole width and the triager's name was squeezed into one letter per line. The buttons now go under the name. The header buttons also wrap, so Sign out is no longer off the edge of the screen.
+- Service worker cache v60. Web change only: no Android rebuild.
+
 ### v0.22.3 build 2026-11-02-stress — fixes from the v0.22.1 stress test (Jake, 2 November 2026)
 
 - **A time that cannot be right is no longer used.** A casualty dated 1 January 1970 went to the top of Needs attention as "Reassessment overdue by 29,892,612 min" and set the longest P1 wait to 498,210 hours. The server now sets aside any time on a casualty (triage, created, reassessed, at the clearing station, evacuated, handed over, tourniquet) that is more than a day before the incident started or in the future. The original is kept on the record (timeDoubt), and the triage time becomes the time the server first had the casualty. The commander screen shows "⚠ The phone's clock was wrong" on that casualty, and leaves such times out of waits, overdue checks and the activity chart, including on incidents stored before this version.

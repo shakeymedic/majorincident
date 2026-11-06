@@ -1325,6 +1325,21 @@ group('v0.11.0: demo incident', () => {
         assert.strictEqual(lib.countNearCutoff('hr', 120), false);
         assert.strictEqual(lib.countNearCutoff('voice', 12), false);
     });
+    await test('v0.22.4: a live-sharing report is filled by size, so long notes never make a report the server refuses', () => {
+        const mk = (i, notes) => ({ uid: 'u' + i, id: 'P' + i, category: 'P2', notes });
+        const longOnes = Array.from({ length: 60 }, (_, i) => mk(i, 'Long handover note. '.repeat(500)));
+        const b = lib.takeReportBatch(longOnes, 200);
+        const bytes = Buffer.byteLength(JSON.stringify({ deviceId: 'ABCDEFGH', clientNow: Date.now(), records: b }));
+        assert.ok(b.length > 1 && b.length < 60, `took ${b.length}`);
+        assert.ok(bytes < 512 * 1024, `report is ${bytes} bytes`);
+        // Non-Latin notes take 2 bytes a letter: counted as bytes, not letters.
+        const cyr = Array.from({ length: 30 }, (_, i) => mk(i, 'Пациент без сознания. '.repeat(450)));
+        assert.ok(Buffer.byteLength(JSON.stringify(lib.takeReportBatch(cyr, 200))) < 512 * 1024);
+        // Small casualties still go 200 at a time, and one casualty always goes even if it is big on its own.
+        assert.strictEqual(lib.takeReportBatch(Array.from({ length: 250 }, (_, i) => mk(i, 'x')), 200).length, 200);
+        assert.strictEqual(lib.takeReportBatch([mk(1, 'y'.repeat(20000))], 200, 1000).length, 1);
+        assert.deepStrictEqual(lib.takeReportBatch([], 200), []);
+    });
     await test('time of death is kept only while the category is Dead', () => {
         assert.strictEqual(lib.todAfterChange('DEAD', '16:26 30/10/2026', ''), '16:26 30/10/2026');
         assert.strictEqual(lib.todAfterChange('DEAD', '', '16:26 30/10/2026'), '16:26 30/10/2026', 'kept on a Dead re-triage with no new time');
