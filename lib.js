@@ -1607,6 +1607,24 @@
         for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
         return out;
     }
+    // ---------- Live sharing: how much goes in one report ----------
+    // The server refuses a report over 512 KB (v0.22.3 stress test, 6 Nov 2026: 60 casualties with long notes made a
+    // 610 KB report; the phone sent the same report every 30 seconds and nothing after it ever got through). A report
+    // is filled up to maxCount casualties and maxBytes of JSON (UTF-8), always with at least one casualty.
+    const SHARE_REPORT_MAX_BYTES = 384 * 1024;
+    function takeReportBatch(records, maxCount, maxBytes) {
+        const cap = maxBytes || SHARE_REPORT_MAX_BYTES;
+        const out = [];
+        let size = 0;
+        for (const r of (records || [])) {
+            if (out.length >= (maxCount || 200)) break;
+            const n = utf8Bytes(JSON.stringify(r)).length + 1;
+            if (out.length && size + n > cap) break;
+            out.push(r);
+            size += n;
+        }
+        return out;
+    }
     const _SHA_K = (() => {
         const k = [], primes = [];
         for (let n = 2; primes.length < 64; n++) { if (primes.every(p => n % p)) primes.push(n); }
@@ -2369,7 +2387,7 @@
         formatLocationAge, appendLocationHistory, mergeLocationHistory, mergeLocationFieldsInto, distanceMeters,
         similarityScore, findDuplicateCandidates,
         nextReassessmentDue, reassessmentStatus, applyReassessment,
-        categoryWorsened, canChangeCategory, todAfterChange, MITT_COUNT, countNearCutoff, buildPatientTimeline, shortCodeFromHash,
+        categoryWorsened, canChangeCategory, todAfterChange, MITT_COUNT, countNearCutoff, takeReportBatch, SHARE_REPORT_MAX_BYTES, buildPatientTimeline, shortCodeFromHash,
         FIELD_LIMITS, FIELD_INPUT_LIMITS, normaliseIncidentCode,
         CATEGORIES, CATEGORY_INFO, PATIENT_QR_MAX_CHARS, PATIENT_QR_LOCATION_HISTORY_MAX, AUDIT_GENESIS,
         isValidCategory, categoryShort, categoryLabel, toAsciiJSON, makeUid, makeDeviceCode, nextAutoId,

@@ -1874,6 +1874,20 @@ async function test(name, fn) {
         assert.ok(await CB.evaluate(() => auditLog.some(a => a.action === 'COMMANDER_STOPPED')));
         assert.ok(await CA.evaluate(() => cmdActive()));
     });
+    await test('v0.22.4: after a spell with no signal, 60 casualties with long notes all reach the server (reports split by size, none refused as too large)', async () => {
+        await CA.evaluate(() => { window.__realFetch = window.__realFetch || window.fetch; window.__noSignal = true; window.fetch = (u, o) => (window.__noSignal && /\/api\//.test(String((u && u.url) || u))) ? Promise.reject(new TypeError('Failed to fetch')) : window.__realFetch(u, o); });
+        const uids = await CA.evaluate(() => {
+            const base = incidentLog[0]; const out = [];
+            for (let i = 0; i < 60; i++) { const e = MITTLib.clonePatientRecord(base); e.uid = MITTLib.makeUid(); e.id = 'BIG-' + i; e.notes = 'Long handover note. '.repeat(500); touch(e, ['notes']); incidentLog.push(e); out.push(e.uid); }
+            saveState(); cmdScanChanges(); return out;
+        });
+        await CA.evaluate(() => { window.__noSignal = false; cmdPush(true); });
+        await CA.waitForFunction((u) => u.every(x => !CMD.dirty.has(x)) && !CMD.inflight, uids, { timeout: 30000 });
+        const st = await CA.evaluate(() => ({ err: CMD.lastError, split: auditLog.filter(a => a.action === 'COMMANDER_PUSH_SPLIT').length, failed: auditLog.filter(a => a.action === 'COMMANDER_PUSH_FAILED' && /too large/i.test(a.details || a.detail || '')).length }));
+        assert.deepStrictEqual(st, { err: '', split: 0, failed: 0 });
+        const r = await apiCore.readSync(share.code, share.cmdPin, 'test', '', { uids: uids.slice(0, 50).join(',') });
+        assert.strictEqual(r.body.records.length, 50, 'the server holds them');
+    });
     await test('the creator can end the incident for everyone; the commander page says so and a joined phone stops', async () => {
         const CE = await device('Cmd E');
         await setup(CE, 'Medic Echo');

@@ -2272,8 +2272,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.22.3';
-    const APP_BUILD = '2026-11-02-stress';
+    const APP_VERSION = '0.22.4';
+    const APP_BUILD = '2026-11-06-stress';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -6482,7 +6482,10 @@
         const held = pendingDeadEntry && pendingDeadEntry.overrideUid;
         // Casualties the incident had no room for go last, so they never hold up changes to casualties already sent.
         const uids = Array.from(CMD.dirty).filter(u => u !== held).sort((a, b) => (CMD.full.has(a) ? 1 : 0) - (CMD.full.has(b) ? 1 : 0));
-        const batch = uids.map(u => incidentLog[indexByUid(u)]).filter(Boolean).slice(0, CMD_BATCH).map(e => { const c = MITTLib.clonePatientRecord(e); c.uid = e.uid; return c; });
+        // Filled by size as well as number: the server refuses a report over 512 KB, and a refused report used to be
+        // sent again unchanged for ever (v0.22.3 stress test, 6 Nov 2026). After a 'too large' reply the next report is halved.
+        const candidates = uids.slice(0, CMD_BATCH).map(u => incidentLog[indexByUid(u)]).filter(Boolean).map(e => { const c = MITTLib.clonePatientRecord(e); c.uid = e.uid; return c; });
+        const batch = MITTLib.takeReportBatch(candidates, CMD.batchMax || CMD_BATCH, CMD.batchBytes || MITTLib.SHARE_REPORT_MAX_BYTES);
         uids.forEach(u => { if (indexByUid(u) === -1) CMD.dirty.delete(u); });
         CMD.inflight = true;
         try {
@@ -6525,6 +6528,12 @@
                 const why = r.body && r.body.error === 'expired' ? 'the incident expired on the server (24 hours with no new information)' : 'the incident was ended';
                 cmdStopLocal(`Sharing stopped: ${why}.`);
                 showToast(`Live sharing stopped: ${why}.`, { alert: true, long: true });
+            } else if (r.status === 413 && batch.length > 1) {
+                // Still too large (a server with a lower limit, or a record bigger than expected): send fewer at a time.
+                CMD.batchMax = Math.max(1, Math.floor(batch.length / 2));
+                CMD.batchBytes = Math.max(32 * 1024, Math.floor((CMD.batchBytes || MITTLib.SHARE_REPORT_MAX_BYTES) / 2));
+                logAudit('COMMANDER_PUSH_SPLIT', '-', `Report of ${batch.length} record(s) was too large for the server; sending ${CMD.batchMax} or fewer at a time`, Date.now());
+                cmdSchedule(300);
             } else if (r.status === 403 && r.body && r.body.error === 'device_key') {
                 cmdStopLocal('Sharing stopped: this phone\'s link is out of date.');
                 showBlockingError('Link to the commander is out of date', 'Join the incident again with the code and PIN. Your records are still on this phone and are sent again once you have joined.');

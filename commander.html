@@ -365,6 +365,7 @@
         .brand h1 small { display:none; }
         #hdr-incident .inc-name { max-width:100%; }
         .hdr-right { width:100%; margin-left:0; justify-content:space-between; }
+        .hdr-btns { flex-wrap:wrap; }
         #clock { display:none; }
         .card h2 small { margin-left:0; width:100%; text-align:left; }
         .count .n { font-size:2rem; }
@@ -372,6 +373,10 @@
         .att-row .cat-chip { justify-self:start; }
         .att-row .why { grid-column:1 / -1; grid-row:2; padding-left:10px; }
         .att-row .age { grid-column:3; grid-row:1; justify-self:end; padding-right:2px; }
+        /* A call for help on a phone-sized screen: the buttons go under the name (v0.22.3 stress test: the buttons took
+           the whole width and the name was squeezed into one letter per line). */
+        .sos-row { grid-template-columns:auto minmax(0,1fr); }
+        .sos-row .sos-btns { grid-column:1 / -1; justify-content:flex-start; }
     }
 
     /* =====================================================================
