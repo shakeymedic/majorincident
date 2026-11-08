@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mit-triage-v60-2026-11-06-stress';
+const CACHE_NAME = 'mit-triage-v61-2026-11-08-offline-logo';
 // Map tiles live in their own cache so app updates do not throw them away, capped so storage cannot fill up.
 const TILE_CACHE = 'mit-tiles-v1';
 // The printed-number reader (vendor/tesseract, ~10 MB, fetched on demand) is kept across app updates too,
@@ -15,6 +15,7 @@ const PRECACHE_URLS = [
     './icon-192.png',
     './icon-512.png',
     './icon-maskable-512.png',
+    './emevidence-logo.png',
     './quick-reference.html',
     './commander.html',
     './commander.js',
