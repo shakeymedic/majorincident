@@ -32,7 +32,7 @@ jobs:
           packages: 'platforms;android-36 build-tools;36.0.0 platform-tools'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.14.3'
+          gradle-version: '9.7.1'
       - name: Restore the upload keystore (only when the secrets exist)
         if: ${{ env.KS != '' }}
         run: |
