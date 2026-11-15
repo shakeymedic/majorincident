@@ -164,6 +164,11 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.23.1 build 2026-11-15-join-link — join link and a two-step demo chooser (15 November 2026)
+
+- **The join code is a web link.** The QR on the incident starter's phone now holds `https://<site>/#join=CODE-PIN` (the triagers' PIN, never the commander PIN). A phone's ordinary camera opens the app from it; a new user says who they are and is then asked "Join incident CODE?". The app's own scanner reads the same QR, and still reads the older JSON join code. The code and PIN ride after the `#`, which browsers do not send to the server, and the app removes them from the address as soon as it has read them. A phone still running an older cached version cannot scan the new QR in the app until it updates; typing the code and PIN works on every version.
+- **"Try a demo" is two steps.** First: watch as the commander, try as a triager, or run a live exercise. The four demo phones and "Everything on this phone" are on the second step. The linked demo, which needs a computer-sized screen, is not offered below 900 px wide.
+
 ### v0.23.0 build 2026-11-15-first-run — a shorter first run (15 November 2026)
 
 From the usability review of the first screens (15 November 2026). A new user reached the first question after four taps and a typed name; it is now two taps and no typing, then START TRIAGE.

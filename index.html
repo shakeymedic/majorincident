@@ -1042,6 +1042,8 @@
     #demo-phone-choices .btn { margin: 0; font-size: 0.95rem; }
     #demo-phone-choices .btn span { font-size: 0.75rem !important; }
     #demo-modal h3, #demo-role-modal h3 { margin-bottom: 4px; font-size: 1.2rem; }
+    /* The linked demo needs a computer-sized screen, so it is not offered on a phone (v0.23.1). */
+    @media (max-width: 899px) { #demo-linked { display: none !important; } }
     body:not(.gloved) #methane-screen h2 { font-size: 1.3rem; margin: 0 0 0.4rem; }
     body:not(.gloved) #methane-screen .input-group { margin-bottom: 0.45rem; }
     body:not(.gloved) #methane-screen label { font-size: 0.9rem; margin-bottom: 2px; }
@@ -1268,16 +1270,22 @@
 
 <div id="demo-role-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="demo-role-title">
     <div class="modal-box" style="max-width:460px; max-height:90vh; overflow-y:auto;">
-        <h3 id="demo-role-title" style="margin-top:0;">Demo: pick your role</h3>
-        <p class="qr-meta" style="text-align:left;">A made-up grandstand collapse at a festival. Real records are not touched. To pick a different role later, tap <strong>↩ Start page</strong> in the orange bar at the top.</p>
-        <a class="btn btn-primary demo-choice" id="demo-choose-cmd" href="commander.html#DEMO" onclick="closeDemoPicker()" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; background:var(--nhs-dark-blue);">🎖 Incident commander<br><span style="font-size:0.8rem; font-weight:normal;">Every phone's casualties on one screen. Plays out by itself; no internet needed.</span></a>
-        <a class="btn btn-primary demo-choice" id="demo-linked" href="demo.html" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; background:#7C2855;">🖥 Linked demo: commander and phones together<br><span style="font-size:0.8rem; font-weight:normal;">On a computer: the commander screen with demo phones beside it, all linked to one practice incident; phones can play their casualties by themselves. Other devices can join by QR.</span></a>
-        <h4 style="margin:10px 0 6px;">Or a triager with one of the phones</h4>
-        <div id="demo-phone-choices"></div>
-        <button type="button" class="btn btn-secondary demo-choice" style="margin-top:6px;" onclick="demoChoose('all')">👀 Everything on this phone<br><span style="font-size:0.8rem; font-weight:normal;">All 24 casualties from all four phones, for showing the app on your own</span></button>
-        <h4 style="margin:10px 0 6px;">Live exercise with real people</h4>
-        <button type="button" class="btn btn-primary demo-choice" id="btn-exercise" style="background:#7B3F00;" onclick="openExercise()">🎯 Run a live exercise<br><span style="font-size:0.8rem; font-weight:normal;">Control room, field triagers and the casualty clearing station on their own phones, all feeding one commander screen. Needs internet.</span></button>
-        <button type="button" class="btn btn-secondary" onclick="closeDemoPicker()">Cancel</button>
+        <h3 id="demo-role-title" style="margin-top:0;">Try a demo</h3>
+        <!-- v0.23.1: two steps. First what you want to do; the four demo phones come on the second step. -->
+        <div id="demo-step-main">
+            <p class="qr-meta" style="text-align:left;">A made-up grandstand collapse at a festival. Real records are not touched. To come back here later, tap <strong>↩ Start page</strong> in the orange bar at the top.</p>
+            <a class="btn btn-primary demo-choice" id="demo-choose-cmd" href="commander.html#DEMO" onclick="closeDemoPicker()" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; background:var(--nhs-dark-blue);">🎖 Watch as the commander<br><span style="font-size:0.8rem; font-weight:normal;">Every phone's casualties on one screen. Plays out by itself; no internet needed.</span></a>
+            <button type="button" class="btn btn-primary demo-choice" id="demo-choose-triager" onclick="demoStep('phones')">📱 Try as a triager<br><span style="font-size:0.8rem; font-weight:normal;">Use the app as one of four made-up responders, with their casualties already on the phone.</span></button>
+            <button type="button" class="btn btn-primary demo-choice" id="btn-exercise" style="background:#7B3F00;" onclick="openExercise()">🎯 Run a live exercise<br><span style="font-size:0.8rem; font-weight:normal;">Real people on their own phones, all feeding one commander screen. Needs internet.</span></button>
+            <a class="btn btn-primary demo-choice" id="demo-linked" href="demo.html" style="display:block; text-align:center; text-decoration:none; box-sizing:border-box; background:#7C2855;">🖥 Linked demo: commander and phones together<br><span style="font-size:0.8rem; font-weight:normal;">On a computer: the commander screen with demo phones beside it, all linked to one practice incident; phones can play their casualties by themselves. Other devices can join by QR.</span></a>
+            <button type="button" class="btn btn-secondary" onclick="closeDemoPicker()">Cancel</button>
+        </div>
+        <div id="demo-step-phones" style="display:none;">
+            <p class="qr-meta" style="text-align:left;">Pick a phone. Each one has a different job at the incident.</p>
+            <div id="demo-phone-choices"></div>
+            <button type="button" class="btn btn-secondary demo-choice" style="margin-top:6px;" onclick="demoChoose('all')">👀 Everything on this phone<br><span style="font-size:0.8rem; font-weight:normal;">All 24 casualties from all four phones, for showing the app on your own</span></button>
+            <button type="button" class="btn btn-secondary" id="demo-step-back" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue);" onclick="demoStep('main')">‹ Back</button>
+        </div>
     </div>
 </div>
 <div id="exercise-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="exercise-title">
@@ -1408,7 +1416,7 @@
         </div>
         <p class="qr-meta" style="text-align:left;" id="cmd-detail-status"></p>
         <div id="cmd-qr" style="display:flex; justify-content:center; margin:0.5rem 0;"></div>
-        <p class="qr-meta" id="cmd-detail-hint">Triagers: after they pick their role, their phone asks "Has someone set up a commander screen?"; they tap "Yes: scan their code" and scan this QR. To see the commander screen here, tap "Open the commander screen" below (no sign-in). On a laptop or big screen, open the link and enter the commander PIN.</p>
+        <p class="qr-meta" id="cmd-detail-hint">Triagers: point the phone's camera at this QR and open the link; the app opens and asks to join. To see the commander screen here, tap "Open the commander screen" below (no sign-in). On a laptop or big screen, open the link and enter the commander PIN.</p>
         <a id="cmd-open-btn" class="btn btn-primary" href="commander.html" target="_blank" rel="noopener" style="display:block; text-align:center; text-decoration:none;">🖥 Open the commander screen</a>
         <p style="word-break:break-all; font-size:0.85rem;"><a id="cmd-link" href="commander.html" target="_blank" rel="noopener"></a></p>
         <div class="modal-actions">
@@ -1821,6 +1829,7 @@
     <main>
         <div id="intro-screen" class="screen" style="padding: 1.2rem;">
             <p class="intro-purpose" role="note"><strong>Training and exercise use only.</strong> Not for use with real patients.</p>
+            <div class="alert-card info" id="intro-join-note" role="status" style="display:none;"><strong>Joining incident <span id="intro-join-code"></span>.</strong> Choose who you are below; the app then asks you to confirm the link to the commander.</div>
             <!-- Step 1: one choice only, medical or not (Jake, 31 Oct 2026). Details come on the next step. -->
             <div id="intro-step-who">
                 <h2 class="intro-step-label intro-q">Who are you?</h2>
@@ -2291,8 +2300,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.23.0';
-    const APP_BUILD = '2026-11-15-first-run';
+    const APP_VERSION = '0.23.1';
+    const APP_BUILD = '2026-11-15-join-link';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -3314,6 +3323,8 @@
         saveState();
         applyRole(role, true);
         // v0.23.0: no link sheet on first run. Linking is one tap from the home screen (the bar under the buttons).
+        // v0.23.1: unless this phone was opened from a join link, in which case the join is offered now.
+        if (pendingJoin && !asCommander) setTimeout(runPendingJoin, 150);
     }
     // The incident commander picks that role on the first screen: it creates the incident and opens the screen.
     async function startAsCommander() {
@@ -4730,6 +4741,8 @@
             // The technical reason (often "Failed to fetch" for a damaged code) goes to the audit, not the screen.
             catch (e) { stopScanner(); logAudit('SCAN_UNREADABLE', '-', `Compressed code could not be read: ${(e && e.message) || e}`, Date.now()); showBlockingError('Could not read that code', 'That code isn\'t a valid handover, or only part of it was scanned. Ask them to show it again, hold the phones still and turn the brightness up.'); return; }
         }
+        const joinFromLink = parseJoinLink(txt);
+        if (joinFromLink) { stopScanner(); handleJoinScan(joinFromLink); return; }
         let parsed = null;
         try { parsed = JSON.parse(txt); } catch (_) {}
         if (parsed && typeof parsed === 'object') {
@@ -4761,7 +4774,35 @@
     function cleanTagCode(txt) {
         return String(txt || '').replace(/[^A-Za-z0-9 ._\/-]/g, '').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, MITTLib.FIELD_INPUT_LIMITS.id);
     }
-    function looksLikeAppCode(txt) { return /^\s*[{\[]/.test(txt) || /^MIT_/.test(txt) || MITTLib.isCompressedTransport(txt); }
+    function looksLikeAppCode(txt) { return /^\s*[{\[]/.test(txt) || /^MIT_/.test(txt) || MITTLib.isCompressedTransport(txt) || !!parseJoinLink(txt); }
+    // v0.23.1: the join code is a web link, so a phone's ordinary camera opens the app already pointed at the incident.
+    // The code and the triagers' PIN ride after the "#", which browsers do not send to the server.
+    function joinLink(code, pin) { return `${location.origin}${location.pathname.replace(/index\.html$/i, '')}#join=${code}-${pin}`; }
+    function parseJoinLink(txt) {
+        const m = /^https?:\/\/[^\s#]+#join=([A-Za-z0-9]{6})-(\d{6})$/.exec(String(txt || '').trim());
+        return m ? { c: m[1].toUpperCase(), p: m[2] } : null;
+    }
+    let pendingJoin = null;
+    function takeJoinFromAddress() {
+        const j = parseJoinLink(location.href);
+        if (!j) return false;
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}   // the PIN does not stay in the address bar or history entry
+        pendingJoin = j;
+        return true;
+    }
+    function renderJoinNote() {
+        const n = $('intro-join-note');
+        if (!n) return;
+        n.style.display = pendingJoin ? '' : 'none';
+        if (pendingJoin) setText('intro-join-code', pendingJoin.c);
+    }
+    function runPendingJoin() {
+        const j = pendingJoin;
+        if (!j) return;
+        if (!userRole) { renderJoinNote(); return; }   // asked once they have said who they are
+        pendingJoin = null; renderJoinNote();
+        handleJoinScan(j);
+    }
     function openManualId() { $('manual-id-input').value = ''; $('manual-id-modal').style.display = 'flex'; setTimeout(() => $('manual-id-input').focus(), 50); }
     function scanTagForNewPatient() { $('manual-id-modal').style.display = 'none'; _tagTarget = 'new'; _tagDone = false; scanMode = 'TAG'; startScanner(); }
     function scanTagForCurrent() { if (!currentEntry()) return; commitDirtyFields('Scan tag'); _tagTarget = 'current'; _tagDone = false; scanMode = 'TAG'; startScanner(); }
@@ -6832,10 +6873,10 @@
         $('cmd-open-btn').href = link;
         setText('cmd-title', CMD.cfg.commander ? 'Incident commander' : 'Live sharing');
         setText('cmd-detail-hint', CMD.cfg.role === 'creator'
-            ? 'Triagers: after they pick their role, their phone asks "Has someone set up a commander screen?"; they tap "Yes: scan their code" and scan this QR (or tap "Yes: type their code and PIN" and type the code and the triagers\' PIN). To see the commander screen here, tap "Open the commander screen" below (no sign-in). On a laptop or big screen, open the link and enter the commander PIN.'
-            : tpin ? 'Show this QR to another triager so they can link too. To see the commander screen here, tap "Open the commander screen" below (no sign-in).' : 'To see the commander screen here, tap "Open the commander screen" below (no sign-in).');
+            ? 'Triagers: point the phone\'s camera at this QR and open the link; the app opens and asks to join. In the app, "☁ Link to commander" on the home screen also scans it, or takes the code and the triagers\' PIN typed in. To see the commander screen here, tap "Open the commander screen" below (no sign-in). On a laptop or big screen, open the link and enter the commander PIN.'
+            : tpin ? 'Show this QR to another triager so they can link too (their phone\'s camera or the app\'s scanner both read it). To see the commander screen here, tap "Open the commander screen" below (no sign-in).' : 'To see the commander screen here, tap "Open the commander screen" below (no sign-in).');
         $('cmd-end-btn').style.display = CMD.cfg.cmdPin ? '' : 'none';
-        try { if (tpin) _renderQR($('cmd-qr'), JSON.stringify({ t: 'MIT_JOIN', c: CMD.cfg.code, p: tpin }), Math.min(220, qrSize())); else clearChildren($('cmd-qr')); } catch (e) { clearChildren($('cmd-qr')); }
+        try { if (tpin) _renderQR($('cmd-qr'), joinLink(CMD.cfg.code, tpin), Math.min(220, qrSize())); else clearChildren($('cmd-qr')); } catch (e) { clearChildren($('cmd-qr')); }
         cmdRenderStatus();
         closeModesMenu();
         $('cmd-modal').style.display = 'flex';
@@ -7051,7 +7092,13 @@
             const n = all.filter(r => r.deviceId === ph.deviceId).length;
             box.appendChild(el('button', { type: 'button', className: 'btn btn-secondary demo-choice', onclick: () => demoChoose('p' + i) }, [`📱 ${ph.triager}`, el('br'), el('span', { style: 'font-size:0.8rem; font-weight:normal;', text: `${ph.desc}. ${n} casualties.` })]));
         });
+        demoStep('main');
         $('demo-role-modal').style.display = 'flex';
+    }
+    function demoStep(step) {
+        $('demo-step-main').style.display = step === 'phones' ? 'none' : '';
+        $('demo-step-phones').style.display = step === 'phones' ? '' : 'none';
+        setText('demo-role-title', step === 'phones' ? 'Demo: pick a phone' : 'Try a demo');
     }
     // "↩ Start page": leave the demo and go back to the start screen, where ▶ Demo picks another role. The phone
     // goes back to the mode it was in before the demo: real use if the demo switched training on, otherwise it stays
@@ -7307,6 +7354,9 @@
         try { showStart = sessionStorage.getItem('mit_show_start') === '1'; sessionStorage.removeItem('mit_show_start'); } catch (e) {}
         if (!userRole || showStart || START_REQUESTED) showScreen('intro-screen');
         else { updateDashboard(); showScreen('home-screen'); }
+        if (takeJoinFromAddress()) runPendingJoin();
+        // The app is already open and a join link is opened in it (same page, only the part after "#" changes).
+        window.addEventListener('hashchange', () => { if (takeJoinFromAddress()) runPendingJoin(); });
         // Leaving the demo also leaves training mode: say so, so nobody practising carries on in real use without noticing.
         let realUseNotice = false;
         try { realUseNotice = sessionStorage.getItem('mit_real_use_notice') === '1'; sessionStorage.removeItem('mit_real_use_notice'); } catch (e) {}
