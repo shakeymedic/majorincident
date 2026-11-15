@@ -41,6 +41,8 @@ function serve() {
 
 let passed = 0, failed = 0;
 async function test(name, fn) {
+    // E2E_ONLY=text runs only the tests whose name contains it (for self-contained tests while developing).
+    if (process.env.E2E_ONLY && name.indexOf(process.env.E2E_ONLY) === -1) return;
     try { await fn(); console.log('  ✓ ' + name); passed++; }
     catch (e) { console.error('  ✗ ' + name + '\n    ' + (e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n    ') : e)); failed++; }
 }
@@ -64,7 +66,7 @@ async function test(name, fn) {
         await page.evaluate(r => introPath(r === 'NON_HCP' ? 'non' : 'med'), role || 'HCP');
         await page.fill('#intro-triager', name);
         // Most tests are not about the commander link, so answer the start-screen link question with "not now".
-        await page.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); } catch (e) {} });
+        await page.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); localStorage.setItem('mit_sector_asked', '1'); } catch (e) {} });
         await page.evaluate(r => setUserRole(r), role || 'HCP');
     }
     // Resolve the next in-app dialog with OK (true) or Cancel (false), optionally typing text.
@@ -118,11 +120,12 @@ async function test(name, fn) {
 
     console.log('\ne2e: identity, triage and data safety');
     const A = await device('A');
-    await test('name is required before starting', async () => {
-        await A.evaluate(() => setUserRole('HCP'));
-        await page_visible(A, '#confirm-modal');
-        assert.match(await A.textContent('#confirm-title'), /Your name or call sign/);
-        await A.click('#confirm-ok');
+    await test('v0.23.0: a triager may start without a name (records signed with the phone code); a typed name is used as before', async () => {
+        const NN = await device('No name');
+        await NN.evaluate(() => { introPath('med'); setUserRole('HCP'); });
+        assert.strictEqual(await NN.evaluate(() => getComputedStyle(document.getElementById('confirm-modal')).display), 'none');
+        assert.ok(await NN.evaluate(() => userRole === 'HCP' && triagerName === 'Phone ' + deviceId && document.getElementById('intro-triager').value === ''));
+        await NN._ctx.close();
         await setup(A, 'Medic A');
         assert.strictEqual(await A.evaluate(() => triagerName), 'Medic A');
     });
@@ -665,7 +668,7 @@ async function test(name, fn) {
         await setup(H, 'Medic H');
         const layout = await H.evaluate(() => {
             const start = document.getElementById('btn-start-triage').getBoundingClientRect();
-            const btns = Array.from(document.querySelectorAll('#home-screen button')).filter(b => b.offsetParent !== null);
+            const btns = Array.from(document.querySelectorAll('#home-screen button')).filter(b => b.offsetParent !== null && !b.closest('#home-alerts'));
             return { first: btns[0].id, startH: start.height, maxOtherH: Math.max(...btns.slice(1).map(b => b.getBoundingClientRect().height)), moreOpen: document.getElementById('home-more').open, top: start.top };
         });
         assert.strictEqual(layout.first, 'btn-start-triage');
@@ -1529,15 +1532,18 @@ async function test(name, fn) {
         await CC.waitForFunction(() => document.querySelectorAll('.phone').length === 3, null, { timeout: 8000 });
         await CD._ctx.close();
     });
-    await test('a new phone is asked at the start whether there is a commander; "type the code" links it and the home alert goes', async () => {
+    await test('v0.23.0: a new phone is not asked about a commander at the start; the home bar opens the link sheet, "type the code" links it, the bar goes and the sector is asked once', async () => {
         const CG = await device('Cmd G');
         await CG.evaluate(() => introPath('med'));
         await CG.fill('#intro-triager', 'Medic Golf');
         await CG.evaluate(() => setUserRole('HCP'));
+        await CG.waitForTimeout(400);
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'no link sheet on first run');
+        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link')), null, 'no card above START TRIAGE');
+        await CG.click('#home-cmd-link-later');
         await page_visible(CG, '#cmd-link-modal');
         await CG.evaluate(() => { closeCmdLink(); cmdOpenJoin(); });
         await page_visible(CG, '#cmd-join-modal');
-        assert.ok(await CG.evaluate(() => document.getElementById('home-cmd-link') !== null), 'home alert while not linked');
         await CG.fill('#cmd-join-code', share.code); await CG.fill('#cmd-join-pin', share.pin);
         await CG.evaluate(() => { cmdJoin(); });
         await answerDialog(CG, false);   // v0.18.0: a first link asks once about sharing the phone's position; "Not now"
@@ -1545,7 +1551,11 @@ async function test(name, fn) {
         assert.strictEqual(await CG.evaluate(() => posShareOn()), false);
         assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_share_pos_asked')), '1');
         assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-join-modal')).display), 'none');
-        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link')), null, 'home alert gone once linked');
+        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link-later')), null, 'home bar gone once linked');
+        await page_visible(CG, '#cmd-link-modal');
+        assert.match(await CG.textContent('#cmd-link-title'), /Where are you working\?/);
+        await CG.click('#cmd-link-skip');
+        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_sector_asked')), '1');
         await CG._ctx.close();
     });
     await test('"No commander / not now" closes the question and keeps the home alert as a reminder', async () => {
@@ -1553,18 +1563,17 @@ async function test(name, fn) {
         await CH.evaluate(() => introPath('non'));
         await CH.fill('#intro-triager', 'Medic Hotel');
         await CH.evaluate(() => setUserRole('NON_HCP'));
-        await page_visible(CH, '#cmd-link-modal');
-        await CH.evaluate(() => cmdDismissLink());
-        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
-        assert.strictEqual(await CH.evaluate(() => document.getElementById('home-cmd-link')), null, 'dismissed for this session');
-        // v0.19.4: a small "tap to link" button stays lower down, and going back to the start page asks again
-        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'small reminder after "No"');
+        // v0.23.0: the bar under the home buttons is the way to link; "Not now" closes the sheet and the bar stays
+        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'link bar on the home screen');
         await CH.click('#home-cmd-link-later');
         await page_visible(CH, '#cmd-link-modal');
-        await CH.evaluate(() => cmdDismissLink());
+        assert.match(await CH.textContent('#cmd-link-skip'), /Not now/);
+        await CH.click('#cmd-link-skip');
+        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
+        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'bar stays after "Not now"');
         await CH.evaluate(() => { showScreen('intro-screen'); setUserRole('NON_HCP'); });
-        await page_visible(CH, '#cmd-link-modal');
-        assert.match(await CH.textContent('#cmd-link-skip'), /carry on/);
+        await CH.waitForTimeout(400);
+        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'setting up again does not ask either');
         await CH._ctx.close();
     });
     await test('v0.19.2 walk-through: plain role buttons, one-tap "where are you" on the link sheet, then a one-time how-to card', async () => {
@@ -1573,12 +1582,13 @@ async function test(name, fn) {
         assert.match(await W.textContent('#btn-path-nonmed'), /Police, fire, first aider/);
         assert.match(await W.textContent('#btn-path-medical'), /Paramedic, doctor or nurse/);
         await W.click('#btn-path-medical');
-        assert.match(await W.textContent('#btn-role-paramedic'), /Paramedic or ambulance clinician/);
-        assert.match(await W.textContent('#btn-role-clinician'), /Doctor or nurse/);
+        assert.strictEqual(await W.evaluate(() => document.getElementById('btn-role-paramedic')), null, 'v0.23.0: one Start button for clinicians');
+        assert.match(await W.textContent('#btn-role-clinician'), /Start/);
         await W.click('#btn-intro-back');
         await W.click('#btn-path-nonmed');
         await W.fill('#intro-triager', 'PC Whiskey');
         await W.click('#btn-role-responder');
+        await W.click('#home-cmd-link-later');   // v0.23.0: the sheet opens from the home bar, not by itself
         await page_visible(W, '#cmd-link-modal');
         await W.click('#setup-sector-chips [data-sector="Casualty clearing station"]');
         assert.strictEqual(await W.evaluate(() => currentSector), 'Casualty clearing station');
@@ -1594,17 +1604,19 @@ async function test(name, fn) {
         assert.strictEqual(await W.evaluate(() => document.getElementById('home-coach')), null, 'stays hidden once dismissed');
         await W._ctx.close();
     });
-    await test('v0.19.3: a paramedic button on the start screen gives the clinician role and a clinician how-to card that explains MITT', async () => {
+    await test('v0.23.0 (was v0.19.3): Medical then Start gives the clinician role and the short how-to card', async () => {
         const PM = await device('Paramedic', { viewport: { width: 360, height: 740 }, isMobile: true, hasTouch: true });
         await PM.click('#btn-path-medical');
         await PM.fill('#intro-triager', 'Para 1');
-        await PM.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); } catch (e) {} });
-        await PM.click('#btn-role-paramedic');
+        await PM.evaluate(() => { try { sessionStorage.setItem('mit_cmd_link_dismissed', '1'); localStorage.setItem('mit_share_pos_asked', '1'); localStorage.setItem('mit_sector_asked', '1'); } catch (e) {} });
+        await PM.click('#btn-role-clinician');
         assert.strictEqual(await PM.evaluate(() => userRole), 'HCP');
         assert.ok(await PM.isVisible('#home-coach'));
         const txt = await PM.textContent('#home-coach');
-        assert.match(txt, /Switch to MITT/);
-        assert.match(txt, /Ten Second Triage/);
+        assert.match(txt, /Tap START TRIAGE/);
+        assert.match(txt, /does not replace the paper tag/);
+        await PM.click('#home-coach-close');
+        assert.strictEqual(await PM.evaluate(() => document.getElementById('home-coach')), null);
         await PM._ctx.close();
     });
     await test('v0.19.4 (Chrome test): Join opens above Settings; Worsened goes straight to re-triage and stays due; a patient reopened from the log leads with Reassess', async () => {
@@ -1636,7 +1648,7 @@ async function test(name, fn) {
         await V.evaluate(() => { [false, false, false, true].forEach(x => handleAnswer(x)); });
         const r = await V.evaluate(u => { const e = incidentLog.find(x => x.uid === u); return { cat: e.category, n: incidentLog.length, state: MITTLib.reassessmentStatus(e, Date.now(), reassessIntervals).state, det: !!e.lastDeteriorationAt, head: document.getElementById('reassess-head').textContent }; }, uid);
         assert.strictEqual(r.cat, 'P1'); assert.strictEqual(r.n, 1); assert.strictEqual(r.state, 'ok'); assert.ok(r.det);
-        assert.match(r.head, /^TST • \d\d:\d\d/);
+        assert.match(r.head, /^\d\d:\d\d/);   // v0.23.0: no "TST •" for non-medical users
         // Reopened from the log: Reassess leads
         await V.evaluate(() => { resetToHome(); showLog(); editEntry(0); });
         assert.strictEqual(await V.evaluate(() => document.getElementById('result-screen').classList.contains('reopened')), true);
@@ -2384,8 +2396,100 @@ async function test(name, fn) {
         await ctx.close();
     });
 
-    await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
 
+    await test('v0.23.0: a new non-medical user reaches the home screen in two taps with no typing; short home screen; name added later', async () => {
+        const N = await device('First run', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        assert.match(await N.textContent('#intro-screen h2'), /Who are you\?/);
+        assert.match(await N.textContent('#btn-demo'), /Try a demo/);
+        assert.strictEqual((await N.textContent('#save-status')).trim(), '', 'nothing about saving before there is a record');
+        await N.click('#btn-path-nonmed');
+        assert.ok(await N.isVisible('#intro-name-hint'));
+        assert.match(await N.textContent('label[for="intro-triager"]'), /optional/);
+        await N.click('#btn-role-responder');
+        const s = await N.evaluate(() => ({ role: userRole, name: triagerName, dev: deviceId, screen: document.body.dataset.screen,
+            modals: [...document.querySelectorAll('.modal-overlay')].filter(m => getComputedStyle(m).display !== 'none').map(m => m.id),
+            fits: document.documentElement.scrollHeight <= window.innerHeight }));
+        assert.strictEqual(s.role, 'NON_HCP');
+        assert.strictEqual(s.name, 'Phone ' + s.dev);
+        assert.strictEqual(s.screen, 'home-screen');
+        assert.deepStrictEqual(s.modals, [], 'no sheet between Start and the home screen');
+        assert.ok(s.fits, 'first-run home screen fits a 390 x 844 phone without scrolling');
+        assert.ok(await N.isVisible('#btn-start-triage'));
+        assert.strictEqual(await N.isVisible('#btn-home-map'), false);
+        assert.strictEqual(await N.isVisible('#home-more'), false);
+        assert.ok(await N.isVisible('#home-cmd-link-later'));
+        assert.ok(await N.isVisible('#home-add-name'));
+        assert.ok(await N.evaluate(() => ['home-cmd-link-later', 'home-add-name', 'btn-home-full', 'home-coach-close'].every(id => document.getElementById(id).getBoundingClientRect().height >= 48)), 'new home buttons are at least 48 px high');
+        assert.ok(await N.isVisible('#home-coach'));
+        // The whole home screen on request, and back.
+        await N.click('#btn-home-full');
+        assert.ok(await N.isVisible('#btn-home-map')); assert.ok(await N.isVisible('#home-more'));
+        assert.match(await N.textContent('#home-more'), /Report the incident \(METHANE\)/);
+        await N.click('#btn-home-full');
+        assert.strictEqual(await N.isVisible('#btn-home-map'), false);
+        // Plain words while triaging, and the how-to card goes after the first saved triage.
+        await N.click('#btn-start-triage');
+        assert.strictEqual(await N.isVisible('#mode-indicator'), false, 'no TST badge for non-medical users');
+        await N.evaluate(() => { handleAnswer(false); handleAnswer(true); });
+        assert.doesNotMatch(await N.textContent('#tag-label'), /TST/);
+        assert.doesNotMatch(await N.textContent('#reassess-head'), /TST/);
+        assert.strictEqual(await N.evaluate(() => incidentLog[0].triager), 'Phone ' + s.dev);
+        await N.evaluate(() => resetToHome());
+        assert.strictEqual(await N.evaluate(() => document.getElementById('home-coach')), null, 'how-to card hidden after the first triage');
+        assert.match(await N.textContent('#save-status'), /Saved/);
+        // Adding the name later.
+        await N.click('#home-add-name');
+        await answerDialog(N, true, 'PC Jones');
+        await N.waitForFunction(() => triagerName === 'PC Jones');
+        assert.strictEqual(await N.evaluate(() => document.getElementById('home-add-name')), null);
+        assert.ok(await N.evaluate(() => auditLog.some(a => a.action === 'USER_NAME_SET')));
+        assert.match(await N.textContent('#home-cmd-link-later'), /Not linked to a commander/);
+        await N.reload();
+        await N.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true);
+        assert.strictEqual(await N.evaluate(() => triagerName), 'PC Jones');
+        await N._ctx.close();
+    });
+    await test('v0.23.0: Medical has one Start button (role Clinician); the commander must still give a name; the sector is asked once after linking', async () => {
+        const M2 = await device('First run medic', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await M2.click('#btn-path-medical');
+        assert.strictEqual(await M2.evaluate(() => document.getElementById('btn-role-paramedic')), null);
+        await M2.click('#btn-role-clinician');
+        assert.strictEqual(await M2.evaluate(() => userRole), 'HCP');
+        assert.strictEqual(await M2.textContent('#header-role'), 'Clinician');
+        assert.deepStrictEqual(await M2.evaluate(() => [...document.querySelectorAll('.modal-overlay')].filter(m => getComputedStyle(m).display !== 'none').map(m => m.id)), []);
+        assert.ok(await M2.isVisible('#btn-home-map')); assert.ok(await M2.isVisible('#home-more'));
+        assert.strictEqual(await M2.isVisible('#btn-home-full'), false, 'clinicians keep the full home screen');
+        await M2.click('#btn-start-triage');
+        assert.ok(await M2.isVisible('#mode-indicator'));
+        await M2.evaluate(() => { handleAnswer(false); handleAnswer(true); });
+        assert.match(await M2.textContent('#tag-label'), /TST/);
+        await M2.evaluate(() => resetToHome());
+        // The link sheet opens from the home bar; the sector question comes once, on its own.
+        await M2.click('#home-cmd-link-later');
+        await page_visible(M2, '#cmd-link-modal');
+        assert.match(await M2.textContent('#cmd-link-title'), /Link to the commander/);
+        await M2.click('#cmd-link-skip');
+        await M2.evaluate(() => cmdOfferSector());
+        await page_visible(M2, '#cmd-link-modal');
+        assert.match(await M2.textContent('#cmd-link-title'), /Where are you working\?/);
+        assert.strictEqual(await M2.isVisible('#cmd-link-part'), false);
+        await M2.click('#setup-sector-chips .setup-chip[data-sector="Loading Point"]');
+        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
+        assert.strictEqual(await M2.evaluate(() => currentSector), 'Loading Point');
+        await M2.evaluate(() => { currentSector = ''; cmdOfferSector(); });
+        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'asked once only');
+        await M2._ctx.close();
+        const C2 = await device('First run commander', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+        await C2.click('#btn-path-cmd');
+        assert.strictEqual(await C2.isVisible('#intro-name-hint'), false);
+        await C2.click('#btn-role-commander');
+        await page_visible(C2, '#confirm-modal');
+        assert.match(await C2.textContent('#confirm-message'), /Type your name or call sign first/);
+        await C2.click('#confirm-ok');
+        assert.strictEqual(await C2.evaluate(() => userRole || ''), '');
+        await C2._ctx.close();
+    });
+    await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
     await browser.close();
     srv.close();
     console.log('\n' + (failed === 0 ? '✓' : '✗') + ` ${passed} passed, ${failed} failed`);

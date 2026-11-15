@@ -1010,8 +1010,8 @@
     #intro-screen .intro-hint { font-size: 0.95rem; margin: 0 0 0.6rem 0; }
     #intro-screen .input-group { margin-bottom: 0.7rem; }
     body:not(.gloved) #intro-screen > .btn { padding: 0.8rem 1rem !important; margin-bottom: 0.6rem; font-size: 1.1rem; }
-    #intro-screen .start-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.2rem; }
-    #intro-screen .demo-btn { width: auto; flex: 0 0 auto; margin: 0; background: #B85A12; color: #fff; border: 0; border-radius: 999px; padding: 10px 20px; font-weight: 800; font-size: 1.05rem; min-height: 44px; cursor: pointer; white-space: nowrap; }
+    #intro-screen .demo-btn { display: block; width: 100%; flex: 0 0 auto; margin: 12px 0 0; background: #fff; color: #8A4100; border: 2px solid #B85A12; border-radius: 10px; padding: 10px 20px; font-weight: 800; font-size: 1rem; min-height: 48px; cursor: pointer; white-space: nowrap; }
+    body.night-mode #intro-screen .demo-btn { background: transparent; color: #FFB870; }
     #exercise-modal .btn { padding: 0.5rem 0.8rem; margin-bottom: 6px; font-size: 1rem; line-height: 1.25; }
     #exercise-modal .qr-meta { margin: 0 0 6px; font-size: 0.85rem; }
     .exercise-guide h4 { margin: 12px 0 4px; }
@@ -1158,13 +1158,31 @@
     .intro-step-label { font-weight: 800; }
     .coach-card ol { margin: 6px 0 4px 1.2rem; padding: 0; }
     .coach-card li { margin: 2px 0; }
+    .coach-card { position: relative; padding-right: 52px; }
+    #home-link-later { display: flex; gap: 10px; }
+    #home-link-later:empty { display: none; }
+    #home-link-later .btn { flex: 1 1 0; margin: 0; padding: 0.6rem 0.3rem; font-size: 0.9rem; min-height: 48px; white-space: nowrap; }
+    #home-link-later { margin-bottom: 0.6rem; }
+    .coach-card { font-size: 0.95rem; }
+    #home-add-name { background: #fff; color: var(--nhs-dark-blue); border: 2px solid var(--nhs-dark-blue); }
+    body.night-mode #home-add-name { background: transparent; color: #fff; border-color: #fff; }
+    body.role-nonhcp:not(.home-full) .home-pair-small > .btn { flex: 1 1 100%; }
+    .coach-close { position: absolute; top: 0; right: 0; width: 48px; height: 48px; border: 0; background: transparent; color: inherit; font-size: 1.2rem; font-weight: 700; cursor: pointer; }
+    /* v0.23.0: non-medical users get a shorter home screen until they ask for the rest. */
+    #btn-home-full { display: none; padding: 0.6rem; font-size: 0.95rem; min-height: 48px; background: #fff; color: var(--nhs-dark-blue); border: 2px solid var(--nhs-dark-blue); }
+    body.role-nonhcp:not(.panic) #btn-home-full { display: block; }
+    body.role-nonhcp:not(.home-full) #btn-home-map, body.role-nonhcp:not(.home-full) #home-more { display: none; }
+    body.night-mode #btn-home-full { background: transparent; color: #fff; border-color: #fff; }
+    /* The status pills keep their size; the tap area reaches the edges of the strip (44 px). */
+    .status-bar .gps-status { position: relative; }
+    .status-bar .gps-status::after { content: ''; position: absolute; left: -2px; right: -2px; top: -6px; bottom: -6px; }
     #intro-screen .intro-step-label { font-weight: 800; margin: 0.2rem 0 0.4rem; }
     #intro-screen .intro-role { text-align: left; }
     #intro-screen .intro-role-pair { display: flex; gap: 8px; }
     #intro-screen .intro-role-pair .btn { flex: 1 1 0; margin: 0 0 0.3rem 0 !important; padding: 0.8rem 0.6rem !important; font-size: 1.05rem !important; text-align: center; }
     #intro-screen .intro-role-note { text-align: left; margin: 0 0 0.6rem; }
     #intro-screen .intro-role-sub { font-size: 0.9rem; font-weight: normal; }
-    #intro-screen .intro-q { font-size: 1.35rem; margin: 0.6rem 0 0.6rem; }
+    #intro-screen .intro-q { font-size: 1.35rem; margin: 0.6rem 0 0.6rem !important; }
     #intro-screen .intro-path { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 104px; margin: 0 0 12px !important; padding: 14px 16px !important; border-radius: 14px; text-align: left; color: #fff; font-size: 1.5rem !important; border: none; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
     #intro-screen .intro-path-med { background: #005EB8 !important; }
     #intro-screen .intro-path-non { background: #003087 !important; }
@@ -1327,19 +1345,23 @@
 </div>
 <div id="cmd-link-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-link-title">
     <div class="modal-box" style="max-width:420px;">
-        <h3 id="cmd-link-title" style="margin-top:0;">Two quick questions</h3>
-        <p class="intro-step-label" style="margin-bottom:6px;">Where are you working? <span class="qr-meta" style="font-weight:normal;">(optional)</span></p>
-        <div class="setup-sector-chips" id="setup-sector-chips">
-            <button type="button" class="setup-chip" data-sector="Inner Cordon" onclick="pickSetupSector(this.dataset.sector)">Inner cordon</button>
-            <button type="button" class="setup-chip" data-sector="Casualty clearing station" onclick="pickSetupSector(this.dataset.sector)">Casualty clearing station</button>
-            <button type="button" class="setup-chip" data-sector="Loading Point" onclick="pickSetupSector(this.dataset.sector)">Loading point</button>
-            <button type="button" class="setup-chip" data-sector="" onclick="pickSetupSector('')">Not sure yet</button>
+        <h3 id="cmd-link-title" style="margin-top:0;">Link to the commander</h3>
+        <!-- v0.23.0: opened from the home screen bar, not on first run. Two parts: the link, and (once linked) where this phone is working. -->
+        <div id="cmd-link-part">
+            <p class="qr-meta" style="text-align:left; margin-top:0;">If someone has set up a commander screen, link this phone so they see your casualties (no names or NHS numbers are sent).</p>
+            <button type="button" class="btn btn-primary" onclick="cmdScanJoin()">📷 Scan their code</button>
+            <button type="button" class="btn btn-secondary" onclick="closeCmdLink(); cmdOpenJoin();">Type their code and PIN</button>
         </div>
-        <p class="intro-step-label" style="margin:12px 0 4px;">Has someone set up a commander screen?</p>
-        <p class="qr-meta" style="text-align:left; margin-top:0;">If yes, link this phone so they see your casualties (no names or NHS numbers are sent). If you don't know, just start. You can link later from ⚙ Settings.</p>
-        <button type="button" class="btn btn-primary" onclick="cmdScanJoin()">📷 Yes: scan their code</button>
-        <button type="button" class="btn btn-secondary" onclick="closeCmdLink(); cmdOpenJoin();">Yes: type their code and PIN</button>
-        <button type="button" class="btn btn-secondary" id="cmd-link-skip" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue);" onclick="cmdDismissLink()">No, or not sure: carry on</button>
+        <div id="cmd-sector-part">
+            <p class="intro-step-label" style="margin:12px 0 6px;">Where are you working? <span class="qr-meta" style="font-weight:normal;">(optional)</span></p>
+            <div class="setup-sector-chips" id="setup-sector-chips">
+                <button type="button" class="setup-chip" data-sector="Inner Cordon" onclick="pickSetupSector(this.dataset.sector)">Inner cordon</button>
+                <button type="button" class="setup-chip" data-sector="Casualty clearing station" onclick="pickSetupSector(this.dataset.sector)">Casualty clearing station</button>
+                <button type="button" class="setup-chip" data-sector="Loading Point" onclick="pickSetupSector(this.dataset.sector)">Loading point</button>
+                <button type="button" class="setup-chip" data-sector="" onclick="pickSetupSector('')">Not sure yet</button>
+            </div>
+        </div>
+        <button type="button" class="btn btn-secondary" id="cmd-link-skip" style="background:#fff; color:var(--nhs-dark-blue); border:2px solid var(--nhs-dark-blue); margin-top:12px;" onclick="cmdDismissLink()">Not now</button>
     </div>
 </div>
 <div id="hospital-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="hospital-title">
@@ -1798,14 +1820,10 @@
 
     <main>
         <div id="intro-screen" class="screen" style="padding: 1.2rem;">
-            <div class="start-head">
-                <h2 style="margin:0;">Start</h2>
-                <button type="button" class="demo-btn" id="btn-demo" onclick="startDemo()">▶ Demo</button>
-            </div>
             <p class="intro-purpose" role="note"><strong>Training and exercise use only.</strong> Not for use with real patients.</p>
             <!-- Step 1: one choice only, medical or not (Jake, 31 Oct 2026). Details come on the next step. -->
             <div id="intro-step-who">
-                <p class="intro-step-label intro-q">Who are you?</p>
+                <h2 class="intro-step-label intro-q">Who are you?</h2>
                 <button type="button" class="btn intro-path intro-path-med" id="btn-path-medical" onclick="introPath('med')">
                     <span class="intro-path-icon" aria-hidden="true">🩺</span><span class="intro-path-text"><b>Medical</b><span class="intro-role-sub">Paramedic, doctor or nurse</span></span>
                 </button>
@@ -1813,24 +1831,24 @@
                     <span class="intro-path-icon" aria-hidden="true">🚒</span><span class="intro-path-text"><b>Not medical</b><span class="intro-role-sub">Police, fire, first aider or anyone else</span></span>
                 </button>
                 <button type="button" class="intro-cmd-link" id="btn-path-cmd" onclick="introPath('cmd')">🎖 Running the incident? Start the commander screen</button>
+                <!-- Below the two main choices and outlined, so the eye lands on "Who are you?" first (v0.23.0). -->
+                <button type="button" class="demo-btn" id="btn-demo" onclick="startDemo()">▶ Try a demo</button>
             </div>
             <!-- Step 2: name, then (medical only) which kind of clinician. -->
             <div id="intro-step-details" style="display:none;">
                 <button type="button" class="intro-back" id="btn-intro-back" onclick="introPath('')">‹ Back</button>
                 <h3 id="intro-path-title" class="intro-path-title"></h3>
                 <div class="input-group">
-                    <label for="intro-triager">Your name or call sign</label>
+                    <label for="intro-triager">Your name or call sign <span id="intro-name-opt" class="qr-meta" style="font-weight:normal;">(optional)</span></label>
                     <input type="text" id="intro-triager" placeholder="e.g. PC Jones, Medic 1" autocomplete="off" enterkeyhint="go" onkeydown="if (event.key === 'Enter') { event.preventDefault(); introNameEnter(); }">
+                    <!-- v0.23.0: the name is no longer needed to start (it was the only step that needed a keyboard). -->
+                    <p class="qr-meta" id="intro-name-hint" style="text-align:left; margin:4px 0 0;">In a hurry? Leave it blank and tap Start. Records are signed with this phone's code until you add your name.</p>
                 </div>
                 <div id="intro-med-roles">
-                    <p class="intro-step-label">Your role</p>
-                    <button class="btn btn-primary intro-role" id="btn-role-paramedic" onclick="setUserRole('HCP', false, 'paramedic')">
-                        🚑 Paramedic or ambulance clinician
+                    <!-- v0.23.0: one Start button. The paramedic / doctor-or-nurse choice only changed a label. -->
+                    <button class="btn btn-primary intro-role" id="btn-role-clinician" onclick="setUserRole('HCP')">
+                        Start →<br><span class="intro-role-sub">Ten Second Triage first, MITT when the commander asks</span>
                     </button>
-                    <button class="btn btn-primary intro-role" id="btn-role-clinician" onclick="setUserRole('HCP', false, 'doctor_nurse')">
-                        🩺 Doctor or nurse
-                    </button>
-                    <p class="qr-meta intro-role-note">You start with the same quick yes/no questions (Ten Second Triage) as everyone else, and switch to the clinicians' tool (MITT) when the commander asks.</p>
                 </div>
                 <div id="intro-non-start">
                     <button class="btn btn-primary intro-role" id="btn-role-responder" onclick="setUserRole('NON_HCP')">
@@ -1918,15 +1936,16 @@
             </div>
             <div id="home-link-later"></div>
             <details class="menu-list home-more" id="home-more">
-                <summary>More <span class="rs-sum">METHANE, my ID, import a file</span></summary>
+                <summary>More <span class="rs-sum" id="home-more-sum">METHANE, my ID, import a file</span></summary>
                 <div class="menu-items">
-                    <button class="menu-item" onclick="showMethane()"><b>METHANE report</b><span>Declare or update the major incident</span></button>
+                    <button class="menu-item" onclick="showMethane()"><b id="home-methane-b">METHANE report</b><span>Declare or update the major incident</span></button>
                     <button class="menu-item" onclick="generateMyIdentityQR()"><b>Show my ID</b><span>For a colleague who is taking over care</span></button>
                     <button class="menu-item" onclick="openAllTransferFilePicker()"><b>Import a transfer file</b><span>Patients sent to you as a file</span></button>
                     <button class="menu-item nfc-only" style="display:none;" onclick="startNfcReceive()"><b>Read an NFC tag</b><span>Android Chrome only</span></button>
                     <button class="menu-item" onclick="openModesMenu()"><b>Settings</b><span>Your name and role, screen, incident code, clearing data</span></button>
                 </div>
             </details>
+            <button type="button" class="btn btn-secondary" id="btn-home-full" onclick="toggleHomeFull()">Show everything</button>
         </div>
 
         <div id="question-screen" class="screen">
@@ -2262,7 +2281,7 @@
         </div>
     </main>
     <footer style="text-align:center; padding:6px 8px; padding-bottom:calc(6px + env(safe-area-inset-bottom, 0px)); font-size:0.75rem; color:var(--nhs-grey); flex-shrink:0;">
-        <span class="purpose-note">Training &amp; exercise use only</span> • <span id="app-version-label">Major Incident Triage</span> • <span id="save-status">Not yet saved</span>
+        <span class="purpose-note">Training &amp; exercise use only</span> • <span id="app-version-label">Major Incident Triage</span><span id="save-status"></span>
     </footer>
     <nav class="one-hand-bar" id="one-hand-bar" aria-label="One-handed quick actions">
         <button class="btn btn-primary" onclick="oneHandPrimary()" id="oh-primary">Triage</button>
@@ -2272,8 +2291,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.22.4';
-    const APP_BUILD = '2026-11-06-stress';
+    const APP_VERSION = '0.23.0';
+    const APP_BUILD = '2026-11-15-first-run';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -2545,11 +2564,11 @@
     }
     function markSaved() {
         if (_lastSaveError) { _lastSaveError = null; setStorageBanner(null, 'save'); }
-        setText('save-status', `Saved ${fmtTime(Date.now())}${storageMode === 'indexeddb' ? '' : ' (backup storage)'}`);
+        setText('save-status', incidentLog.length ? ` • Saved ${fmtTime(Date.now())}${storageMode === 'indexeddb' ? '' : ' (backup storage)'}` : '');
     }
     function saveFailed(msg) {
         _lastSaveError = msg;
-        setText('save-status', 'NOT SAVED');
+        setText('save-status', ' • NOT SAVED');
         setStorageBanner(`Saving failed (${msg}). Recent changes may be lost if the app closes.`, 'save');
         announce('Saving failed. Export an archive now.', true);
     }
@@ -3162,7 +3181,7 @@
         const savedCount = parseInt(ls('mit_patient_counter'), 10);
         if (savedCount > 0) patientCounter = savedCount;
         const savedTriager = ls('mit_triager');
-        if (savedTriager) { triagerName = savedTriager; $('intro-triager').value = triagerName; setText('header-user', `User: ${triagerName}`); }
+        if (savedTriager) { triagerName = savedTriager; $('intro-triager').value = nameIsDefault() ? '' : triagerName; setText('header-user', `User: ${triagerName}`); }
         const savedPrefix = ls('mit_device_prefix');
         if (savedPrefix) { devicePrefix = savedPrefix; $('intro-device-prefix').value = devicePrefix; }
         incidentCode = MITTLib.normaliseIncidentCode(ls('mit_incident_code'));
@@ -3191,6 +3210,9 @@
         setText('header-user', `User: ${triagerName}`);
         renderRolePill();
         document.body.classList.toggle('role-nonhcp', role !== 'HCP');
+        applyHomeFull();
+        setText('home-more-sum', role === 'HCP' ? 'METHANE, my ID, import a file' : 'report the incident, my ID, import a file');
+        setText('home-methane-b', role === 'HCP' ? 'METHANE report' : 'Report the incident (METHANE)');
         setText('header-sector', currentSector);
         if (role !== 'HCP') toolMode = 'TST';
         renderToolButtons();
@@ -3201,6 +3223,12 @@
         showScreen('home-screen');
         if (isNewSession) renderHomeAlerts();
     }
+    function applyHomeFull() {
+        const full = ls('mit_home_full') === 'true';
+        document.body.classList.toggle('home-full', full);
+        setText('btn-home-full', full ? 'Show fewer buttons' : 'Show more (map, report the incident)');
+    }
+    function toggleHomeFull() { ls('mit_home_full', ls('mit_home_full') === 'true' ? null : 'true'); applyHomeFull(); }
     // The incident commander's phone says so (it uses the clinician role underneath).
     function renderRolePill() {
         const roleEl = $('header-role');
@@ -3226,19 +3254,41 @@
             : 'This starts a new incident. You get a code and PIN to give to the people triaging, and a button to open the commander screen. For an exercise, turn on Training mode in ⚙ Settings first, so the incident is marked as practice.');
         setText('intro-path-title', introKind === 'med' ? '🩺 Medical' : introKind === 'non' ? '🚒 Not medical' : introKind === 'cmd' ? '🎖 Running the incident' : '');
         const opts = $('intro-options'); if (opts) opts.style.display = introKind ? 'none' : '';
-        if (introKind) { const n = $('intro-triager'); if (n && !n.value.trim()) setTimeout(() => { try { n.focus(); } catch (e) {} }, 60); }
+        // Only the commander must give a name, so only that path opens the keyboard (it would cover the Start button).
+        const opt = introKind !== 'cmd';
+        $('intro-name-opt').style.display = opt ? '' : 'none';
+        $('intro-name-hint').style.display = opt ? '' : 'none';
+        if (introKind === 'cmd') { const n = $('intro-triager'); if (n && !n.value.trim()) setTimeout(() => { try { n.focus(); } catch (e) {} }, 60); }
     }
     function introNameEnter() {
         if (introKind === 'non') setUserRole('NON_HCP');
         else if (introKind === 'cmd') startAsCommander();
-        else if (introKind === 'med') { const b = $('btn-role-paramedic'); if (b) b.focus(); }
+        else if (introKind === 'med') setUserRole('HCP');
     }
     // A missing name is a prompt, not an error (v0.22.1: a red "⚠ Name required / I understand" for a first-time user).
     function askForName() { inAppConfirm({ title: 'Your name or call sign', message: 'Type your name or call sign first. It goes on every record you make.', okLabel: 'OK', alertOnly: true }).then(() => { try { $('intro-triager').focus(); } catch (e) {} }); }
-    function clinicalRoleLabel() { const r = ls('mit_clin_role'); return r === 'paramedic' ? 'Paramedic' : r === 'doctor_nurse' ? 'Doctor or nurse' : 'Clinician'; }
-    function setUserRole(role, asCommander, clinRole) {
-        const name = $('intro-triager').value.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '').trim();   // no text-direction controls (v0.22.1)
-        if (!name) { askForName(); return; }
+    function clinicalRoleLabel() { return 'Clinician'; }
+    // A triager who has not typed a name is known by this phone's code until they add one (v0.23.0).
+    function defaultCallSign() { return `Phone ${deviceId}`; }
+    function nameIsDefault() { return !!triagerName && triagerName === defaultCallSign(); }
+    async function addNameLater() {
+        const typed = await inAppPrompt({ title: 'Your name or call sign', message: `Records you make from now on are signed with it. Records already made stay signed "${triagerName}".`, defaultValue: '' });
+        const name = String(typed || '').replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '').trim().slice(0, 60);
+        if (!name || name === triagerName) return;
+        const prev = triagerName;
+        triagerName = name;
+        $('intro-triager').value = name;
+        setText('header-user', `User: ${triagerName}`);
+        logAudit('USER_NAME_SET', '-', `${name} on device ${deviceId}; was ${prev}`, Date.now());
+        saveState();
+        if (typeof cmdActive === 'function' && cmdActive()) cmdSchedule(300);
+        renderHomeAlerts();
+        showToast(`Name set to ${name}.`);
+    }
+    function setUserRole(role, asCommander) {
+        const typed = $('intro-triager').value.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '').trim();   // no text-direction controls (v0.22.1)
+        if (!typed && asCommander) { askForName(); return; }
+        const name = typed || defaultCallSign();
         const prevUser = triagerName, prevRole = userRole;
         // Someone other than the demo role setting up here ends the demo (training mode stays on).
         if (TRAINING && demoMode() && !exerciseRole() && !(demoPhone() && demoPhone().triager === name)) {
@@ -3249,7 +3299,7 @@
             if (/^DEMO/i.test($('intro-device-prefix').value)) $('intro-device-prefix').value = '';
         }
         triagerName = name;
-        if (role === 'HCP' && clinRole) ls('mit_clin_role', clinRole); else if (role !== 'HCP') ls('mit_clin_role', null);
+        ls('mit_clin_role', null);
         const inputPrefix = $('intro-device-prefix').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
         devicePrefix = inputPrefix;
         const inputSec = $('intro-sector').value.trim();
@@ -3263,8 +3313,7 @@
         }
         saveState();
         applyRole(role, true);
-        // Triagers link to the commander at the start, so everything they do reaches the commander screen.
-        if (!asCommander && !cmdActive() && !cmdLinkDismissed()) setTimeout(cmdOfferLink, 150);
+        // v0.23.0: no link sheet on first run. Linking is one tap from the home screen (the bar under the buttons).
     }
     // The incident commander picks that role on the first screen: it creates the incident and opens the screen.
     async function startAsCommander() {
@@ -3276,7 +3325,22 @@
         await cmdStart({ quiet: true, commander: true });
     }
     function cmdLinkDismissed() { try { return sessionStorage.getItem('mit_cmd_link_dismissed') === '1'; } catch (e) { return false; } }
-    function cmdOfferLink() { if (cmdActive()) return; markSetupSector(); $('cmd-link-modal').style.display = 'flex'; }
+    function cmdOfferLink() {
+        if (cmdActive()) return;
+        markSetupSector();
+        setText('cmd-link-title', 'Link to the commander'); setText('cmd-link-skip', 'Not now');
+        $('cmd-link-part').style.display = ''; $('cmd-link-modal').dataset.mode = 'link';
+        $('cmd-link-modal').style.display = 'flex';
+    }
+    // Asked once, after a phone links: the commander screen groups phones by where they are working.
+    function cmdOfferSector() {
+        if (currentSector || ls('mit_sector_asked') === '1') return;
+        ls('mit_sector_asked', '1');
+        markSetupSector();
+        setText('cmd-link-title', 'Where are you working?'); setText('cmd-link-skip', 'Skip');
+        $('cmd-link-part').style.display = 'none'; $('cmd-link-modal').dataset.mode = 'sector';
+        $('cmd-link-modal').style.display = 'flex';
+    }
     // First-run walk-through: the link sheet also asks where this person is working (one tap, optional).
     function markSetupSector() { document.querySelectorAll('#setup-sector-chips .setup-chip').forEach(b => b.classList.toggle('on', !!b.dataset.sector && b.dataset.sector === currentSector)); }
     function pickSetupSector(sec) {
@@ -3289,6 +3353,7 @@
             saveState();
         }
         markSetupSector();
+        if ($('cmd-link-modal').dataset.mode === 'sector') closeCmdLink();
     }
     function coachDone() { return ls('mit_coach_done') === '1'; }
     function dismissCoach() { ls('mit_coach_done', '1'); const c = $('home-coach'); if (c) c.remove(); }
@@ -3475,7 +3540,7 @@
         measuredVals = {};
         currentLogIndex = -1; // a new triage never edits the previously open record
         const badge = $('mode-indicator');
-        badge.textContent = tool; badge.style.display = 'inline-block';
+        badge.textContent = tool; badge.style.display = userRole === 'HCP' ? 'inline-block' : 'none';   // no acronym badge for non-medical users
         badge.style.backgroundColor = tool === 'MITT' ? '#B85A12' : '#007F3B'; // darker orange: white text at 4.6:1
         if (pendingReTriageUid) {
             const idx = indexByUid(pendingReTriageUid);
@@ -3765,6 +3830,7 @@
         const used = MITTLib.nextAutoId(idPrefix(), currentTool, patientCounter, incidentLog.filter(e => e !== entry).map(e => e.id));
         if (idMode === 'AUTO' && used.id === entry.id) patientCounter = used.counter + 1;
         logAudit('TRIAGE_COMPLETE', entry.id, `${currentTool}: ${catShort(category)} (${reason})${pos ? '' : '; no fresh GPS'}${tod ? '; time of death ' + tod : ''}`, now, { uid });
+        if (!coachDone()) dismissCoach();   // the how-to card has done its job once a first triage is saved
         lastTriagePath = { uid, tool: currentTool, path: stepHistory.slice(), ts: now };
         saveState(); updateDashboard(); renderResultScreen(entry);
     }
@@ -3830,7 +3896,7 @@
         setText('r-patient-id', entry.id);
         const tag = $('result-tag');
         setText('tag-text', catShort(entry.category));
-        setText('tag-label', catLabel(entry.category) + (entry.tool ? ` • ${entry.tool}` : ''));
+        setText('tag-label', catLabel(entry.category) + (entry.tool && userRole === 'HCP' ? ` • ${entry.tool}` : ''));
         applyCategoryStyle(tag, entry);
         $('hr-badge').style.display = entry.highRisk ? 'block' : 'none';
         // TST patients should be reassessed with MITT as soon as possible; a reminder for clinicians (app wording; the
@@ -3850,7 +3916,7 @@
         } else promptBox.style.display = 'none';
         // The latest triage time; after a re-triage the first one follows in brackets.
         const firstAt = entry.createdAt || entry.timestamp, lastAt = entry.timestamp || firstAt;
-        setText('reassess-head', `${entry.tool || ''} • ${fmtTime(lastAt)}${firstAt && lastAt && fmtTime(firstAt) !== fmtTime(lastAt) ? ` (first ${fmtTime(firstAt)})` : ''}`);
+        setText('reassess-head', `${userRole === 'HCP' && entry.tool ? entry.tool + ' • ' : ''}${fmtTime(lastAt)}${firstAt && lastAt && fmtTime(firstAt) !== fmtTime(lastAt) ? ` (first ${fmtTime(firstAt)})` : ''}`);
         renderResultAlerts(entry);
         $('btn-change-answer').style.display = (lastTriagePath && lastTriagePath.uid === entry.uid && lastTriagePath.path.length) ? 'block' : 'none';
         refreshCurrentPatientLocationStatus();
@@ -5587,15 +5653,11 @@
         const box = $('home-alerts');
         if (!box) return;
         clearChildren(box);
+        // v0.23.0: two lines for everyone, a proper close button, and it goes by itself after the first triage.
         if (!coachDone() && !(typeof CMD !== 'undefined' && CMD.cfg && CMD.cfg.commander)) box.appendChild(el('div', { className: 'alert-card info coach-card', id: 'home-coach', onclick: dismissCoach }, [
-            el('strong', { text: 'How to use this' }),
-            el('ol', {}, userRole === 'HCP' ? [
-                el('li', { text: 'Tap START TRIAGE (Ten Second Triage) and answer YES or NO.' }),
-                el('li', { text: 'Put the matching colour tag on the casualty. The app does not replace the paper tag.' }),
-                el('li', { text: 'When the commander asks for MITT, a card appears here. Use the MITT button, or tap "Switch to MITT" to make it the big button.' }),
-                el('li', { text: 'To reassess someone, open the Patient log, tap them and use ⏱ Reassess.' })
-            ] : [el('li', { text: 'Tap the big START TRIAGE button.' }), el('li', { text: 'Answer each question YES or NO.' }), el('li', { text: 'Put the matching colour tag on the casualty. The app does not replace the paper tag.' })]),
-            el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap here to hide this.' })]));
+            el('button', { type: 'button', className: 'coach-close', id: 'home-coach-close', 'aria-label': 'Hide this guide', text: '✕', onclick: (e) => { e.stopPropagation(); dismissCoach(); } }),
+            el('strong', { text: 'Tap START TRIAGE' }),
+            ' and answer YES or NO. Then put the matching colour tag on the casualty: the app does not replace the paper tag.']));
         const rt = pendingReTriageUid ? indexByUid(pendingReTriageUid) : -1;
         if (rt > -1) box.appendChild(el('div', { className: 'alert-card info' }, [el('h4', { text: `Re-triaging ${incidentLog[rt].id} (currently ${catShort(incidentLog[rt].category)})` }), 'Choose TST or MITT below. The same record is updated.', el('button', { className: 'btn btn-secondary', style: 'margin:8px 0 0 0; padding:0.7rem;', text: 'Cancel re-triage', onclick: cancelReTriage })]));
         const mp = mittPromptCard();
@@ -5611,9 +5673,11 @@
         const later = $('home-link-later');
         if (later) clearChildren(later);
         if (typeof cmdActive === 'function' && !cmdActive() && !(TRAINING && demoMode() && demoMode() !== 'cmd' && !exerciseRole())) {
-            if (!cmdLinkDismissed()) box.appendChild(el('div', { className: 'alert-card info', id: 'home-cmd-link', onclick: cmdOfferLink }, [el('strong', { text: '☁ Not linked to an incident commander. ' }), 'Tap to scan their code or type the code and PIN.']));
-            else if (later) later.appendChild(el('button', { type: 'button', className: 'btn btn-secondary', id: 'home-cmd-link-later', style: 'padding:0.6rem; font-size:0.95rem;', onclick: cmdOfferLink, text: '☁ Not linked to a commander: tap to link' }));
+            // v0.23.0: always the bar under the buttons (48 px), never a card above START TRIAGE.
+            // Side by side with "Add your name" while both are showing, so the first-run home screen stays short.
+            if (later) later.appendChild(el('button', { type: 'button', className: 'btn btn-secondary', id: 'home-cmd-link-later', onclick: cmdOfferLink, text: nameIsDefault() ? '☁ Link to commander' : '☁ Not linked to a commander: tap to link' }));
         }
+        if (later && nameIsDefault()) later.appendChild(el('button', { type: 'button', className: 'btn btn-secondary', id: 'home-add-name', title: `Records are signed "${triagerName}" until you add a name`, onclick: addNameLater, text: '✎ Add your name' }));
     }
     function showLog() {
         commitDirtyFields('Opening log');
@@ -6731,6 +6795,7 @@
             renderHomeAlerts();
             showToast(`Linked to incident ${code}. Everything you record is sent to the commander in the background.`);
             await cmdAskPositionShare();
+            cmdOfferSector();
             return true;
         } catch (e) {
             showBlockingError('Could not join', `${(e && e.name === 'AbortError') ? 'The server did not answer in time.' : (e && e.message) || 'Network error.'} Check the signal and try again.`);
