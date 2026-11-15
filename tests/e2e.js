@@ -1558,6 +1558,44 @@ async function test(name, fn) {
         assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_sector_asked')), '1');
         await CG._ctx.close();
     });
+    await test('v0.23.1: the join code is a web link: a new phone opened from it joins after saying who they are; the app scanner reads it too; the PIN leaves the address', async () => {
+        const link = await CA.evaluate(() => joinLink(CMD.cfg.code, cmdTriagerPin()));
+        assert.strictEqual(link, url.replace(/index\.html$/, '') + '#join=' + share.code + '-' + share.pin);
+        assert.deepStrictEqual(await CA.evaluate(l => [parseJoinLink(l), parseJoinLink(l + 'x'), parseJoinLink('#join=ABC123-123456'), parseJoinLink('https://x.example/#join=ABC12-123456'), looksLikeAppCode(l)], link),
+            [{ c: share.code, p: share.pin }, null, null, null, true]);
+        // A phone that has never opened the app: the camera opens the link.
+        const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+        const JL = await ctx.newPage();
+        JL.on('pageerror', e => errors.push(`Join link: ${e.message}`));
+        await JL.goto(link);
+        await JL.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        assert.strictEqual(await JL.evaluate(() => location.hash), '', 'code and PIN removed from the address');
+        assert.ok(await JL.isVisible('#intro-join-note'));
+        assert.strictEqual(await JL.textContent('#intro-join-code'), share.code);
+        await JL.evaluate(() => { localStorage.setItem('mit_share_pos_asked', '1'); localStorage.setItem('mit_sector_asked', '1'); });
+        await JL.click('#btn-path-nonmed');
+        await JL.click('#btn-role-responder');
+        await page_visible(JL, '#confirm-modal');
+        assert.match(await JL.textContent('#confirm-title'), new RegExp('Join incident ' + share.code));
+        await JL.click('#confirm-ok');
+        await JL.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        assert.strictEqual(await JL.evaluate(() => CMD.cfg.code), share.code);
+        assert.strictEqual(await JL.isVisible('#intro-join-note'), false);
+        // The same link opened again while the app is open (only the part after "#" changes).
+        await JL.evaluate(l => { location.hash = l.split('#')[1]; }, link);
+        await JL.waitForFunction(() => location.hash === '');
+        assert.strictEqual(await JL.evaluate(() => pendingJoin), null);
+        await ctx.close();
+        // The app's own scanner reads the link as a join code.
+        const JS = await device('Join scan');
+        await setup(JS, 'Medic Juliet');
+        await JS.evaluate(l => onScanSuccess(l), link);
+        await page_visible(JS, '#confirm-modal');
+        assert.match(await JS.textContent('#confirm-title'), new RegExp('Join incident ' + share.code));
+        await JS.click('#confirm-cancel');
+        assert.strictEqual(await JS.evaluate(() => cmdActive()), false);
+        await JS._ctx.close();
+    });
     await test('"No commander / not now" closes the question and keeps the home alert as a reminder', async () => {
         const CH = await device('Cmd H');
         await CH.evaluate(() => introPath('non'));
@@ -2044,6 +2082,15 @@ async function test(name, fn) {
         await page_visible(E, '#demo-role-modal');
         assert.strictEqual(await E.$$eval('#demo-phone-choices button', b => b.length), 4);
         assert.strictEqual(await E.getAttribute('#demo-choose-cmd', 'href'), 'commander.html#DEMO');
+        // v0.23.1: two steps. Three choices first (the on-a-computer demo is not offered on a phone-sized screen); the phones are on the second step.
+        assert.strictEqual(await E.isVisible('#demo-phone-choices'), false);
+        assert.ok(await E.isVisible('#demo-choose-triager')); assert.ok(await E.isVisible('#btn-exercise'));
+        assert.strictEqual(await E.isVisible('#demo-linked'), (await E.evaluate(() => window.innerWidth)) >= 900);
+        await E.click('#demo-choose-triager');
+        assert.match(await E.textContent('#demo-role-title'), /pick a phone/);
+        await E.click('#demo-step-back');
+        assert.ok(await E.isVisible('#demo-choose-triager'));
+        await E.click('#demo-choose-triager');
         await E.click('#demo-phone-choices button:nth-child(4)');
         await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 8, null, { timeout: 10000 });
         assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, demoMode()]), ['Fire crew 3', 'NON_HCP', 'p3']);
