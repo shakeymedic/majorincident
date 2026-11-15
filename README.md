@@ -164,6 +164,20 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.23.0 build 2026-11-15-first-run — a shorter first run (15 November 2026)
+
+From the usability review of the first screens (15 November 2026). A new user reached the first question after four taps and a typed name; it is now two taps and no typing, then START TRIAGE.
+
+- **The name is optional for triagers.** Leave it blank and tap Start: records are signed with the phone's code (for example "Phone K4KC") until a name is added from the "✎ Add your name" button on the home screen (audit `USER_NAME_SET`). Earlier records keep the call sign they were made with. The commander path still needs a name.
+- **No "Two quick questions" sheet on first run.** Linking to the commander is the bar under the home buttons (48 px), which opens "Link to the commander". "Where are you working?" is asked once, after a phone links (`mit_sector_asked`), and is still in the link sheet and Settings.
+- **Medical has one Start button.** The paramedic / doctor-or-nurse choice only changed a label; the status strip now says "Clinician".
+- **Non-medical users get a shorter home screen**: START TRIAGE, Hand over, Receive and Patient log. "Show more (map, report the incident)" brings back the Map and the More list and is remembered (`mit_home_full`).
+- **The how-to card is two sentences with a ✕ button**, and hides itself after the first saved triage.
+- **Start screen**: "Who are you?" is the only heading; the demo is an outlined "▶ Try a demo" button under the choices; the footer says nothing about saving until there is a record.
+- **Plain words for non-medical users**: no TST badge in the header, no "• TST" on the result, and "Report the incident (METHANE)" in the More list.
+- **Tap targets**: the status-strip pills keep their size but respond across the full height of the strip (44 px).
+- Android: version name 0.23.0, code 3 for the next upload (the installed app shows the website, so it has these changes without a new upload).
+
 ### v0.22.4 build 2026-11-06-stress — fixes from the v0.22.3 stress test (6 November 2026)
 
 - **A phone with a big backlog no longer gets stuck.** The server refuses a report over 512 KB. A phone sent up to 200 casualties per report whatever their size, so 60 casualties with long notes (610 KB, or 540 KB for 30 with notes in a non-Latin script) were refused, and the phone sent the same report every 30 seconds for ever: nothing after it reached the commander. Reports are now filled by size as well as number (at most 384 KB), and if the server still says a report is too large the phone halves it and carries on.
