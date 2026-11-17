@@ -1038,6 +1038,19 @@
     #demo-modal .demo-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 6px; }
     #demo-modal .demo-grid .btn { margin: 0; min-height: 54px; display: flex; align-items: center; justify-content: center; }
     #demo-modal .demo-grid .btn span, #demo-modal .demo-grid .btn br { display: none; }
+    #demo-modal .demo-grid .btn { min-height: 44px; font-size: 0.95rem; padding: 0.3rem 0.4rem; white-space: nowrap; }
+    #demo-modal .demo-grid .btn.demo-seen { background: #fff; color: var(--nhs-dark-blue); border: 2px solid var(--nhs-dark-blue); }
+    body.night-mode #demo-modal .demo-grid .btn.demo-seen { background: #1b1b1b; color: #fff; border-color: #777; }
+    #demo-modal h4 { margin: 5px 0 2px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    #demo-modal .demo-next { background: var(--nhs-green); font-size: 1.1rem; min-height: 56px; }
+    #demo-modal .settings-head { margin-bottom: 4px; }
+    .demo-guide-btn { background: #fff; color: #000; }
+    .reset-choice { background: #fff; color: var(--nhs-red); border: 2px solid var(--nhs-red); text-align: left; line-height: 1.3; }
+    .reset-choice span { display: block; font-size: 0.85rem; font-weight: normal; color: #212b32; margin-top: 2px; }
+    body.night-mode .reset-choice { background: #1b1b1b; color: #ff8a80; border-color: #ff8a80; }
+    body.night-mode .reset-choice span { color: #ddd; }
+    #modes-modal .settings-reset { border: 2px solid rgba(218,41,28,0.55); border-radius: 8px; margin-bottom: 10px; width: 100%; }
+    #modes-modal .settings-reset b { color: var(--nhs-red); }
     #demo-phone-choices { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
     #demo-phone-choices .btn { margin: 0; font-size: 0.95rem; }
     #demo-phone-choices .btn span { font-size: 0.75rem !important; }
@@ -1335,20 +1348,23 @@
 </div>
 <div id="demo-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="demo-title">
     <div class="modal-box" style="max-width:460px;">
-        <h3 id="demo-title" style="margin-top:0;">Demo incident</h3>
+        <!-- v0.24.0: every function of the app, one tap each, with a tick once shown. "Next" walks through them in order. -->
+        <div class="settings-head"><h3 id="demo-title">Demo incident</h3><button type="button" class="btn btn-primary pm-done" id="demo-close" onclick="closeDemoGuide()">Close</button></div>
         <p class="qr-meta" style="text-align:left;" id="demo-summary"></p>
-        <div class="demo-grid">
-        <button type="button" class="btn btn-primary" onclick="demoGo('log')">📋 Patient log<br><span style="font-size:0.8rem; font-weight:normal;">Every casualty, newest first, with overdue checks flagged</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoGo('map')">🗺 Map<br><span style="font-size:0.8rem; font-weight:normal;">Where each casualty is, the casualty clearing station, Open in Google Maps</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoGo('patient')">🩸 A P1 patient<br><span style="font-size:0.8rem; font-weight:normal;">Tourniquet time, injuries on the body map, ATMIST handover</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoGo('triage')">▶ Triage someone new<br><span style="font-size:0.8rem; font-weight:normal;">Walk through TST or MITT; the patient joins the demo</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoReceive()">📥 Practise receiving<br><span style="font-size:0.8rem; font-weight:normal;">A casualty arrives from another phone: check the details, accept, show your confirmation code</span></button>
-        <button type="button" class="btn btn-primary" onclick="demoHandover()">📤 Practise handing over<br><span style="font-size:0.8rem; font-weight:normal;">Show the handover QR, then "the receiver scanned it" to see the confirmation come back</span></button>
-        <button type="button" class="btn btn-primary" id="demo-link-btn" style="background:var(--nhs-dark-blue);" onclick="demoGo('link')">☁ Link to a commander<br><span style="font-size:0.8rem; font-weight:normal;">If another device is the commander of a live practice, scan their code</span></button>
-        </div>
-        <button type="button" class="btn btn-primary" style="background:#000;" onclick="leaveDemo()">↩ Start page<br><span style="font-size:0.8rem; font-weight:normal;">Pick another role, or use the app for real</span></button>
-        <button type="button" class="btn btn-secondary" onclick="closeDemoGuide()">Close</button>
-        <p class="qr-meta" style="text-align:left;">With two devices you can hand over for real: 📷 Receive on one, ⇄ Hand over on the other. Reopen this from the orange demo card on the home screen.</p>
+        <button type="button" class="btn btn-primary demo-next" id="demo-next" onclick="demoNext()"></button>
+        <p class="qr-meta" style="text-align:left;" id="demo-progress"></p>
+        <div id="demo-list"></div>
+    </div>
+</div>
+<div id="reset-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-title">
+    <div class="modal-box" style="max-width:420px;">
+        <!-- v0.24.0: one place for every way of clearing the phone, opened from the top of Settings and from the home "More" list. -->
+        <h3 id="reset-title" style="margin-top:0;">Reset this phone</h3>
+        <p class="qr-meta" style="text-align:left;">Pick how much to clear. You are asked once more before anything goes.</p>
+        <button type="button" class="btn reset-choice" id="btn-reset-patients" onclick="closeResetMenu(); clearAndRestart();">🧹 Clear the patients<br><span>Every patient on this phone goes. Your name, role and settings stay.</span></button>
+        <button type="button" class="btn reset-choice" id="btn-clear-training" style="display:none;" onclick="closeResetMenu(); clearTrainingData();">🎓 Delete all training data<br><span>Practice patients and practice settings. Real records are not affected.</span></button>
+        <button type="button" class="btn reset-choice" id="btn-reset-all" onclick="closeResetMenu(); factoryReset();">🔄 Reset everything<br><span>Like a newly installed app: patients, name, role and settings all go.</span></button>
+        <button type="button" class="btn btn-secondary" id="btn-reset-cancel" onclick="closeResetMenu()">Cancel</button>
     </div>
 </div>
 <div id="cmd-link-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="cmd-link-title">
@@ -1477,6 +1493,8 @@
         <div class="settings-head"><h3 id="modes-title">Settings</h3><button type="button" class="btn btn-primary pm-done" onclick="closeModesMenu()">Done</button></div>
         <!-- Its own line at the top, so a first-time user finds it without opening a section (Chrome test, 30 Oct 2026). -->
         <label class="setting-row settings-training"><span><strong>Training mode</strong><small>Practice patients, kept apart from real records</small></span><input type="checkbox" id="mode-training" onchange="toggleTrainingMode(this.checked)"></label>
+        <!-- v0.24.0: resetting is one visible button, not a closed section at the bottom of the sheet. -->
+        <button type="button" class="menu-item settings-reset" id="btn-open-reset" onclick="closeModesMenu(); openResetMenu();"><b>🔄 Reset this phone</b><span>Clear the patients, or start again as new</span></button>
 
         <details class="menu-list settings-sec" open>
             <summary>You <span class="rs-sum" id="set-you-sum"></span></summary>
@@ -1545,15 +1563,6 @@
                 <a class="menu-item" href="accessibility.html" target="_blank" rel="noopener"><b>♿ Accessibility statement</b><span>What works, what does not yet, and how to tell us</span></a>
                 <p class="qr-meta" style="text-align:left;"><strong>Intended purpose:</strong> training and exercise use only. Not for use with real patients. It is not a medical device and has not been approved for clinical use.</p>
                 <p class="qr-meta" id="device-info" style="text-align:left;"></p>
-            </div>
-        </details>
-
-        <details class="menu-list settings-sec settings-danger">
-            <summary>Clear data <span class="rs-sum">start again, reset the phone</span></summary>
-            <div class="menu-items">
-                <button class="menu-item danger" onclick="closeModesMenu(); clearAndRestart();"><b>🧹 Clear everything and start again</b><span>Removes every patient on this phone. Name, role and settings stay.</span></button>
-                <button class="menu-item" id="btn-clear-training" style="display:none;" onclick="clearTrainingData()"><b>Delete all training data</b><span>Real records are not affected</span></button>
-                <button class="menu-item danger" onclick="closeModesMenu(); factoryReset();"><b>Reset this phone completely</b><span>Patients, training data, name, role, settings and stored files all go</span></button>
             </div>
         </details>
     </div>
@@ -1792,7 +1801,7 @@
         </div>
     </header>
 
-    <div class="training-banner" role="status"><span id="training-banner-text">TRAINING MODE — practice only. Nothing here is a real patient.</span> <button type="button" id="btn-leave-demo" class="leave-demo" style="display:none;" onclick="leaveDemo()">↩ Start page</button></div>
+    <div class="training-banner" role="status"><span id="training-banner-text">TRAINING MODE — practice only. Nothing here is a real patient.</span> <button type="button" id="btn-demo-guide" class="leave-demo demo-guide-btn" style="display:none;" onclick="showDemoGuide()">📋 Demo guide</button> <button type="button" id="btn-leave-demo" class="leave-demo" style="display:none;" onclick="leaveDemo()">↩ Start page</button></div>
     <div id="storage-banner" class="storage-banner" role="alert"></div>
     <div id="ios-install-banner" class="ios-install-banner" role="note">
         <!-- Short by default (v0.22.1: the full text took a third of the first screen before "Who are you?"). -->
@@ -1951,7 +1960,8 @@
                     <button class="menu-item" onclick="generateMyIdentityQR()"><b>Show my ID</b><span>For a colleague who is taking over care</span></button>
                     <button class="menu-item" onclick="openAllTransferFilePicker()"><b>Import a transfer file</b><span>Patients sent to you as a file</span></button>
                     <button class="menu-item nfc-only" style="display:none;" onclick="startNfcReceive()"><b>Read an NFC tag</b><span>Android Chrome only</span></button>
-                    <button class="menu-item" onclick="openModesMenu()"><b>Settings</b><span>Your name and role, screen, incident code, clearing data</span></button>
+                    <button class="menu-item" onclick="openModesMenu()"><b>Settings</b><span>Your name and role, screen, incident code</span></button>
+                    <button class="menu-item" id="home-reset" onclick="openResetMenu()"><b>🔄 Reset this phone</b><span>Clear the patients, or start again as new</span></button>
                 </div>
             </details>
             <button type="button" class="btn btn-secondary" id="btn-home-full" onclick="toggleHomeFull()">Show everything</button>
@@ -2300,8 +2310,8 @@
 </div>
 <script>
     // ---------- App version / build ----------
-    const APP_VERSION = '0.23.1';
-    const APP_BUILD = '2026-11-15-join-link';
+    const APP_VERSION = '0.24.0';
+    const APP_BUILD = '2026-11-17-reset-demo';
     // Training mode: a completely separate database, backup copy and counters, chosen at start-up.
     // Switching mode always reloads the app, so a page can never mix real and practice records.
     const TRAINING = (() => { try { return localStorage.getItem('mit_training') === '1'; } catch (e) { return false; } })();
@@ -5708,7 +5718,7 @@
         const parts = alertSummary(patientAlerts(Date.now()));
         if (parts.length) box.appendChild(el('div', { className: 'alert-card', onclick: () => { $('log-filter').value = '__alerts'; showLog(); } }, [el('strong', { text: '⚠ ' }), parts.join(' • '), el('div', { className: 'qr-meta', style: 'text-align:left;', text: 'Tap to view' })]));
         if (TRAINING && exerciseRole()) box.appendChild(el('div', { className: 'alert-card info', id: 'home-exercise', style: 'border-left-color:#7B3F00;', onclick: showExerciseGuide }, [el('strong', { text: '🎯 Live exercise. ' }), `You are ${exerciseRole().label}. Tap for the facilitator guide.`]));
-        else if (TRAINING && (demoMode() || incidentLog.some(r => MITTLib.isDemoRecord(r)))) box.appendChild(el('div', { className: 'alert-card info', id: 'home-demo', style: 'border-left-color:#E87722;', onclick: showDemoGuide }, [el('strong', { text: '▶ Demo incident (made up). ' }), (demoPhone() ? `You are ${demoPhone().triager}. ` : '') + 'Tap for things to show and transfer practice.']));
+        else if (TRAINING && (demoMode() || incidentLog.some(r => MITTLib.isDemoRecord(r)))) box.appendChild(el('div', { className: 'alert-card info', id: 'home-demo', style: 'border-left-color:#E87722;', onclick: showDemoGuide }, [el('strong', { text: '▶ Demo incident (made up). ' }), (demoPhone() ? `You are ${demoPhone().triager}. ` : '') + 'Tap for the list of everything to show.']));
         // While not linked: a card at the top until "No", then a small button lower down, so linking later is
         // one tap from home rather than a hunt in Settings (Chrome test, 30 Oct 2026).
         const later = $('home-link-later');
@@ -5890,7 +5900,7 @@
         if (cmdActive()) cmdStopLocal('Stopped: this phone was cleared');
         incidentLog = []; auditLog = []; importedAudit = []; methaneHistory = [];
         appendAudit({ deviceId, sysTime: Date.now(), sysTimeISO: MITTLib.isoWithOffset(Date.now()), user: triagerName, role: userRole || '', action: 'DATA_WIPE', patientId: '-', details: `${why}. Previous: ${summary.records} records, ${summary.auditEntries} audit entries, audit head ${summary.auditHeadHash} (${v.ok ? 'intact' : 'BROKEN'})${digest ? ', archive SHA-256 ' + digest : ', no archive saved'}`, app: APP_VERSION });
-        ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_demo_mode', 'mit_tally'].forEach(k => ls(k, null));
+        ['mit_patient_counter', 'mit_methane', 'mit_ccs_location', 'mit_chunk_store', 'mit_sent_transfers', 'mit_demo_mode', 'mit_demo_seen', 'mit_tally'].forEach(k => ls(k, null));
         // A copy left in backup browser storage (from any earlier fallback) would keep patient data on the phone.
         if (storageMode === 'indexeddb') ls(FALLBACK_KEY, null);
         patientCounter = 1; currentLogIndex = -1; cachedCcsLocation = null;
@@ -5910,10 +5920,49 @@
         if (!ok) return;
         await wipeIncidentData('Cleared to start again');
     }
+    // v0.24.0: "Reset this phone" (top of Settings, and the home "More" list) opens one sheet with every way of clearing.
+    function openResetMenu() {
+        const n = incidentLog.length;
+        $('btn-clear-training').style.display = TRAINING ? '' : 'none';
+        $('btn-reset-patients').firstChild.textContent = n ? `🧹 Clear the ${n} ${TRAINING ? 'practice ' : ''}patient${n === 1 ? '' : 's'}` : '🧹 Clear the patients';
+        $('reset-modal').style.display = 'flex';
+    }
+    function closeResetMenu() { $('reset-modal').style.display = 'none'; }
+    // How many REAL patient records this phone holds: the typed check before a full reset is only asked when there
+    // are some (or when it cannot be told). In training the real records sit in the other database, so look there.
+    function realRecordCount() {
+        if (!TRAINING && !SIM) return Promise.resolve(incidentLog.length);
+        return new Promise((res) => {
+            let done = false;
+            const fin = (n) => { if (!done) { done = true; res(n); } };
+            setTimeout(() => fin(-1), 2500);
+            let fb = 0;
+            try { const st = JSON.parse(localStorage.getItem('mit_fallback_state_v1') || 'null'); fb = st && Array.isArray(st.incidentLog) ? st.incidentLog.length : 0; } catch (e) { fb = 0; }
+            try {
+                const req = indexedDB.open('MITT_DB', 1);
+                // Same store as openDatabase(), so a database first made here is still a valid one for real use.
+                req.onupgradeneeded = (ev) => { const d = ev.target.result; if (!d.objectStoreNames.contains('logs')) d.createObjectStore('logs'); };
+                req.onsuccess = (ev) => {
+                    const d = ev.target.result;
+                    try {
+                        const g = d.transaction('logs', 'readonly').objectStore('logs').get('incidentLog');
+                        g.onsuccess = () => { const n = Array.isArray(g.result) ? g.result.length : 0; try { d.close(); } catch (e) {} fin(Math.max(n, fb)); };
+                        g.onerror = () => { try { d.close(); } catch (e) {} fin(-1); };
+                    } catch (e) { try { d.close(); } catch (x) {} fin(-1); }
+                };
+                req.onerror = req.onblocked = () => fin(-1);
+            } catch (e) { fin(-1); }
+        });
+    }
     // Reset the phone completely: both databases, every setting, the stored files and the service worker.
+    // One tap to confirm when only practice data is at stake; RESET is typed when real records would go.
     async function factoryReset() {
         try { commitDirtyFields('Reset'); } catch (e) {}
-        const ok = await inAppConfirm({ title: 'Reset this phone completely?', message: 'Deletes every patient record (real and training), the audit trails, your name, role, settings and the app files stored for offline use. The app then reloads as if newly installed (it needs signal once to download itself again).\n\nType RESET to go ahead.', okLabel: 'Reset everything', danger: true, requireText: 'RESET' });
+        const real = await realRecordCount();
+        const what = 'Everything goes: every patient (real and practice), your name, role and settings, and the app files stored on the phone. The app then opens as if newly installed. It needs signal once to load again.';
+        const ok = await inAppConfirm(real === 0
+            ? { title: 'Reset everything?', message: what + '\n\nThere are no real patient records on this phone.', okLabel: 'Reset everything', danger: true }
+            : { title: 'Reset everything?', message: what + '\n\n' + (real > 0 ? `This phone holds ${real} real patient record${real === 1 ? '' : 's'}. If this was a real incident, save the archive first (Patient log → Records & exports).` : 'This phone may hold real patient records.') + ' Type RESET to go ahead.', okLabel: 'Reset everything', danger: true, requireText: 'RESET' });
         if (!ok) return;
         _wiped = true;
         if (cmdActive()) cmdStopLocal('Stopped: phone reset');
@@ -6319,7 +6368,6 @@
         $('mode-panic').checked = document.body.classList.contains('panic');
         $('mode-wakelock').checked = ls('mit_wakelock') !== 'false';
         $('mode-training').checked = TRAINING;
-        $('btn-clear-training').style.display = TRAINING ? 'block' : 'none';
         $('set-incident-code').value = incidentCode;
         ['TST', 'P1', 'P2', 'P3'].forEach(c => { $('interval-' + c).value = String(Math.round((reassessIntervals[c] || MITTLib.REASSESS_INTERVALS[c]) / 60000)); });
         $('set-tool-mode').value = toolMode;
@@ -7131,7 +7179,8 @@
         const on = !!demoMode();
         document.body.classList.toggle('demo', on);
         $('btn-leave-demo').style.display = on ? '' : 'none';
-        setText('training-banner-text', !on ? 'TRAINING MODE — practice only. Nothing here is a real patient.' : exerciseRole() ? `EXERCISE — ${exerciseRole().label}` : 'DEMO — made-up patients');
+        $('btn-demo-guide').style.display = on && !exerciseRole() ? '' : 'none';
+        setText('training-banner-text', !on ? 'TRAINING MODE — practice only. Nothing here is a real patient.' : exerciseRole() ? `EXERCISE — ${exerciseRole().label}` : 'DEMO');
     }
     function closeDemoPicker() { $('demo-role-modal').style.display = 'none'; }
     // Live exercise: real people as casualties, every device in training mode, linked to one practice incident.
@@ -7192,7 +7241,7 @@
         else { if (!triagerName) triagerName = 'Demo user'; currentSector = 'Casualty clearing station'; }
         $('intro-triager').value = triagerName; $('intro-device-prefix').value = devicePrefix; $('intro-sector').value = currentSector;
         patientCounter = 1;
-        ls('mit_demo_mode', mode);
+        ls('mit_demo_mode', mode); ls('mit_demo_seen', null);
         renderDemoBanner();
         setIncidentCode(d.incident.incidentCode, 'demo incident');
         logAudit('DEMO_LOADED', '-', `Demo incident loaded as ${phone ? phone.triager : 'the whole incident'}: ${incidentLog.length} made-up casualties (training mode)`, now);
@@ -7274,29 +7323,94 @@
         logAudit('DEMO_TRANSFER_PRACTICE', e.id, 'Practice: simulated receiver confirmation (demo, no camera)', Date.now(), { uid: e.uid });
         handleAck(JSON.parse(MITTLib.toAsciiJSON(ack)));
     }
+    // v0.24.0: the demo guide lists every function of the app. One tap opens each on a made-up casualty; a tick shows
+    // what has been shown; "Next" walks through them in order. Reopened from "📋 Demo guide" in the orange bar.
+    function demoPatientIndex(pred) {
+        const live = (r) => !r.evacuated && r.category !== 'DEAD' && r.category !== 'NOT_BREATHING';
+        if (pred) return incidentLog.findIndex(r => live(r) && pred(r));
+        let i = incidentLog.findIndex(r => r.uid === 'demo0007kestrel' && live(r));
+        if (i === -1) i = incidentLog.findIndex(r => r.category === 'P1' && live(r));
+        if (i === -1) i = incidentLog.findIndex(live);
+        return i;
+    }
+    function demoWithPatient(fn, pred) {
+        let i = demoPatientIndex(pred);
+        if (i === -1 && pred) i = demoPatientIndex();
+        if (i === -1) { showToast('No casualty on this phone to show that with. Restart the demo.', { long: true }); showLog(); return; }
+        editEntry(i);
+        if (fn) fn(incidentLog[i]);
+    }
+    const DEMO_ITEMS = [
+        { g: 'Triage and care' },
+        { id: 'tst', t: '⏱ TST triage', d: 'The TST questions; the new casualty joins the demo', go: () => initiateTriage('TST') },
+        { id: 'mitt', t: '🩺 MITT triage', d: 'The clinicians\' tool, with breathing and pulse rates', when: () => userRole === 'HCP', go: () => initiateTriage('MITT') },
+        { id: 'patient', t: '🩸 A P1 patient', d: 'Tourniquet time, treatment, details, ATMIST handover', go: () => { const i = incidentLog.findIndex(r => r.uid === 'demo0007kestrel'); if (i > -1) editEntry(i); else demoWithPatient(); } },
+        { id: 'body', t: '🧍 Body map', d: 'Mark where the injuries are on the body map', go: () => demoWithPatient(() => openBodyMap()) },
+        { id: 'reassess', t: '⏰ Reassess', d: 'Improved, unchanged or worsened; the timer restarts', go: () => demoWithPatient(() => openReassessModal()) },
+        { id: 'timeline', t: '🕒 Timeline', d: 'Everything recorded for one casualty, in order', go: () => demoWithPatient((e) => openTimelineFor(e)) },
+        { id: 'evac', t: '🚑 To hospital', d: 'Mark a casualty evacuated and pick the hospital', go: () => demoWithPatient(() => toggleEvac(), r => r.category === 'P2' || r.category === 'P3') },
+        { g: 'The whole incident' },
+        { id: 'log', t: '📋 Patient log', d: 'Every casualty, newest first, overdue checks flagged', go: () => { $('log-filter').value = ''; showLog(); } },
+        { id: 'map', t: '🗺 Map', d: 'Where each casualty is, and the casualty clearing station', go: () => showMap() },
+        { id: 'methane', t: '📣 METHANE', d: 'Declare or update the major incident', go: () => showMethane() },
+        { id: 'exports', t: '🗂 Exports', d: 'Archive, CSV and the audit trail for the debrief', go: () => { $('log-filter').value = ''; showLog(); const x = $('log-exports'); x.open = true; setTimeout(() => { try { x.scrollIntoView({ block: 'start' }); } catch (e) {} }, 60); } },
+        { id: 'commander', t: '🎖 Commander', d: 'Every phone on one screen. Opens in a new tab; this demo stays open here', go: () => { const a = el('a', { href: 'commander.html#DEMO', target: '_blank', rel: 'noopener' }); document.body.appendChild(a); a.click(); a.remove(); } },
+        { g: 'Passing patients on' },
+        { id: 'receive', t: '📥 Receive', d: 'A casualty arrives from another phone: check, accept, show your code', go: () => demoReceive() },
+        { id: 'handover', t: '📤 Hand over', d: 'Show the handover QR, then "the receiver scanned it"', go: () => demoHandover() },
+        { id: 'handall', t: '⇄ Hand over all', d: 'Every patient, or the ones you pick, in one QR for the next phone', go: () => openAllPatientsTransfer() },
+        { id: 'link', t: '☁ Link phone', d: 'Scan or type the code of a live practice incident', when: () => !cmdActive(), go: () => cmdOfferLink() },
+        { g: 'This phone' },
+        { id: 'night', t: '☾ Night mode', d: 'Dark screen, on or off', go: () => { toggleNightMode(); showToast(document.body.classList.contains('night-mode') ? 'Night mode is on. Tap it again in the demo guide to turn it off.' : 'Night mode is off.', { long: true }); } },
+        { id: 'settings', t: '⚙ Settings', d: 'Gloves, one hand, simple mode, timers, reset', go: () => openModesMenu() }
+    ];
+    function demoItems() { return DEMO_ITEMS.filter(x => x.id && (!x.when || x.when())); }
+    function demoSeen() { try { const a = JSON.parse(ls('mit_demo_seen') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+    function demoMarkSeen(id) { const a = demoSeen(); if (a.indexOf(id) === -1) { a.push(id); ls('mit_demo_seen', JSON.stringify(a)); } }
+    function demoNextItem() { const seen = demoSeen(); return demoItems().filter(x => seen.indexOf(x.id) === -1)[0] || null; }
+    function demoNext() {
+        const n = demoNextItem();
+        if (!n) { ls('mit_demo_seen', null); renderDemoGuide(); return; }
+        demoGo(n.id);
+    }
+    function renderDemoGuide() {
+        const seen = demoSeen(), items = demoItems();
+        const box = $('demo-list');
+        clearChildren(box);
+        let grid = null;
+        DEMO_ITEMS.forEach((x) => {
+            if (!x.id) { box.appendChild(el('h4', { text: x.g })); grid = el('div', { className: 'demo-grid' }); box.appendChild(grid); return; }
+            if (x.when && !x.when()) return;
+            const done = seen.indexOf(x.id) > -1;
+            const b = el('button', { type: 'button', className: 'btn btn-primary' + (done ? ' demo-seen' : ''), id: 'demo-item-' + x.id, title: x.d, onclick: () => demoGo(x.id) }, [(done ? '✓ ' : '') + x.t]);
+            b.setAttribute('aria-label', `${x.t}. ${x.d}${done ? '. Already shown' : ''}`);
+            grid.appendChild(b);
+        });
+        const n = demoNextItem();
+        const shown = items.filter(x => seen.indexOf(x.id) > -1).length;
+        setText('demo-next', n ? `▶ ${shown ? 'Next' : 'Start'}: ${n.t}` : '✓ All shown. Start again');
+        setText('demo-progress', (n ? `${shown} of ${items.length} shown. ` : `All ${items.length} shown. `) + 'To come back here from any screen, tap 📋 Demo guide in the orange bar.');
+    }
     function showDemoGuide() {
         const c = categoryCounts(incidentLog);
         const phone = demoPhone();
         const counts = `${incidentLog.length} casualties (${[['P1', 'P1'], ['P1_HOLD', 'P1 Hold'], ['P2', 'P2'], ['P3', 'P3'], ['NOT_BREATHING', 'Not Breathing'], ['DEAD', 'Dead']].filter(x => c[x[0]].total).map(x => `${x[1]} ${c[x[0]].total}`).join(', ')}; ${incidentLog.filter(r => r.evacuated).length} evacuated).`;
         setText('demo-title', phone ? `Demo: you are ${phone.triager}` : 'Demo incident');
         setText('demo-summary', phone
-            ? `${MITTLib.DEMO_INCIDENT.name}. ${phone.desc}. This phone has ${counts} The other three phones have the rest; the commander screen shows everyone.`
-            : `${MITTLib.DEMO_INCIDENT.name}. ${counts} Recorded on four phones (${MITTLib.DEMO_INCIDENT.phones.map(p => p.triager).join(', ')}).`);
-        $('demo-link-btn').style.display = cmdActive() ? 'none' : '';
+            ? `${phone.desc}. This phone has ${counts} The other three phones have the rest.`
+            : `Made up. ${counts}`);
+        renderDemoGuide();
         $('demo-modal').style.display = 'flex';
+        try { $('demo-modal').querySelector('.modal-box').scrollTop = 0; } catch (e) {}
     }
     function closeDemoGuide() { $('demo-modal').style.display = 'none'; }
     function demoGo(what) {
+        if (what === 'triage') what = userRole === 'HCP' ? 'mitt' : 'tst';
+        const item = DEMO_ITEMS.filter(x => x.id === what)[0];
+        if (!item) return;
         closeDemoGuide();
-        if (what === 'log') { $('log-filter').value = ''; showLog(); }
-        else if (what === 'map') showMap();
-        else if (what === 'triage') initiateTriage(userRole === 'HCP' ? 'MITT' : 'TST');
-        else if (what === 'patient') {
-            const i = incidentLog.findIndex(r => r.uid === 'demo0007kestrel');
-            const j = i > -1 ? i : incidentLog.findIndex(r => r.category === 'P1' && !r.evacuated);
-            if (j > -1) editEntry(j); else showLog();
-        }
-        else if (what === 'link') cmdOfferLink();
+        demoMarkSeen(item.id);
+        item.go();
     }
 
     // ================= START-UP =================

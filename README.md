@@ -93,7 +93,7 @@ Scanning a colleague's **My ID** records who took over care (it no longer marks 
 - Other devices' audit rows (only if the sender chose to include them) are stored separately with their own chains and de-duplicated.
 - Exports: **Casualty Register (CSV)** — every record, uid, full triage history, ISO times; **Audit Trail (CSV)** — own + imported rows with hashes; **METHANE history (CSV)**; **Full Incident Archive (JSON)** — everything, with chain verification and the file's SHA-256 logged. CSVs are UTF-8 with a BOM and neutralise spreadsheet formulas.
 - **Close / Reset Incident** requires saving an archive first, keeps a permanent wipe record (counts, audit head hash, archive SHA-256), and starts the new audit chain with a `DATA_WIPE` entry citing the old head hash.
-- **Clear everything and start again** (v0.15.0) wipes without an archive: on a real-use phone with records the user types `CLEAR`; the same wipe record and `DATA_WIPE` entry are kept, with "no archive saved" noted.
+- **Clear the patients** (v0.15.0 "Clear everything and start again"; since v0.24.0 under ⚙ Settings → Reset this phone) wipes without an archive: on a real-use phone with records the user types `CLEAR`; the same wipe record and `DATA_WIPE` entry are kept, with "no archive saved" noted.
 
 ## Storage safety
 
@@ -163,6 +163,15 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 - Camera/geolocation/NFC require HTTPS in production browsers. GPS can be poor indoors, underground, near tall buildings, or in dense crowds; always confirm sector/landmark/floor/area when accuracy is degraded.
 
 ## Contributing / change log
+
+### v0.24.0 build 2026-11-17-reset-demo — an easy reset, and a demo that shows every function (17 November 2026)
+
+- **Reset this phone.** One visible button at the top of ⚙ Settings, and in the home screen's More list. It opens one sheet with every way of clearing: *Clear the patients* (name, role and settings stay), *Delete all training data* (in training only) and *Reset everything* (as if newly installed). The closed "Clear data" section at the bottom of Settings has gone. Each choice still asks once before anything is removed.
+- **Typing RESET only when it matters.** A full reset used to need RESET typed every time. It is now one tap to confirm when the phone holds no real patient records (practice and demo data only). When real records would go, the message says how many and RESET is still typed. From training mode the app looks in the real-use database to decide; if it cannot tell, it asks for RESET. *Clear the patients* is unchanged: CLEAR is typed on a real-use phone with records.
+- **Demo guide lists every function.** The guide that opens with the demo now has 18 one-tap items in four groups: triage and care (TST, MITT for clinicians, a P1 patient, body map, reassess, timeline, send to hospital), the whole incident (patient log, map, METHANE, exports, commander screen in a new tab), passing patients on (receive, hand over one, hand over all, link to a commander) and this phone (night mode, Settings). Each opens on a made-up casualty. Items already shown get a tick.
+- **Next.** A green button at the top of the guide opens the next item not yet shown, so the whole app can be shown by tapping it repeatedly. When everything has been shown it offers to start again.
+- **📋 Demo guide in the orange bar.** On every screen during the demo, next to ↩ Start page, so the list is one tap away rather than a trip back to the home screen. The bar now reads "DEMO" to make room.
+- Tests: two new end-to-end tests (reset sheet and the typed check, real and training; the guide's items, ticks, Next and the bar button); the v0.15.0 reset test updated for the one-tap confirm.
 
 ### v0.23.1 build 2026-11-15-join-link — join link and a two-step demo chooser (15 November 2026)
 

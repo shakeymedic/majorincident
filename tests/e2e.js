@@ -2294,7 +2294,10 @@ async function test(name, fn) {
         assert.deepStrictEqual(await K.evaluate(() => [incidentLog.length, triagerName, wipeHistory.length, auditLog.filter(a => a.action === 'DATA_WIPE').length]), [0, 'Medic K3', 1, 1]);
         // Reset the phone completely: nothing of the app remains in storage.
         await K.evaluate(() => { factoryReset(); });
-        await Promise.all([K.waitForNavigation({ timeout: 20000 }), answerDialog(K, true, 'RESET')]);
+        // v0.24.0: no real records left, so one tap confirms (RESET is only typed when real records would go)
+        await page_visible(K, '#confirm-modal');
+        assert.strictEqual(await K.isVisible('#confirm-input'), false);
+        await Promise.all([K.waitForNavigation({ timeout: 20000 }), answerDialog(K, true)]);
         await K.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 15000 });
         assert.strictEqual(await K.evaluate(() => triagerName), '');
         // The fresh start writes its own defaults again, so check the old state is gone rather than that storage is empty.
@@ -2535,6 +2538,99 @@ async function test(name, fn) {
         await C2.click('#confirm-ok');
         assert.strictEqual(await C2.evaluate(() => userRole || ''), '');
         await C2._ctx.close();
+    });
+    console.log('\ne2e: v0.24.0 reset sheet and the full demo guide');
+    await test('v0.24.0: "Reset this phone" is one visible button in Settings and in the home More list; RESET is typed only when real records would go, also when asked from training', async () => {
+        const R = await device('Reset1');
+        await setup(R, 'Medic R1');
+        await triage(R, 'TST', [false, true]);
+        await R.evaluate(() => { resetToHome(); openModesMenu(); });
+        assert.ok(await R.isVisible('#btn-open-reset'), 'visible without opening a section');
+        await R.click('#btn-open-reset');
+        await page_visible(R, '#reset-modal');
+        assert.strictEqual(await R.isVisible('#modes-modal'), false);
+        assert.match(await R.textContent('#btn-reset-patients'), /Clear the 1 patient/);
+        assert.strictEqual(await R.isVisible('#btn-clear-training'), false);
+        await R.click('#btn-reset-all');
+        await page_visible(R, '#confirm-modal');
+        assert.match(await R.textContent('#confirm-message'), /holds 1 real patient record\./);
+        assert.strictEqual(await R.evaluate(() => document.getElementById('confirm-ok').disabled), true, 'OK waits for RESET');
+        await answerDialog(R, false);
+        assert.strictEqual(await R.evaluate(() => incidentLog.length), 1);
+        // The home More list has it too, and Cancel leaves everything alone
+        await R.evaluate(() => { document.getElementById('home-more').open = true; });
+        await R.click('#home-reset');
+        await page_visible(R, '#reset-modal');
+        await R.click('#btn-reset-cancel');
+        assert.strictEqual(await R.isVisible('#reset-modal'), false);
+        // From the demo (training), the real record still counts: RESET must be typed
+        await R.evaluate(() => { demoChoose('all'); });
+        await R.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        assert.strictEqual(await R.evaluate(() => realRecordCount()), 1);
+        await R.evaluate(() => { closeDemoGuide(); openResetMenu(); });
+        assert.match(await R.textContent('#btn-reset-patients'), /Clear the 24 practice patients/);
+        assert.ok(await R.isVisible('#btn-clear-training'));
+        await R.click('#btn-reset-all');
+        await page_visible(R, '#confirm-modal');
+        assert.strictEqual(await R.evaluate(() => document.getElementById('confirm-ok').disabled), true);
+        await answerDialog(R, false);
+        // A phone that has only ever practised: nothing real, so one tap resets it
+        const R2 = await device('Reset2');
+        await setup(R2, 'Medic R2');
+        await R2.evaluate(() => { demoChoose('all'); });
+        await R2.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        assert.strictEqual(await R2.evaluate(() => realRecordCount()), 0);
+        await R2.evaluate(() => { closeDemoGuide(); factoryReset(); });
+        await page_visible(R2, '#confirm-modal');
+        assert.strictEqual(await R2.isVisible('#confirm-input'), false);
+        await Promise.all([R2.waitForNavigation({ timeout: 20000 }), answerDialog(R2, true)]);
+        await R2.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 15000 });
+        assert.deepStrictEqual(await R2.evaluate(() => [triagerName, TRAINING, incidentLog.length]), ['', false, 0]);
+    });
+    await test('v0.24.0: the demo guide lists every function, opens each in one tap, ticks what has been shown, and is one tap away in the orange bar', async () => {
+        const G = await device('Guide1');
+        await setup(G, 'Dr Guide');
+        await G.evaluate(() => { demoChoose('all'); });
+        await G.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        await page_visible(G, '#demo-modal');
+        assert.strictEqual(await G.$$eval('#demo-list button', b => b.length), 18);
+        assert.match(await G.textContent('#demo-next'), /Start: .*TST triage/);
+        assert.match(await G.textContent('#demo-progress'), /^0 of 18 shown/);
+        await G.click('#demo-next');
+        assert.ok(await G.evaluate(() => document.getElementById('question-screen').classList.contains('active')));
+        // Back to the list from any screen: the button in the orange bar
+        assert.ok(await G.isVisible('#btn-demo-guide'));
+        await G.click('#btn-demo-guide');
+        await page_visible(G, '#demo-modal');
+        assert.match(await G.textContent('#demo-progress'), /^1 of 18 shown/);
+        assert.ok(await G.evaluate(() => document.getElementById('demo-item-tst').classList.contains('demo-seen')));
+        assert.match(await G.textContent('#demo-next'), /Next: .*MITT triage/);
+        await G.evaluate(() => { closeDemoGuide(); resetToHome(); });
+        // Each item opens what it says
+        const shows = { body: 'body-map-modal', reassess: 'reassess-modal', timeline: 'timeline-modal', evac: 'hospital-modal', receive: 'preview-modal', handover: 'qr-modal', handall: 'all-preflight-modal', link: 'cmd-link-modal', settings: 'modes-modal' };
+        for (const id of Object.keys(shows)) {
+            await G.evaluate((x) => { demoGo(x); }, id);
+            await page_visible(G, '#' + shows[id]);
+            await G.evaluate((m) => { document.getElementById(m).style.display = 'none'; }, shows[id]);
+        }
+        const screens = { patient: 'result-screen', log: 'log-screen', map: 'map-screen', methane: 'methane-screen', exports: 'log-screen' };
+        for (const id of Object.keys(screens)) {
+            await G.evaluate((x) => { demoGo(x); }, id);
+            assert.ok(await G.evaluate((sc) => document.getElementById(sc).classList.contains('active'), screens[id]), id);
+        }
+        assert.strictEqual(await G.evaluate(() => document.getElementById('log-exports').open), true);
+        await G.evaluate(() => { demoGo('night'); });
+        assert.strictEqual(await G.evaluate(() => document.body.classList.contains('night-mode')), true);
+        await G.evaluate(() => { demoGo('night'); demoGo('mitt'); resetToHome(); demoMarkSeen('commander'); showDemoGuide(); });
+        assert.match(await G.textContent('#demo-next'), /All shown/);
+        await G.click('#demo-next');
+        assert.match(await G.textContent('#demo-progress'), /^0 of 18 shown/);
+        // A non-clinical demo phone is not offered MITT
+        await G.evaluate(() => { closeDemoGuide(); demoChoose('p3'); });
+        await G.waitForFunction(() => triagerName === 'Fire crew 3', null, { timeout: 8000 });
+        await page_visible(G, '#demo-modal');
+        assert.strictEqual(await G.$('#demo-item-mitt'), null);
+        assert.strictEqual(await G.$$eval('#demo-list button', b => b.length), 17);
     });
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
     await browser.close();
