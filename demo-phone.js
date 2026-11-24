@@ -47,7 +47,7 @@
         setUserRole(ph.role, false, ph.role === 'HCP' ? (/doctor/i.test(ph.triager) ? 'doctor_nurse' : 'paramedic') : undefined);
         try { dismissCoach(); } catch (e) {}   // the how-to card would cover half the demo phone
         await W(300);
-        try { closeCmdLink(); } catch (e) {}
+        try { closeJoin(); } catch (e) {}
         var ok = await cmdJoin(L.code, L.pin);
         return !!ok;
     }

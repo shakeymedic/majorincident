@@ -1524,7 +1524,8 @@ async function test(name, fn) {
         const CD = await device('Cmd D');
         await setup(CD, 'Medic Delta');
         await CD.evaluate((s) => onScanSuccess(JSON.stringify({ t: 'MIT_JOIN', c: s.code, p: s.pin })), share);
-        await answerDialog(CD, true);
+        await page_visible(CD, '#join-modal');
+        await CD.click('#join-go');
         await CD.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
         assert.strictEqual(await CD.evaluate(() => CMD.cfg.role), 'member');
         await CD.waitForFunction(() => CMD.lastSentAt > 0, null, { timeout: 10000 });
@@ -1538,24 +1539,37 @@ async function test(name, fn) {
         await CG.fill('#intro-triager', 'Medic Golf');
         await CG.evaluate(() => setUserRole('HCP'));
         await CG.waitForTimeout(400);
-        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'no link sheet on first run');
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none', 'no join screen on first run');
         assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link')), null, 'no card above START TRIAGE');
+        // v0.25.0: the home bar opens the one Join screen; someone already set up is not asked again whether they are medical
         await CG.click('#home-cmd-link-later');
-        await page_visible(CG, '#cmd-link-modal');
-        await CG.evaluate(() => { closeCmdLink(); cmdOpenJoin(); });
-        await page_visible(CG, '#cmd-join-modal');
-        await CG.fill('#cmd-join-code', share.code); await CG.fill('#cmd-join-pin', share.pin);
-        await CG.evaluate(() => { cmdJoin(); });
-        await answerDialog(CG, false);   // v0.18.0: a first link asks once about sharing the phone's position; "Not now"
+        await page_visible(CG, '#join-modal');
+        assert.strictEqual(await CG.isVisible('#join-who-part'), false);
+        assert.strictEqual(await CG.inputValue('#join-name'), 'Medic Golf');
+        await CG.click('#join-go');
+        assert.match(await CG.textContent('#join-error'), /incident code/);
+        // Pasting "CODE-PIN" fills both boxes
+        await CG.fill('#join-code', share.code + '-' + share.pin);
+        assert.deepStrictEqual([await CG.inputValue('#join-code'), await CG.inputValue('#join-pin')], [share.code, share.pin]);
+        await CG.click('#join-jobs [data-job="Triage at the scene"]');
+        await CG.click('#join-go');
         await CG.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
-        assert.strictEqual(await CG.evaluate(() => posShareOn()), false);
-        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_share_pos_asked')), '1');
-        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-join-modal')).display), 'none');
-        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link-later')), null, 'home bar gone once linked');
-        await page_visible(CG, '#cmd-link-modal');
-        assert.match(await CG.textContent('#cmd-link-title'), /Where are you working\?/);
-        await CG.click('#cmd-link-skip');
-        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_sector_asked')), '1');
+        await page_visible(CG, '#joined-modal');
+        assert.match(await CG.textContent('#joined-detail'), new RegExp('Medic Golf has joined incident ' + share.code));
+        assert.match(await CG.textContent('#joined-job'), /Triage at the scene/);
+        assert.strictEqual(await CG.evaluate(() => posShareOn()), false, 'position sharing stays off unless the switch is turned on');
+        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_share_pos_asked')), '1', 'not asked again later');
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none');
+        await CG.click('#joined-ok');
+        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link-later')), null, 'home bar gone once joined');
+        assert.ok(await CG.isVisible('#home-add-people'));
+        assert.match(await CG.textContent('#header-sector'), /Triage at the scene/);
+        // The job in the top bar is a button: one tap changes it, and the commander is told
+        await CG.click('#header-sector');
+        await page_visible(CG, '#job-modal');
+        await CG.click('#job-chips [data-job="Loading point"]');
+        assert.strictEqual(await CG.evaluate(() => currentSector), 'Loading point');
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('job-modal')).display), 'none');
         await CG._ctx.close();
     });
     await test('v0.23.1: the join code is a web link: a new phone opened from it joins after saying who they are; the app scanner reads it too; the PIN leaves the address', async () => {
@@ -1570,17 +1584,24 @@ async function test(name, fn) {
         await JL.goto(link);
         await JL.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
         assert.strictEqual(await JL.evaluate(() => location.hash), '', 'code and PIN removed from the address');
-        assert.ok(await JL.isVisible('#intro-join-note'));
-        assert.strictEqual(await JL.textContent('#intro-join-code'), share.code);
-        await JL.evaluate(() => { localStorage.setItem('mit_share_pos_asked', '1'); localStorage.setItem('mit_sector_asked', '1'); });
-        await JL.click('#btn-path-nonmed');
-        await JL.click('#btn-role-responder');
-        await page_visible(JL, '#confirm-modal');
-        assert.match(await JL.textContent('#confirm-title'), new RegExp('Join incident ' + share.code));
-        await JL.click('#confirm-ok');
+        // v0.25.0: one Join screen, straight away, asks everything
+        await page_visible(JL, '#join-modal');
+        assert.match(await JL.textContent('#join-title'), new RegExp('Join incident ' + share.code));
+        assert.strictEqual(await JL.isVisible('#join-code-part'), false, 'the code is already known');
+        await JL.click('#join-go');
+        assert.match(await JL.textContent('#join-error'), /medical or not/);
+        await JL.fill('#join-name', 'PC Lima');
+        await JL.click('#join-who [data-role="NON_HCP"]');
+        await JL.click('#join-jobs [data-job="Casualty clearing station"]');
+        await JL.check('#join-pos');
+        await JL.click('#join-go');
         await JL.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
         assert.strictEqual(await JL.evaluate(() => CMD.cfg.code), share.code);
-        assert.strictEqual(await JL.isVisible('#intro-join-note'), false);
+        assert.deepStrictEqual(await JL.evaluate(() => [triagerName, userRole, currentSector, posShareOn()]), ['PC Lima', 'NON_HCP', 'Casualty clearing station', true]);
+        await page_visible(JL, '#joined-modal');
+        await JL.click('#joined-ok');
+        assert.ok(await JL.evaluate(() => document.getElementById('home-screen').classList.contains('active')));
+        assert.strictEqual(await JL.evaluate(() => [...document.querySelectorAll('.modal-overlay')].filter(m => getComputedStyle(m).display !== 'none').length), 0, 'no further questions');
         // The same link opened again while the app is open (only the part after "#" changes).
         await JL.evaluate(l => { location.hash = l.split('#')[1]; }, link);
         await JL.waitForFunction(() => location.hash === '');
@@ -1590,9 +1611,9 @@ async function test(name, fn) {
         const JS = await device('Join scan');
         await setup(JS, 'Medic Juliet');
         await JS.evaluate(l => onScanSuccess(l), link);
-        await page_visible(JS, '#confirm-modal');
-        assert.match(await JS.textContent('#confirm-title'), new RegExp('Join incident ' + share.code));
-        await JS.click('#confirm-cancel');
+        await page_visible(JS, '#join-modal');
+        assert.match(await JS.textContent('#join-title'), new RegExp('Join incident ' + share.code));
+        await JS.click('#join-cancel');
         assert.strictEqual(await JS.evaluate(() => cmdActive()), false);
         await JS._ctx.close();
     });
@@ -1604,14 +1625,13 @@ async function test(name, fn) {
         // v0.23.0: the bar under the home buttons is the way to link; "Not now" closes the sheet and the bar stays
         assert.ok(await CH.isVisible('#home-cmd-link-later'), 'link bar on the home screen');
         await CH.click('#home-cmd-link-later');
-        await page_visible(CH, '#cmd-link-modal');
-        assert.match(await CH.textContent('#cmd-link-skip'), /Not now/);
-        await CH.click('#cmd-link-skip');
-        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
-        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'bar stays after "Not now"');
+        await page_visible(CH, '#join-modal');
+        await CH.click('#join-cancel');
+        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none');
+        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'bar stays after Cancel');
         await CH.evaluate(() => { showScreen('intro-screen'); setUserRole('NON_HCP'); });
         await CH.waitForTimeout(400);
-        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'setting up again does not ask either');
+        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none', 'setting up again does not ask either');
         await CH._ctx.close();
     });
     await test('v0.19.2 walk-through: plain role buttons, one-tap "where are you" on the link sheet, then a one-time how-to card', async () => {
@@ -1626,12 +1646,11 @@ async function test(name, fn) {
         await W.click('#btn-path-nonmed');
         await W.fill('#intro-triager', 'PC Whiskey');
         await W.click('#btn-role-responder');
-        await W.click('#home-cmd-link-later');   // v0.23.0: the sheet opens from the home bar, not by itself
-        await page_visible(W, '#cmd-link-modal');
-        await W.click('#setup-sector-chips [data-sector="Casualty clearing station"]');
+        // v0.25.0: the job is picked on the Join screen, or from the job button
+        await W.evaluate(() => openJobPicker());
+        await page_visible(W, '#job-modal');
+        await W.click('#job-chips [data-job="Casualty clearing station"]');
         assert.strictEqual(await W.evaluate(() => currentSector), 'Casualty clearing station');
-        assert.ok(await W.evaluate(() => document.querySelector('#setup-sector-chips [data-sector="Casualty clearing station"]').classList.contains('on')));
-        await W.click('#cmd-link-skip');
         assert.strictEqual(await W.evaluate(() => userRole), 'NON_HCP');
         assert.ok(await W.isVisible('#home-coach'), 'how-to card on first use');
         assert.match(await W.textContent('#home-coach'), /does not replace the paper tag/);
@@ -1664,11 +1683,11 @@ async function test(name, fn) {
         await V.evaluate(() => openModesMenu());
         await V.evaluate(() => { document.querySelector('#modes-modal details:has([onclick="cmdOpenJoin()"])').open = true; });
         await V.click('#modes-modal [onclick="cmdOpenJoin()"]');
-        await page_visible(V, '#cmd-join-modal');
-        const top = await V.evaluate(() => { const b = document.getElementById('cmd-join-code').getBoundingClientRect(); const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { onTop: !!(t && t.closest('#cmd-join-modal')), settings: getComputedStyle(document.getElementById('modes-modal')).display }; });
+        await page_visible(V, '#join-modal');
+        const top = await V.evaluate(() => { const b = document.getElementById('join-code').getBoundingClientRect(); const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { onTop: !!(t && t.closest('#join-modal')), settings: getComputedStyle(document.getElementById('modes-modal')).display }; });
         assert.strictEqual(top.onTop, true, 'the Join box is the top layer');
         assert.strictEqual(top.settings, 'none', 'Settings closed');
-        await V.evaluate(() => closeCmdJoin());
+        await V.evaluate(() => closeJoin());
         // Settings: training mode is its own line at the top
         await V.evaluate(() => openModesMenu());
         assert.ok(await V.isVisible('#mode-training'), 'training mode visible without opening a section');
@@ -1878,7 +1897,7 @@ async function test(name, fn) {
         assert.strictEqual(d.pin, '');
         assert.strictEqual(d.tp, '');
         assert.strictEqual(d.qr, 0);
-        assert.match(d.label, /Ask the incident commander for the triagers' PIN/);
+        assert.match(d.label, /ask the commander/);
         await J._ctx.close();
         await K._ctx.close();
     });
@@ -1889,10 +1908,10 @@ async function test(name, fn) {
         await CI.evaluate(() => startAsCommander());
         await CI.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
         await page_visible(CI, '#cmd-modal');
-        const d = await CI.evaluate(() => ({ title: document.getElementById('cmd-title').textContent, open: document.getElementById('cmd-open-btn').href, commander: CMD.cfg.commander, role: userRole, link: getComputedStyle(document.getElementById('cmd-link-modal')).display }));
-        assert.strictEqual(d.title, 'Incident commander');
+        const d = await CI.evaluate(() => ({ title: document.getElementById('cmd-title').textContent, open: document.getElementById('cmd-open-btn').href, commander: CMD.cfg.commander, role: userRole, link: getComputedStyle(document.getElementById('join-modal')).display }));
+        assert.strictEqual(d.title, 'Add people');
         assert.ok(d.commander && d.role === 'HCP');
-        assert.strictEqual(d.link, 'none', 'the commander is not asked to link');
+        assert.strictEqual(d.link, 'none', 'the commander is not asked to join');
         assert.ok(d.open.endsWith('/commander.html#' + (await CI.evaluate(() => CMD.cfg.code))), d.open);
         assert.ok(await CI.evaluate(() => auditLog.some(a => a.action === 'USER_SESSION_START' && /incident commander/.test(a.detail || a.details || JSON.stringify(a)))));
         const CJ = await CI._ctx.newPage();
@@ -2151,7 +2170,8 @@ async function test(name, fn) {
         await C.evaluate(() => { exerciseChoose('xc'); });
         await C.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady, null, { timeout: 10000 });
         await answerDialog(C, true, 'Nurse CCZ');
-        await page_visible(C, '#cmd-link-modal');
+        await page_visible(C, '#join-modal');
+        await C.evaluate(() => closeJoin());
         assert.deepStrictEqual(await C.evaluate(() => [triagerName, userRole, currentSector, incidentLog.length, demoMode()]), ['Nurse CCZ', 'HCP', 'Casualty clearing station', 0, 'xc']);
         assert.match(await C.textContent('#training-banner-text'), /EXERCISE — Casualty clearing station/);
         assert.ok(await C.$('#home-exercise'));
@@ -2493,7 +2513,7 @@ async function test(name, fn) {
         await N.waitForFunction(() => triagerName === 'PC Jones');
         assert.strictEqual(await N.evaluate(() => document.getElementById('home-add-name')), null);
         assert.ok(await N.evaluate(() => auditLog.some(a => a.action === 'USER_NAME_SET')));
-        assert.match(await N.textContent('#home-cmd-link-later'), /Not linked to a commander/);
+        assert.match(await N.textContent('#home-cmd-link-later'), /Join an incident/);
         await N.reload();
         await N.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true);
         assert.strictEqual(await N.evaluate(() => triagerName), 'PC Jones');
@@ -2516,18 +2536,13 @@ async function test(name, fn) {
         await M2.evaluate(() => resetToHome());
         // The link sheet opens from the home bar; the sector question comes once, on its own.
         await M2.click('#home-cmd-link-later');
-        await page_visible(M2, '#cmd-link-modal');
-        assert.match(await M2.textContent('#cmd-link-title'), /Link to the commander/);
-        await M2.click('#cmd-link-skip');
-        await M2.evaluate(() => cmdOfferSector());
-        await page_visible(M2, '#cmd-link-modal');
-        assert.match(await M2.textContent('#cmd-link-title'), /Where are you working\?/);
-        assert.strictEqual(await M2.isVisible('#cmd-link-part'), false);
-        await M2.click('#setup-sector-chips .setup-chip[data-sector="Loading Point"]');
-        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
-        assert.strictEqual(await M2.evaluate(() => currentSector), 'Loading Point');
-        await M2.evaluate(() => { currentSector = ''; cmdOfferSector(); });
-        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'asked once only');
+        await page_visible(M2, '#join-modal');
+        assert.match(await M2.textContent('#join-title'), /Join an incident/);
+        await M2.click('#join-cancel');
+        await M2.evaluate(() => openJobPicker());
+        await M2.click('#job-chips [data-job="Loading point"]');
+        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('job-modal')).display), 'none');
+        assert.strictEqual(await M2.evaluate(() => currentSector), 'Loading point');
         await M2._ctx.close();
         const C2 = await device('First run commander', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
         await C2.click('#btn-path-cmd');
@@ -2607,7 +2622,7 @@ async function test(name, fn) {
         assert.match(await G.textContent('#demo-next'), /Next: .*MITT triage/);
         await G.evaluate(() => { closeDemoGuide(); resetToHome(); });
         // Each item opens what it says
-        const shows = { body: 'body-map-modal', reassess: 'reassess-modal', timeline: 'timeline-modal', evac: 'hospital-modal', receive: 'preview-modal', handover: 'qr-modal', handall: 'all-preflight-modal', link: 'cmd-link-modal', settings: 'modes-modal' };
+        const shows = { body: 'body-map-modal', reassess: 'reassess-modal', timeline: 'timeline-modal', evac: 'hospital-modal', receive: 'preview-modal', handover: 'qr-modal', handall: 'all-preflight-modal', link: 'join-modal', settings: 'modes-modal' };
         for (const id of Object.keys(shows)) {
             await G.evaluate((x) => { demoGo(x); }, id);
             await page_visible(G, '#' + shows[id]);

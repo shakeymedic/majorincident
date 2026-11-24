@@ -164,6 +164,20 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.25.0 build 2026-11-24-join — one Join screen, a job for every phone, "Add people" (24 November 2026)
+
+Release 1 of the joining, jobs and demo plan (agreed 24 November 2026).
+
+- **One Join screen.** Scanning the commander's code, opening the join link, or tapping *Join an incident* now opens a single screen: name (optional), medical or not (only if the phone is not set up yet), your job, a position-sharing switch and one **Join** button. It replaces five screens (who are you, name, "Join incident?", "Share your position?", "Where are you working?"). A join link opens it at once, whether or not the phone has been set up.
+- **"You're in".** A full confirmation with a tick, the name and the job, instead of a toast hidden under the next question.
+- **A job for every phone.** *Triage at the scene*, *Casualty clearing station*, *Loading point* or *Not assigned yet*, picked on the Join screen. The job is a button in the top bar: one tap changes it, and *Something else…* takes a typed job. The job is the "sector" the commander screen already groups phones and casualties by, so the commander sees it with the next report.
+- **Start screen.** *Join an incident* and *Start an incident* are two clear buttons under "Who are you?" (the commander's route was a small dashed link, and there was no Join button at all).
+- **Add people.** The commander's sheet leads with the join QR, then the incident code and the PIN to join. The commander and view-only PINs are folded under *Other PINs*. A joined phone has *➕ Add people* on its home screen.
+- **One word.** "Join" for phones, "Start an incident" for the commander, "Leave the incident" to stop. "Link to commander", "Live sharing", "Share live" and "Stop sharing" have gone from the screens (audit trail action names are unchanged).
+- **Typing the code.** Code and PIN side by side in large boxes; six characters moves on to the PIN; a pasted join link or `CODE-PIN` fills both.
+- Not in this release: the commander setting a phone's job, and the join QR on the big commander screen (release 3, needs a server change).
+- Tests: join tests rewritten for the one-screen flow (typed code, join link, scanner, cancel, job button).
+
 ### v0.24.0 build 2026-11-17-reset-demo — an easy reset, and a demo that shows every function (17 November 2026)
 
 - **Reset this phone.** One visible button at the top of ⚙ Settings, and in the home screen's More list. It opens one sheet with every way of clearing: *Clear the patients* (name, role and settings stay), *Delete all training data* (in training only) and *Reset everything* (as if newly installed). The closed "Clear data" section at the bottom of Settings has gone. Each choice still asks once before anything is removed.
