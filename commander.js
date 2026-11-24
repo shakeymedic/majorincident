@@ -18,6 +18,7 @@ let map = null, cluster = null, ccsMarker = null, circles = null;
 const markerByUid = new Map();   // uid -> { m: marker, sig, r }: markers are updated in place, so an open pop-up stays open
 let firstFit = true;
 let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
+let demoBack = false;  // opened from the phone demo (commander.html#DEMO/BACK): offer the way back, without ending that demo
 let demoMarks = [];       // map markings placed during the demo (kept in the page only)
 let demoPolicy = null;    // incident decisions made during the demo (kept in the page only)
 let marksLayer = null, marking = false;
@@ -27,7 +28,7 @@ let wallRequested = false;
 function loadCfg() {
     try { const s = sessionStorage.getItem('mit_commander'); if (s) cfg = JSON.parse(s); } catch (e) {}
     const raw = (location.hash || '').replace('#', '').toUpperCase();
-    if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) wallRequested = true; return 'demo'; }
+    if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) wallRequested = true; demoBack = /\/BACK/.test(raw); return 'demo'; }
     const h = raw.split('/')[0].replace(/[^A-Z0-9]/g, '');
     if (h && h.length === 6) $('in-code').value = h;
     if (h && h.length === 6 && cfg && cfg.code && cfg.code !== h) cfg = null; // a link to another incident wins over this tab's saved sign-in
@@ -139,6 +140,10 @@ function startDemo() {
     if (wallRequested) { wallRequested = false; setWall(true); }
     $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
     $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
+    // v0.26.0: from the phone demo, the button goes back to it and the demo carries on where it was.
+    $('btn-start-page').textContent = demoBack ? '↩ Back to the phone demo' : '↩ Start page';
+    $('btn-start-page').setAttribute('href', demoBack ? 'index.html' : 'index.html#start');
+    $('btn-start-page').classList.toggle('ghost', !demoBack);
     $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
     checkSoundUnlocked();
     demoTick();
@@ -158,7 +163,7 @@ function demoTick() {
     setUpdated(`Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
     $('conn-warn').classList.add('hidden');
     render();
-    setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Tap ↩ Start page to go back and pick another role.');
+    setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. ' + (demoBack ? 'Tap ↩ Back to the phone demo when you have finished.' : 'Tap ↩ Start page to go back.'));
     timer = setTimeout(demoTick, next ? Math.min(10000, next + 200) : 30000);
 }
 async function refreshNow() {

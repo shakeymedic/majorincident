@@ -164,6 +164,21 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.26.0 build 2026-11-24-demo — the demo in one tap, with a five-step tour (24 November 2026)
+
+Release 2 of the joining, jobs and demo plan.
+
+- **One tap in.** *Try a demo* goes straight into the demo as a clinician with all 24 made-up casualties. The chooser has gone.
+- **Five-step tour.** An orange bar at the bottom says the step and one line of what to say; *Next* shows it: triage, a P1 patient, hand over by QR, the map, the commander. *Next* also closes whatever the last step left open. The bar stays above every sheet. It can be hidden from the demo guide.
+- **Commander and back.** The commander step opens the commander demo in the same tab with *Back to the phone demo*; coming back no longer ends the demo.
+- **Restart.** *Again* at the end of the tour, or *Restart* in the demo guide: fresh casualties, no ticks, step one.
+- **Demo link and QR.** `…/#demo` opens the app straight in the demo; the demo guide shows it as a QR for another phone. A phone holding real records is never pulled into the demo by the link.
+- **Practice join.** *Join (practice)* in the demo guide opens the Join screen with a made-up commander. Nothing is sent.
+- **Show everything** is still there: the 18-function list behind *Demo guide*. The four demo responders, the on-a-computer linked demo and the QR are under *More demo options*.
+- **Live exercise** has moved out of the demo to *Extra settings* on the start screen.
+- In the demo the handover QR sheet shows *Demo: the receiver scanned it* straight under the steps.
+- Tests: demo tests updated; one new end-to-end test for the tour.
+
 ### v0.25.0 build 2026-11-24-join — one Join screen, a job for every phone, "Add people" (24 November 2026)
 
 Release 1 of the joining, jobs and demo plan (agreed 24 November 2026).

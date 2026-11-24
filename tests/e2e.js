@@ -2064,6 +2064,8 @@ async function test(name, fn) {
         await D.evaluate(() => { demoChoose('all'); });
         await D.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
         await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
+        await page_visible(D, '#demo-bar');
+        await D.evaluate(() => showDemoGuide());
         await page_visible(D, '#demo-modal');
         assert.ok(await D.evaluate(() => document.body.classList.contains('training') && incidentLog.every(r => MITTLib.isDemoRecord(r))));
         assert.match(await D.textContent('#demo-summary'), /24 casualties/);
@@ -2097,23 +2099,31 @@ async function test(name, fn) {
         await setup(E, 'Dr Real');
         // One ▶ Demo button at the top of the start screen, then pick a role: commander, one of the four phones, or everything
         await E.evaluate(() => showScreen('intro-screen'));
+        // v0.26.0: one tap. Straight in as a clinician with all 24 casualties and the tour bar; no chooser.
+        assert.ok(await E.isHidden('#btn-exercise'), 'live exercise is under Extra settings, not in the demo');
         await E.click('#btn-demo');
-        await page_visible(E, '#demo-role-modal');
-        assert.strictEqual(await E.$$eval('#demo-phone-choices button', b => b.length), 4);
-        assert.strictEqual(await E.getAttribute('#demo-choose-cmd', 'href'), 'commander.html#DEMO');
-        // v0.23.1: two steps. Three choices first (the on-a-computer demo is not offered on a phone-sized screen); the phones are on the second step.
-        assert.strictEqual(await E.isVisible('#demo-phone-choices'), false);
-        assert.ok(await E.isVisible('#demo-choose-triager')); assert.ok(await E.isVisible('#btn-exercise'));
+        await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 24, null, { timeout: 10000 });
+        await page_visible(E, '#demo-bar');
+        assert.deepStrictEqual(await E.evaluate(() => [userRole, demoMode(), document.getElementById('demo-role-modal').style.display === 'flex', document.getElementById('demo-modal').style.display === 'flex']), ['HCP', 'all', false, false]);
+        // The four responders are under "More demo options" in the demo guide
+        await E.click('#btn-demo-guide');
+        await page_visible(E, '#demo-modal');
+        assert.strictEqual(await E.isVisible('#demo-choose-triager'), false);
+        await E.click('#demo-more summary');
         assert.strictEqual(await E.isVisible('#demo-linked'), (await E.evaluate(() => window.innerWidth)) >= 900);
         await E.click('#demo-choose-triager');
+        await page_visible(E, '#demo-role-modal');
         assert.match(await E.textContent('#demo-role-title'), /pick a phone/);
+        assert.strictEqual(await E.$$eval('#demo-phone-choices button', b => b.length), 4);
         await E.click('#demo-step-back');
-        assert.ok(await E.isVisible('#demo-choose-triager'));
-        await E.click('#demo-choose-triager');
+        assert.ok(await E.isHidden('#demo-role-modal'));
+        await E.evaluate(() => openDemoPhones());
         await E.click('#demo-phone-choices button:nth-child(4)');
         await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 8, null, { timeout: 10000 });
         assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, demoMode()]), ['Fire crew 3', 'NON_HCP', 'p3']);
         assert.ok(await E.evaluate(() => incidentLog.every(r => r.deviceId === 'DEMOFR')));
+        await page_visible(E, '#demo-bar');
+        await E.evaluate(() => showDemoGuide());
         await page_visible(E, '#demo-modal');
         assert.match(await E.textContent('#demo-title'), /Fire crew 3/);
         // Practise receiving: a casualty from another phone arrives through the normal review screen
@@ -2161,8 +2171,7 @@ async function test(name, fn) {
         await F.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
         // A live-exercise CCZ phone: blank, asks for a name, then offers to scan the control room's code
         const C = await device('ExerciseCCZ');
-        await C.evaluate(() => startDemo());
-        await C.click('#btn-exercise');
+        await C.evaluate(() => openExercise());
         await page_visible(C, '#exercise-modal');
         await C.evaluate(() => showExerciseGuide());
         await page_visible(C, '#exercise-guide-modal');
@@ -2607,6 +2616,8 @@ async function test(name, fn) {
         await setup(G, 'Dr Guide');
         await G.evaluate(() => { demoChoose('all'); });
         await G.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        await page_visible(G, '#demo-bar');
+        await G.evaluate(() => showDemoGuide());
         await page_visible(G, '#demo-modal');
         assert.strictEqual(await G.$$eval('#demo-list button', b => b.length), 18);
         assert.match(await G.textContent('#demo-next'), /Start: .*TST triage/);
@@ -2643,9 +2654,86 @@ async function test(name, fn) {
         // A non-clinical demo phone is not offered MITT
         await G.evaluate(() => { closeDemoGuide(); demoChoose('p3'); });
         await G.waitForFunction(() => triagerName === 'Fire crew 3', null, { timeout: 8000 });
+        await page_visible(G, '#demo-bar');
+        await G.evaluate(() => showDemoGuide());
         await page_visible(G, '#demo-modal');
         assert.strictEqual(await G.$('#demo-item-mitt'), null);
         assert.strictEqual(await G.$$eval('#demo-list button', b => b.length), 17);
+    });
+    await test('v0.26.0: the five-step tour bar leads the demo; Next shows each step, the commander comes back to the demo, Again restarts it', async () => {
+        const T = await device('Tour1');
+        await T.click('#btn-demo');
+        await T.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        await page_visible(T, '#demo-bar');
+        assert.match(await T.textContent('#demo-bar-next'), /Start/);
+        assert.ok(await T.evaluate(() => document.getElementById('home-screen').classList.contains('active') && document.body.classList.contains('demo-story')));
+        await T.click('#demo-bar-next');
+        assert.match(await T.textContent('#demo-bar-step'), /Step 1 of 5 · Triage/);
+        assert.ok(await T.evaluate(() => document.getElementById('question-screen').classList.contains('active')));
+        await T.click('#demo-bar-next');
+        assert.match(await T.textContent('#demo-bar-step'), /Step 2 of 5/);
+        assert.ok(await T.evaluate(() => document.getElementById('result-screen').classList.contains('active') && currentEntry().category === 'P1'));
+        await T.click('#demo-bar-next');
+        await page_visible(T, '#qr-modal');
+        // The practice button is on screen without scrolling, above the tour bar
+        const ack = await T.evaluate(() => { const r = document.getElementById('btn-demo-ack').getBoundingClientRect(), b = document.getElementById('demo-bar').getBoundingClientRect(); return { bottom: r.bottom, bar: b.top }; });
+        assert.ok(ack.bottom <= ack.bar, JSON.stringify(ack));
+        // Next closes whatever the last step left open
+        await T.click('#demo-bar-next');
+        assert.ok(await T.isHidden('#qr-modal'));
+        await T.waitForTimeout(200);
+        assert.ok(await T.isHidden('#handover-flow-modal'));
+        assert.ok(await T.evaluate(() => document.getElementById('map-screen').classList.contains('active')));
+        assert.match(await T.textContent('#demo-bar-next'), /Last/);
+        await T.click('#demo-bar-next');
+        await T.waitForURL(/commander\.html#DEMO\/BACK/);
+        await T.waitForFunction(() => document.querySelectorAll('#rows tr').length > 0, null, { timeout: 8000 });
+        assert.match(await T.textContent('#btn-start-page'), /Back to the phone demo/);
+        await T.click('#btn-start-page');
+        await T.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && typeof demoMode === 'function' && demoMode() === 'all', null, { timeout: 15000 });
+        await page_visible(T, '#demo-bar');
+        assert.match(await T.textContent('#demo-bar-step'), /That is the tour/);
+        assert.ok(await T.evaluate(() => incidentLog.length >= 24), 'the demo carried on, it was not ended');
+        // Practice join with the made-up commander: nothing is sent, the phone is not joined
+        await T.evaluate(() => demoGo('link'));
+        await page_visible(T, '#join-modal');
+        assert.match(await T.textContent('#join-title'), /DEMO24/);
+        await T.click('#join-jobs [data-job="Loading point"]');
+        await T.click('#join-go');
+        await page_visible(T, '#joined-modal');
+        assert.match(await T.textContent('#joined-detail'), /Practice only/);
+        assert.deepStrictEqual(await T.evaluate(() => [cmdActive(), currentSector]), [false, 'Loading point']);
+        await T.click('#joined-ok');
+        // Again: fresh casualties, no ticks, back to the start
+        await T.click('#demo-bar-next');
+        await T.waitForFunction(() => document.getElementById('demo-bar-next').textContent.indexOf('Start') > -1 && incidentLog.length === 24, null, { timeout: 8000 });
+        assert.deepStrictEqual(await T.evaluate(() => demoSeen()), []);
+        // The bar can be hidden and brought back from the guide; the demo link has a QR
+        await T.click('#btn-demo-guide');
+        await T.click('#demo-more summary');
+        await T.click('#demo-tour-toggle');
+        assert.ok(await T.isHidden('#demo-bar'));
+        await T.click('#demo-tour-toggle');
+        assert.ok(await T.isVisible('#demo-bar'));
+        await T.click('#demo-share');
+        await page_visible(T, '#demo-link-modal');
+        assert.match(await T.textContent('#demo-link-url'), /#demo$/);
+        assert.ok(await T.$('#demo-link-qr canvas, #demo-link-qr svg, #demo-link-qr img'));
+        await T.click('#demo-link-close');
+        await T._ctx.close();
+        // The demo link opens straight in the demo; live exercise is under Extra settings on the start screen
+        const L = await device('Tour2');
+        await L.goto(url + '#demo');
+        await L.reload();
+        await L.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        await page_visible(L, '#demo-bar');
+        assert.ok(!/#demo/.test(L.url()));
+        await L._ctx.close();
+        const X = await device('Tour3');
+        await X.click('#intro-options summary');
+        await X.click('#btn-exercise');
+        await page_visible(X, '#exercise-modal');
+        await X._ctx.close();
     });
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
     await browser.close();
