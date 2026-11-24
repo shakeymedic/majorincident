@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="vendor/markercluster.css">
 <link rel="stylesheet" href="vendor/markercluster-default.css">
+<script src="vendor/qrcode.min.js"></script>
 <script src="lib.js"></script>
 <script src="vendor/leaflet.js"></script>
 <script src="vendor/markercluster.js"></script>
@@ -264,6 +265,18 @@
     .phone b { display:block; font-size:0.95rem; }
     .phone b .muted { font-weight:500; font-family:var(--mono); font-size:0.75rem; }
     .phone .ph-meta { color:var(--muted); font-size:0.8rem; }
+    .phone .ph-job { grid-column:2; margin-top:4px; min-height:36px; max-width:100%; font:inherit; font-size:0.85rem; padding:4px 6px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); }
+    .phone .ph-jobname { display:inline; font-size:inherit; color:var(--text); }
+    .phone .ph-wait { color:#8a5a00; font-weight:600; }
+    .people-box { max-width:440px; padding:18px 20px; text-align:center; }
+    .people-box h3 { margin:0 0 4px; font-size:1.4rem; }
+    .people-qr { display:flex; justify-content:center; background:#fff; padding:12px; border-radius:10px; margin:10px auto; width:max-content; max-width:100%; }
+    .people-qr img, .people-qr canvas { max-width:100%; height:auto; }
+    .people-codes { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:6px 0; }
+    .people-codes span { display:block; font-size:0.8rem; color:var(--muted); }
+    .people-codes b { font-family:var(--mono); font-size:1.7rem; letter-spacing:0.08em; }
+    .people-count { font-weight:700; margin:8px 0 12px; }
+    @media print { #people-modal { display:none !important; } }
     .phone.stale { border-color:var(--nhs-red); background:#ffe3e0; }
     .phone.stale .dot { background:var(--nhs-red); box-shadow:0 0 0 3px rgba(218,41,28,0.18); }
     .phone.stale .ph-meta b { color:var(--nhs-red); }
@@ -492,6 +505,7 @@
         <span class="meta" id="hdr-updated"></span>
         <span id="clock" class="meta"></span>
         <div class="hdr-btns">
+            <button type="button" class="btn small" id="btn-people" data-act="addPeople" style="display:none; background:#FAE100; color:#000;" title="Show the code phones scan to join">➕ Add people</button>
             <button type="button" class="btn small ghost" id="btn-refresh" data-act="refreshNow">Refresh</button>
             <button type="button" class="btn small ghost" id="btn-wall" data-act="toggleWall" style="display:none;">Wall display</button>
             <button type="button" class="btn small ghost" id="btn-fs" data-act="toggleFullscreen" style="display:none;" title="Full screen (F)">⛶</button>
@@ -639,6 +653,16 @@
             </span>
         </div>
         <div class="pt-body" id="pt-body"></div>
+    </div>
+</div>
+<div class="modal" id="people-modal" role="dialog" aria-modal="true" aria-labelledby="people-title">
+    <div class="modal-box people-box">
+        <h3 id="people-title">Add people</h3>
+        <p class="muted">Each person points their phone camera at this code and taps Join.</p>
+        <div id="people-qr" class="people-qr"></div>
+        <div class="people-codes"><div><span>Incident code</span><b id="people-code"></b></div><div><span>PIN to join</span><b id="people-pin"></b></div></div>
+        <p id="people-count" class="people-count" role="status"></p>
+        <button type="button" class="btn" id="people-close" data-act="closePeople">Done</button>
     </div>
 </div>
 <div class="modal" id="ask-modal" role="alertdialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-msg">

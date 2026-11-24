@@ -164,6 +164,20 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.27.0 build 2026-11-24-jobs — the commander gives jobs, and "Add people" on the commander screen (24 November 2026)
+
+Release 3 of the joining, jobs and demo plan.
+
+- **The commander gives jobs.** Each phone's card on the commander screen has a job menu (Triage at the scene, Casualty clearing station, Loading point, Not assigned yet, or typed). Commander PIN only; recorded in the decision log with who gave it.
+- **The phone is told.** The job arrives with the phone's next report (within about a minute): an alert reads "The commander has given you a job", the job button at the top changes, and it is logged on the phone. Until the phone has taken it the card says "waiting for the phone".
+- **Latest change wins.** The person can still change their job on the phone; that stands until the commander gives another. Both sides see who set it ("set by the commander" or "chosen on the phone").
+- **"Add people" on the commander screen.** A yellow button shows the join QR, the incident code and the PIN to join, with a live count of phones that have joined. A new incident opens on it instead of a screen of zeros.
+- **The PIN to join stays off the server.** The server still holds only scrambled copies of the PINs. The commander screen gets the PIN to join from the phone that started the incident (same browser), or it is typed once and checked; it is kept in that tab only.
+- **Names.** A phone whose user skipped the name shows on the commander screen as its job and code (for example "Triage 1CEG") instead of "Phone 1CEG".
+- Server: new `POST /api/incident/<code>/job` (commander PIN), stored as `i/<CODE>/ja/<deviceId>` and deleted with the incident; phones report `sectorBy` and `jobAt`.
+- Not in the commander demo: the made-up demo phones have no job menu.
+- Tests: one new server test and one new end-to-end test.
+
 ### v0.26.0 build 2026-11-24-demo — the demo in one tap, with a five-step tour (24 November 2026)
 
 Release 2 of the joining, jobs and demo plan.

@@ -286,6 +286,42 @@ function rec(uid, id, category, extra) {
         assert.strictEqual(r4.body.duress, null);
         assert.strictEqual((await core.handle('GET', `/api/incident/${c.code}`, H(c.pin), '', '2.2.2.2')).body.devices[0].duress, undefined);
     });
+    await test('v0.27.0: the commander gives a phone a job; the phone gets it in its report reply, the screen sees it, and only the commander PIN can', async () => {
+        const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA', triager: 'Medic A' }), '1.1.1.1')).body;
+        const put = (b) => core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify(Object.assign({ deviceId: 'DEVA', records: [] }, b)), '1.1.1.1');
+        const r0 = await put({ sector: 'Not assigned yet', sectorBy: 'phone' });
+        assert.strictEqual(r0.body.job, undefined, 'no job has been given');
+        const J = (pin, b) => core.handle('POST', `/api/incident/${c.code}/job`, H(pin), JSON.stringify(b), '3.3.3.3');
+        assert.strictEqual((await J(c.viewPin, { deviceId: 'DEVA', job: 'Loading point' })).status, 403);
+        assert.strictEqual((await J(c.pin, { deviceId: 'DEVA', job: 'Loading point' })).status, 403, 'the triagers\' PIN cannot');
+        assert.strictEqual((await J(c.commanderPin, { deviceId: 'NOPE', job: 'Loading point' })).status, 404);
+        assert.strictEqual((await J(c.commanderPin, { deviceId: 'DEVA' })).status, 400, 'a job is required');
+        const ok = await J(c.commanderPin, { deviceId: 'DEVA', job: '  Loading point  ', by: 'Silver' });
+        assert.strictEqual(ok.status, 200);
+        assert.deepStrictEqual([ok.body.assigned.job, ok.body.assigned.by], ['Loading point', 'Silver']);
+        // The commander screen sees the job waiting, on both kinds of read; the phone has not taken it yet
+        let g = await core.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.deepStrictEqual([g.body.devices[0].sector, g.body.devices[0].assigned.job], ['Not assigned yet', 'Loading point']);
+        assert.ok(g.body.decisions.some(d => d.what === 'job' && d.job === 'Loading point' && d.triager === 'Medic A'));
+        const sy = await core.handle('GET', `/api/incident/${c.code}`, Object.assign({ 'x-incident-sync': '2' }, H(c.commanderPin)), '', '2.2.2.2');
+        assert.strictEqual(sy.body.devices[0].assigned.job, 'Loading point');
+        // A report at the same moment cannot undo it: the phone's next reply carries the job
+        const r1 = await put({ sector: 'Not assigned yet', sectorBy: 'phone' });
+        assert.deepStrictEqual([r1.body.job.job, r1.body.job.by, r1.body.job.at], ['Loading point', 'Silver', ok.body.assigned.at]);
+        // The phone takes it and says so
+        await put({ sector: 'Loading point', sectorBy: 'commander' });
+        g = await core.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.deepStrictEqual([g.body.devices[0].sector, g.body.devices[0].sectorBy], ['Loading point', 'commander']);
+        // The person on the phone changes it later: their change stands, and the screen is told who set it
+        await put({ sector: 'Triage at the scene', sectorBy: 'phone' });
+        g = await core.handle('GET', `/api/incident/${c.code}`, H(c.commanderPin), '', '2.2.2.2');
+        assert.deepStrictEqual([g.body.devices[0].sector, g.body.devices[0].sectorBy], ['Triage at the scene', 'phone']);
+        // An empty job ("Not assigned yet") can be given too
+        assert.strictEqual((await J(c.commanderPin, { deviceId: 'DEVA', job: '' })).status, 200);
+        // Ending the incident removes the assignment with everything else
+        await core.handle('POST', `/api/incident/${c.code}/close`, H(c.commanderPin), '{}', '2.2.2.2');
+        assert.strictEqual((await store.list(`i/${c.code}/`)).length || 0, 0);
+    });
     await test('v0.19.0: the commander allows P1 Hold and sends a MITT prompt; phones get both in their push reply', async () => {
         const c = (await core.handle('POST', '/api/incident', {}, JSON.stringify({ deviceId: 'DEVA' }), '1.1.1.1')).body;
         let r = await core.handle('PUT', `/api/incident/${c.code}/records`, H(c.pin), JSON.stringify({ deviceId: 'DEVA', records: [], sector: 'Casualty Clearing', userRole: 'HCP' }), '1.1.1.1');
