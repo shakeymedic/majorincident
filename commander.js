@@ -18,6 +18,7 @@ let map = null, cluster = null, ccsMarker = null, circles = null;
 const markerByUid = new Map();   // uid -> { m: marker, sig, r }: markers are updated in place, so an open pop-up stays open
 let firstFit = true;
 let demo = null;          // { startedAt } while showing the made-up demo incident (no network at all)
+let demoBack = false;  // opened from the phone demo (commander.html#DEMO/BACK): offer the way back, without ending that demo
 let demoMarks = [];       // map markings placed during the demo (kept in the page only)
 let demoPolicy = null;    // incident decisions made during the demo (kept in the page only)
 let marksLayer = null, marking = false;
@@ -27,7 +28,7 @@ let wallRequested = false;
 function loadCfg() {
     try { const s = sessionStorage.getItem('mit_commander'); if (s) cfg = JSON.parse(s); } catch (e) {}
     const raw = (location.hash || '').replace('#', '').toUpperCase();
-    if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) wallRequested = true; return 'demo'; }
+    if (raw.split('/')[0] === 'DEMO') { cfg = null; if (/\/WALL/.test(raw)) wallRequested = true; demoBack = /\/BACK/.test(raw); return 'demo'; }
     const h = raw.split('/')[0].replace(/[^A-Z0-9]/g, '');
     if (h && h.length === 6) $('in-code').value = h;
     if (h && h.length === 6 && cfg && cfg.code && cfg.code !== h) cfg = null; // a link to another incident wins over this tab's saved sign-in
@@ -38,7 +39,7 @@ function loadCfg() {
                 if (cfg) return;
                 const app = JSON.parse(localStorage.getItem(k) || 'null');
                 // The phone that started the incident holds the commander PIN; a phone that joined only has the triagers' PIN (view only here).
-                if (app && app.code && app.pin && (!h || h === app.code)) cfg = { code: app.code, pin: app.cmdPin || app.pin, key: app.accessKey || '', by: (localStorage.getItem(k === 'trn_mit_commander' ? 'trn_mit_triager' : 'mit_triager') || localStorage.getItem('mit_triager') || '').slice(0, 80), fromPhone: true };
+                if (app && app.code && app.pin && (!h || h === app.code)) cfg = { code: app.code, pin: app.cmdPin || app.pin, joinPin: (app.role === 'creator' || app.single) ? app.pin : '', key: app.accessKey || '', by: (localStorage.getItem(k === 'trn_mit_commander' ? 'trn_mit_triager' : 'mit_triager') || localStorage.getItem('mit_triager') || '').slice(0, 80), fromPhone: true };
             });
         } catch (e) {}
     }
@@ -76,6 +77,7 @@ function signOut() {
     if (demo) { demo = null; firstFit = true; try { history.replaceState(null, '', location.pathname); } catch (e) {} $('training-banner').textContent = 'TRAINING INCIDENT — practice data, not real patients'; }
     cfg = null; data = null; etag = ''; knownSeq = ''; syncVer = ''; syncCursor = 0;
     try { sessionStorage.removeItem('mit_commander'); } catch (e) {}
+    $('btn-people').style.display = 'none'; closePeople(); peopleAuto = false;
     if (timer) clearTimeout(timer);
     $('dash').classList.add('hidden'); $('signin').classList.remove('hidden'); $('btn-signout').style.display = 'none'; $('btn-fs').style.display = 'none'; $('btn-start-page').style.display = 'none'; $('btn-sound').style.display = 'none'; $('btn-print').style.display = 'none'; $('btn-sound-unlock').style.display = 'none';
     ALERTS.seen = null; ALERTS.list = []; $('alerts').classList.add('hidden');
@@ -109,8 +111,100 @@ function start() {
     $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
     $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
     $('btn-signout').textContent = 'Sign out';
+    $('btn-people').style.display = '';
     checkSoundUnlocked();
     refreshNow();
+}
+// ---------- v0.27.0: jobs and adding people ----------
+// The commander gives each phone a job from a menu on its card. The phone takes it with its next report (within
+// about a minute) and tells its user; a later change made on the phone stands, and the card says who set it.
+const JOBS = ['Triage at the scene', 'Casualty clearing station', 'Loading point'];
+const JOB_SHORT = { 'Triage at the scene': 'Triage', 'Casualty clearing station': 'CCS', 'Loading point': 'Loading' };
+// A phone whose user skipped the name is "Phone 1CEG" on its own records; here it reads as its job and code.
+function phoneName(d) {
+    const t = d.triager || '';
+    if (t && t !== 'Phone ' + d.deviceId) return t;
+    if (!t && !d.sector) return 'Unnamed';
+    return JOB_SHORT[d.sector] || d.sector || 'Phone';
+}
+function jobWaiting(d) { return !!(d.assigned && d.assigned.at && d.assigned.at !== (d.jobAt || 0)); }
+function jobText(d) {
+    if (d.commander && !d.sector && !jobWaiting(d)) return '';
+    const who = d.sectorBy === 'commander' ? ' (set by the commander)' : d.sectorBy === 'phone' && d.sector ? ' (chosen on the phone)' : '';
+    const cur = d.sector ? `<b class="ph-jobname">${esc(d.sector)}</b>${who}` : 'No job yet';
+    return cur + (jobWaiting(d) ? ` <span class="ph-wait">→ ${esc(d.assigned.job || 'Not assigned yet')}: waiting for the phone</span>` : '') + ' • ';
+}
+function jobMenu(d) {
+    if (demo || !canMark() || d.commander || d.role === 'creator' || document.body.classList.contains('wall')) return '';
+    const cur = jobWaiting(d) ? d.assigned.job || '' : d.sector || '';
+    const list = JOBS.slice();
+    if (cur && list.indexOf(cur) === -1) list.unshift(cur);
+    return `<select class="ph-job" data-dev="${esc(d.deviceId)}" aria-label="Job for ${esc(phoneName(d))} ${esc(d.deviceId)}">` +
+        list.map(j => `<option value="${esc(j)}"${j === cur ? ' selected' : ''}>${esc(j)}</option>`).join('') +
+        `<option value=""${cur ? '' : ' selected'}>Not assigned yet</option><option value="__other">Something else…</option></select>`;
+}
+async function jobChosen(sel) {
+    const deviceId = sel.getAttribute('data-dev');
+    const d = ((data && data.devices) || []).filter(x => x.deviceId === deviceId)[0];
+    let job = sel.value;
+    try { sel.blur(); } catch (e) {}
+    const redraw = () => { $('phones')._html = ''; render(); };
+    if (!d) return;
+    if (job === '__other') {
+        const v = await ask({ title: `Job for ${phoneName(d)}`, message: 'Type the job or where they should work, for example Decon or Survivor reception.', input: 'e.g. Decon', okLabel: 'Give this job' });
+        job = typeof v === 'string' ? v.trim().slice(0, 60) : '';
+        if (!job) { redraw(); return; }
+    }
+    const by = await whoDecides();
+    if (!by) { redraw(); return; }
+    try {
+        const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/job`, { method: 'POST', headers: hdrs(true), body: JSON.stringify({ deviceId, job, by }), cache: 'no-store' });
+        const b = await r.json().catch(() => ({}));
+        if (!r.ok) { tell(b.message || `Could not give the job (server replied ${r.status}).`); redraw(); return; }
+        d.assigned = b.assigned;
+        knownSeq = ''; etag = '';
+        redraw();
+        refreshNow();
+    } catch (e) { tell('Could not reach the server, so the job was not given. Try again.'); redraw(); }
+}
+// "Add people": the join QR, code and PIN on the commander screen. The server only ever holds a scrambled copy of
+// the PINs, so the joining PIN comes from the phone that started the incident (same browser) or is typed here once.
+// It is kept in this tab only.
+let peopleAuto = false;
+function joinUrl() { return `${location.origin}${location.pathname.replace(/commander\.html$/i, '')}#join=${cfg.code}-${cfg.joinPin}`; }
+async function addPeople() {
+    if (demo || !cfg || !cfg.code) return;
+    if (!cfg.joinPin) {
+        const v = await ask({ title: 'PIN to join', message: 'Type the 6-digit PIN that phones use to join. It is on the phone that started the incident, under Add people. You are asked once on this screen.', input: '6 digits', okLabel: 'Show the join code' });
+        if (v === null || v === false) return;
+        const pin = typeof v === 'string' ? v.replace(/\D/g, '').slice(0, 6) : '';
+        if (pin.length !== 6) { tell('The PIN to join is 6 digits.'); return; }
+        // Checked with the server before it is shown as a QR: a wrong PIN on the wall would let nobody in.
+        // (A tag lookup with no tag: the server checks the PIN first, then answers 400 for the empty tag.)
+        try {
+            const h = { 'x-incident-pin': pin, 'Content-Type': 'application/json' }; if (cfg.key) h['x-incident-key'] = cfg.key;
+            const r = await fetch(`/api/incident/${encodeURIComponent(cfg.code)}/lookup`, { method: 'POST', headers: h, body: '{}', cache: 'no-store' });
+            if (r.status !== 400 && r.status !== 200) { const b = await r.json().catch(() => ({})); tell(r.status === 401 || r.status === 403 ? 'That is not the PIN to join this incident. Check it on the phone that started the incident.' : (b.message || 'The PIN could not be checked. Try again.')); return; }
+        } catch (e) { tell('Could not reach the server to check the PIN. Try again.'); return; }
+        cfg.joinPin = pin; saveCfg();
+    }
+    const box = $('people-qr');
+    box.innerHTML = '';
+    try { new QRCode(box, { text: joinUrl(), width: 300, height: 300, correctLevel: QRCode.CorrectLevel.M }); } catch (e) { box.textContent = 'The QR could not be drawn. Use the code and PIN.'; }
+    setText('people-code', cfg.code);
+    setText('people-pin', cfg.joinPin);
+    $('people-modal').classList.add('open');
+    renderPeople((data && data.devices) || []);
+    try { $('people-close').focus(); } catch (e) {}
+}
+function closePeople() { $('people-modal').classList.remove('open'); }
+function renderPeople(devs) {
+    // The phone that started the incident is not someone who joined.
+    const n = devs.filter(d => !d.commander && d.role !== 'creator').length;
+    setText('people-count', n ? `${n} phone${n === 1 ? ' has' : 's have'} joined` : 'No phones have joined yet');
+    // A new incident opens on the join code, not on a screen of zeros (once, and only when the PIN is already known).
+    if (!peopleAuto && !demo && cfg && cfg.joinPin && data && !data.viewOnly && !n && !document.body.classList.contains('wall')) { peopleAuto = true; addPeople(); }
+    else if (n) peopleAuto = true;
 }
 // Wall display: for a big screen in the command post. Toggle with the button, the W key, or #CODE/wall in the link.
 function setWall(on) {
@@ -139,6 +233,10 @@ function startDemo() {
     if (wallRequested) { wallRequested = false; setWall(true); }
     $('signin').classList.add('hidden'); $('dash').classList.remove('hidden'); $('btn-signout').style.display = ''; $('btn-wall').style.display = ''; $('btn-fs').style.display = document.fullscreenEnabled ? '' : 'none';
     $('btn-signout').style.display = 'none'; $('btn-start-page').style.display = '';
+    // v0.26.0: from the phone demo, the button goes back to it and the demo carries on where it was.
+    $('btn-start-page').textContent = demoBack ? '↩ Back to the phone demo' : '↩ Start page';
+    $('btn-start-page').setAttribute('href', demoBack ? 'index.html' : 'index.html#start');
+    $('btn-start-page').classList.toggle('ghost', !demoBack);
     $('btn-sound').style.display = ''; $('btn-print').style.display = ''; renderSoundBtn();
     checkSoundUnlocked();
     demoTick();
@@ -158,7 +256,7 @@ function demoTick() {
     setUpdated(`Updated ${time(now)}${next ? ' • more happens shortly' : ''}`);
     $('conn-warn').classList.add('hidden');
     render();
-    setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. Tap ↩ Start page to go back and pick another role.');
+    setText('counts-note', 'On scene counts (big number) and totals including evacuated. Demo: casualties arrive, deteriorate and are evacuated over the first few minutes. ' + (demoBack ? 'Tap ↩ Back to the phone demo when you have finished.' : 'Tap ↩ Start page to go back.'));
     timer = setTimeout(demoTick, next ? Math.min(10000, next + 200) : 30000);
 }
 async function refreshNow() {
@@ -337,7 +435,11 @@ function render(opts) {
     const devs = data.devices || [];
     if (data.sync === 2) devs.forEach(d => { d.stale = (now + serverOffset) - (d.lastSeen || 0) > 5 * 60 * 1000; });
     renderFull();
-    $('phones').innerHTML = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(d.triager || 'Unnamed')} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}${d.oldApp ? ' <span class="cat-chip" style="background:#c9a700;color:#000;font-size:0.72rem;padding:1px 6px" title="This phone is on an old version of the app">Old app version</span>' : ''}</b><span class="ph-meta">${d.oldApp ? '<b>Old app version: ask them to close and reopen the app to update, then join again.</b> ' : ''}${d.role === 'creator' ? 'Started sharing • ' : ''}${d.commander ? 'Incident commander • ' : d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${d.sector ? esc(d.sector) + ' • ' : ''}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span></div>`).join('') || '<p class="muted">No phones yet.</p>';
+    const phonesHtml = devs.map(d => `<div class="phone${d.stale ? ' stale' : ''}${sos(d) ? ' sos' : ''}"><span class="dot"></span><b>${esc(phoneName(d))} <span class="muted">${esc(d.deviceId)}</span>${batteryTag(d)}${sos(d) ? ' <span class="cat-chip sos-chip" title="Called for help">🆘 HELP</span>' : ''}${d.oldApp ? ' <span class="cat-chip" style="background:#c9a700;color:#000;font-size:0.72rem;padding:1px 6px" title="This phone is on an old version of the app">Old app version</span>' : ''}</b><span class="ph-meta">${d.oldApp ? '<b>Old app version: ask them to close and reopen the app to update, then join again.</b> ' : ''}${d.role === 'creator' ? 'Started sharing • ' : ''}${d.commander ? 'Incident commander • ' : d.userRole === 'HCP' ? 'Clinician • ' : d.userRole === 'NON_HCP' ? 'Non-clinical • ' : ''}${jobText(d)}${d.records || 0} record${d.records === 1 ? '' : 's'} • last report ${age(d.lastSeen)}${d.stale ? ' • <b>not heard from</b>' : ''}${d.position ? ` • 📍 ${posStale(d.position, now) ? '<b>' : ''}position ${age(d.position.timestamp)}${posStale(d.position, now) ? '</b>' : ''}` : ''}</span>${jobMenu(d)}</div>`).join('') || '<p class="muted">No phones yet. Tap <b>Add people</b> to show the join code.</p>';
+    // Redrawn only when something changed, and never while a job menu is open (it would close under the finger).
+    const ph = $('phones');
+    if (ph._html !== phonesHtml && !(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('ph-job'))) { ph._html = phonesHtml; ph.innerHTML = phonesHtml; }
+    renderPeople(devs);
     setText('phones-note', `${devs.length} phone${devs.length === 1 ? '' : 's'}; red = no report for 5 minutes${devs.some(d => d.position) ? ' • 📍 = shares its position (opt-in on the phone)' : ''}`);
     renderSos(devs);
     // sectors
@@ -517,9 +619,9 @@ function renderDecisions() {
     const ticked = Array.from(box.querySelectorAll('.mitt-grp:checked')).map(x => x.value);
     const byEl = $('p1hold-by'), typed = byEl ? byEl.value : '', hadFocus = byEl && document.activeElement === byEl;
     // Who decided what, newest first (kept on the server with every decision).
-    const DEC = { 'p1hold-on': 'P1 Hold allowed', 'p1hold-off': 'P1 Hold withdrawn', mitt: 'MITT prompt sent', marks: 'Map markings changed', 'duress-cleared': 'Call for help cleared' };
+    const DEC = { 'p1hold-on': 'P1 Hold allowed', 'p1hold-off': 'P1 Hold withdrawn', mitt: 'MITT prompt sent', marks: 'Map markings changed', 'duress-cleared': 'Call for help cleared', job: 'Job given' };
     const log = (data.decisions || []).slice(-8).reverse();
-    const logHtml = log.length ? `<div class="dec"><h3>Decision log</h3><ul class="dec-log">${log.map(d => `<li>${hm(d.at)} ${esc(DEC[d.what] || d.what)}${d.what === 'duress-cleared' && d.triager ? ' (' + esc(d.triager) + ')' : ''} — ${esc(d.by || 'not recorded')}</li>`).join('')}</ul></div>` : '';
+    const logHtml = log.length ? `<div class="dec"><h3>Decision log</h3><ul class="dec-log">${log.map(d => `<li>${hm(d.at)} ${esc(DEC[d.what] || d.what)}${d.what === 'duress-cleared' && d.triager ? ' (' + esc(d.triager) + ')' : ''}${d.what === 'job' ? ': ' + esc(d.triager || d.device || '') + ' → ' + esc(d.job || 'Not assigned yet') : ''} — ${esc(d.by || 'not recorded')}</li>`).join('')}</ul></div>` : '';
     const html = holdHtml + mittHtml + logHtml;
     if (box._html === html) return;
     box._html = html;
@@ -1176,7 +1278,7 @@ function exportCsv() {
 }
 // ---------- Clicks, changes and keys: one listener each, no inline handlers ----------
 const ACTIONS = {
-    copySitrep, refreshNow, toggleWall, toggleFullscreen, toggleSound, unlockSound, printSummary, signOut, signIn, fitMap, exportCsv, startMarking,
+    addPeople, closePeople, copySitrep, refreshNow, toggleWall, toggleFullscreen, toggleSound, unlockSound, printSummary, signOut, signIn, fitMap, exportCsv, startMarking,
     showPatientOnMap, closePatient, addHospitalRow, toggleAlerts,
     exportFile: (t) => exportFile(t.getAttribute('data-arg')),
     setStageFilter: (t) => setStageFilter(t.getAttribute('data-stage')),
@@ -1195,6 +1297,7 @@ const ACTIONS = {
 document.addEventListener('click', e => {
     if (e.target === $('ask-modal')) { askAnswer(false); return; }
     if (e.target === $('pt-modal')) { closePatient(); return; }
+    if (e.target === $('people-modal')) { closePeople(); return; }
     const t = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
     if (!t || !ACTIONS[t.getAttribute('data-act')]) return;
     if (t.tagName === 'A') e.preventDefault();
@@ -1203,6 +1306,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
     if (e.target === $('mark-type')) markTypeChanged();
     else if (e.target === $('show-evac')) render();
+    else if (e.target && e.target.classList && e.target.classList.contains('ph-job')) jobChosen(e.target);
 });
 // The first tap or key anywhere also lets sound play.
 ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (ALERTS.ctx && ALERTS.ctx.state === 'suspended') unlockSound(); }, true));

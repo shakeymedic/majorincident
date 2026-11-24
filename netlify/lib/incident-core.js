@@ -6,7 +6,7 @@
 // Every value is a plain JSON object. Keys: i/<CODE>/meta, i/<CODE>/r/<uid>, i/<CODE>/d/<deviceId>,
 // i/<CODE>/policy and i/<CODE>/marks (commander decisions, kept apart from the meta so a phone's report can never
 // write an older copy back over them; from v0.19.8 i/<CODE>/pol/<field> and i/<CODE>/dec/<entry>, and from v0.19.10
-// i/<CODE>/mk/<markId> with i/<CODE>/pol/marks for when they last changed), i/<CODE>/dc/<deviceId> (a call for help cleared by the commander),
+// i/<CODE>/mk/<markId> with i/<CODE>/pol/marks for when they last changed), i/<CODE>/dc/<deviceId> (a call for help cleared by the commander), i/<CODE>/ja/<deviceId> (the job the commander gave a phone),
 // t/<CODE> (an ended incident's tombstone), rc/<client> (incidents created), and the wrong-PIN counters rl/<client>/<day>
 // and rk/<CODE>/<day> (store.incr / store.counts: { field: n }, added to atomically).
 'use strict';
@@ -189,6 +189,8 @@ function createCore(opts) {
     const keyMarks = (code) => `i/${code}/marks`;               // pre-v0.19.10 incidents: every marking in one document
     const keyMark = (code, id) => `i/${code}/mk/${id}`;         // v0.19.10: one document per marking (two screens at once lose nothing)
     const keyClear = (code, id) => `i/${code}/dc/${id}`;
+    const keyAssign = (code, id) => `i/${code}/ja/${id}`;       // v0.27.0: the job the commander gave a phone (own document, like dc)
+    const withJob = (d, a) => { if (a && a.job !== undefined && a.at) d.assigned = { job: a.job, at: a.at, by: a.by || '' }; return d; };
     const keyInflight = (code, t) => `i/${code}/q/${Math.floor(t / 60000)}`; // casualties being written, by minute
     const keyCount = (code) => `i/${code}/cnt`;                // last real count of casualties (see heldCount)
     const keyVer = (code) => `i/${code}/ver`;                   // v0.19.12 counters: r, d, p (change numbers), c (casualties stored)
@@ -662,6 +664,10 @@ function createCore(opts) {
         dev.lastPush = incoming.length ? t : dev.lastPush || null;
         // Sector / zone and clinician or not: lets the commander send a prompt to one group of phones (e.g. only the casualty clearing station).
         if (body.sector !== undefined) dev.sector = str(body.sector, 60).trim();
+        // Who last set the job: the commander (the phone took an assignment) or the person on the phone.
+        if (body.sectorBy === 'commander' || body.sectorBy === 'phone') dev.sectorBy = body.sectorBy;
+        // The commander's assignment this phone has taken (its `at`), so the screen can show one still waiting.
+        if (num(body.jobAt) !== null) dev.jobAt = num(body.jobAt);
         if (body.userRole === 'HCP' || body.userRole === 'NON_HCP') dev.userRole = body.userRole;
         // The incident commander's own phone: labelled as such on the commander screen and not counted as a clinician.
         if (body.commander === true) dev.commander = true; else if (body.commander === false) delete dev.commander;
@@ -706,10 +712,12 @@ function createCore(opts) {
         // heartbeat), the casualties when one was taken or the CCS or METHANE changed, decisions when the refused list changed.
         await store.incr(keyVer(code), Object.assign({ d: 1 }, (accepted || newCcs || newMethane) ? { r: 1 } : {}, decisionsChanged ? { p: 1 } : {}));
         const phoneMarksAt = num(body.marksAt);
-        const [pol, mAt, clr] = await Promise.all([loadPolicyFields(code, m), loadMarksAt(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null]);
+        const [pol, mAt, clr, asg] = await Promise.all([loadPolicyFields(code, m), loadMarksAt(code, m), dev.duress ? store.get(keyClear(code, deviceId)) : null, store.get(keyAssign(code, deviceId))]);
         const mk = phoneMarksAt !== null && phoneMarksAt === mAt.marksAt ? null : await loadMarks(code, m);
         const out = { ok: true, accepted, kept, rejected, serverTime: t, expiresAt: m.updatedAt + TTL_MS, marksAt: mk ? mk.marksAt : mAt.marksAt, policy: pol.policy, policyAt: pol.policyAt, duress: withClear(dev.duress, clr) || null, clockSkewMs: Math.round(skew) };
         if (mk) out.marks = mk.marks;
+        // The job the commander gave this phone, if any. The phone takes it once (it remembers `at`); a later change on the phone wins.
+        if (asg && asg.at) out.job = { job: asg.job || '', at: asg.at, by: asg.by || '' };
         // The incident is full: these casualties were not stored (they are also in rejected, for older phones). The
         // phone keeps them as not sent, warns its user and tries again with later reports.
         if (full.length) { full.forEach(r => rejected.push(r.uid)); out.full = full.map(r => r.uid); out.incidentFull = true; out.maxRecords = MAX_RECORDS; }
@@ -733,7 +741,7 @@ function createCore(opts) {
         const all = entries(await store.list(`i/${code}/`));
         const recEntries = all.filter(e => e.key.startsWith(`i/${code}/r/`));
         const devEntries = all.filter(e => e.key.startsWith(`i/${code}/d/`));
-        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`) || e.key.startsWith(`i/${code}/pol/`) || e.key.startsWith(`i/${code}/dec/`) || e.key.startsWith(`i/${code}/mk/`));
+        const extra = all.filter(e => e.key === keyPolicy(code) || e.key === keyMarks(code) || e.key.startsWith(`i/${code}/dc/`) || e.key.startsWith(`i/${code}/ja/`) || e.key.startsWith(`i/${code}/pol/`) || e.key.startsWith(`i/${code}/dec/`) || e.key.startsWith(`i/${code}/mk/`));
         const seq = fingerprint(meta, recEntries, devEntries, extra) + (a.level === 'commander' ? 'c' : 'v');
         const etag = `"${seq}"`;
         // Netlify's edge rewrites the ETag it serves when it compresses the body ("2" becomes "2-df") and then drops an
@@ -746,7 +754,9 @@ function createCore(opts) {
         const records = await getMany(store, recEntries.map(e => e.key));
         const clears = {};
         (await getMany(store, extra.filter(e => e.key.indexOf('/dc/') > -1).map(e => e.key))).forEach(c => { if (c && c.deviceId) clears[c.deviceId] = c; });
-        const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return o; });
+        const jobs = {};
+        (await getMany(store, extra.filter(e => e.key.indexOf('/ja/') > -1).map(e => e.key))).forEach(j => { if (j && j.deviceId) jobs[j.deviceId] = j; });
+        const devices = (await getMany(store, devEntries.map(e => e.key))).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, clears[o.deviceId]); return withJob(o, jobs[o.deviceId]); });
         // Only the newest entries of the decision log are read and shown; none is ever deleted before the incident is
         // (v0.19.10 retest: pruning removed decisions from the record), so the cost of a read stays bounded.
         const allDec = extra.filter(e => e.key.indexOf('/dec/') > -1).map(e => e.key).sort();
@@ -848,11 +858,13 @@ function createCore(opts) {
         }
         let clears = [];
         if (changedD) {
-            const [devVals, clrVals] = await Promise.all([rangeAll(store, `i/${code}/d/`), rangeAll(store, `i/${code}/dc/`)]);
+            const [devVals, clrVals, jobVals] = await Promise.all([rangeAll(store, `i/${code}/d/`), rangeAll(store, `i/${code}/dc/`), rangeAll(store, `i/${code}/ja/`)]);
+            const jobs = {};
+            jobVals.forEach(x => { if (x.value && x.value.deviceId) jobs[x.value.deviceId] = x.value; });
             clears = clrVals.map(x => x.value);
             const byDev = {};
             clears.forEach(c => { if (c && c.deviceId) byDev[c.deviceId] = c; });
-            out.devices = devVals.map(x => x.value).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, byDev[o.deviceId]); return o; }).sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
+            out.devices = devVals.map(x => x.value).map(d => { const o = Object.assign({}, d, { stale: t - (d.lastSeen || 0) > STALE_DEVICE_MS }); delete o.keyed; if (o.duress) o.duress = withClear(o.duress, byDev[o.deviceId]); return withJob(o, jobs[o.deviceId]); }).sort((x, y) => (y.lastSeen || 0) - (x.lastSeen || 0));
         }
         if (changedP) {
             const [f, decs, mk, fulls] = await Promise.all([loadPolicyFields(code, meta), rangeAll(store, `i/${code}/dec/`), loadMarks(code, meta), rangeOf(store, `i/${code}/full/`, '', FULL_LIST_MAX + 1)]);
@@ -891,6 +903,29 @@ function createCore(opts) {
             log('duress-cleared', code, deviceId);
         }
         return reply(200, { ok: true, duress: withClear(dev.duress, clr) || null });
+    }
+
+    // v0.27.0: the commander gives a phone a job (Triage at the scene, Casualty clearing station, Loading point, or
+    // typed). Commander PIN only. Kept in its own document, so a phone's report at the same moment cannot undo it.
+    // The phone picks it up in its next report reply, shows it to its user and reports the job as its own.
+    async function assignJob(code, pin, body, client, key) {
+        const a = await authed(code, pin, client, 'commander', key);
+        if (a.status) return a;
+        const deviceId = str(body.deviceId, 16);
+        const job = str(body.job, 60).trim();
+        const by = str(body.by, 80).trim();
+        if (body.job === undefined || typeof body.job !== 'string') return error(400, 'bad_request', 'Say which job.');
+        const dev = deviceId ? await store.get(keyDev(code, deviceId)) : null;
+        if (!dev) return error(404, 'no_device', 'No such phone in this incident.');
+        const t = now();
+        const logKey = decKey(code, t), entry = { at: t, what: 'job', device: deviceId, triager: dev.triager || '', job, by };
+        const asg = { deviceId, job, at: t, by, logKey, entry };
+        await store.set(keyAssign(code, deviceId), asg);
+        await store.set(logKey, entry);
+        await touchMeta(code);
+        await store.incr(keyVer(code), { p: 1, d: 1 });
+        log('job', code, deviceId);
+        return reply(200, { ok: true, assigned: { job, at: t, by } });
     }
 
     // Commander screen: add or remove map markings (cordons, RVP, loading point...). Commander PIN only.
@@ -1071,6 +1106,7 @@ function createCore(opts) {
             if (method === 'POST' && action === 'marks') return await setMarks(code, pin, body, client, key);
             if (method === 'POST' && action === 'policy') return await setPolicy(code, pin, body, client, key);
             if (method === 'POST' && action === 'duress-clear') return await clearDuress(code, pin, body, client, key);
+            if (method === 'POST' && action === 'job') return await assignJob(code, pin, body, client, key);
             if (method === 'POST' && action === 'lookup') return await lookup(code, pin, body, client, key);
             return error(404, 'not_found', 'Unknown endpoint.');
         } catch (e) {
@@ -1079,7 +1115,7 @@ function createCore(opts) {
         }
     }
 
-    return { handle, cleanup, create, join, push, read, readSync, close, setMarks, setPolicy, clearDuress, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_MAX_FAILURES, CREATE_MAX, CODE_LENGTH, PIN_LENGTH, READ_BATCH, TOMBSTONE_MS } };
+    return { handle, cleanup, create, join, push, read, readSync, close, setMarks, setPolicy, clearDuress, assignJob, lookup, deleteIncident, constants: { TTL_MS, STALE_DEVICE_MS, MAX_RECORDS_PER_PUSH, MAX_RECORDS_PER_INCIDENT, RATE_MAX_FAILURES, CODE_MAX_FAILURES, CREATE_MAX, CODE_LENGTH, PIN_LENGTH, READ_BATCH, TOMBSTONE_MS } };
 }
 
 // Simple in-memory store (tests and local development). opts.delay (ms) or opts.jitter (ms) make every operation

@@ -1524,7 +1524,8 @@ async function test(name, fn) {
         const CD = await device('Cmd D');
         await setup(CD, 'Medic Delta');
         await CD.evaluate((s) => onScanSuccess(JSON.stringify({ t: 'MIT_JOIN', c: s.code, p: s.pin })), share);
-        await answerDialog(CD, true);
+        await page_visible(CD, '#join-modal');
+        await CD.click('#join-go');
         await CD.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
         assert.strictEqual(await CD.evaluate(() => CMD.cfg.role), 'member');
         await CD.waitForFunction(() => CMD.lastSentAt > 0, null, { timeout: 10000 });
@@ -1538,24 +1539,37 @@ async function test(name, fn) {
         await CG.fill('#intro-triager', 'Medic Golf');
         await CG.evaluate(() => setUserRole('HCP'));
         await CG.waitForTimeout(400);
-        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'no link sheet on first run');
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none', 'no join screen on first run');
         assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link')), null, 'no card above START TRIAGE');
+        // v0.25.0: the home bar opens the one Join screen; someone already set up is not asked again whether they are medical
         await CG.click('#home-cmd-link-later');
-        await page_visible(CG, '#cmd-link-modal');
-        await CG.evaluate(() => { closeCmdLink(); cmdOpenJoin(); });
-        await page_visible(CG, '#cmd-join-modal');
-        await CG.fill('#cmd-join-code', share.code); await CG.fill('#cmd-join-pin', share.pin);
-        await CG.evaluate(() => { cmdJoin(); });
-        await answerDialog(CG, false);   // v0.18.0: a first link asks once about sharing the phone's position; "Not now"
+        await page_visible(CG, '#join-modal');
+        assert.strictEqual(await CG.isVisible('#join-who-part'), false);
+        assert.strictEqual(await CG.inputValue('#join-name'), 'Medic Golf');
+        await CG.click('#join-go');
+        assert.match(await CG.textContent('#join-error'), /incident code/);
+        // Pasting "CODE-PIN" fills both boxes
+        await CG.fill('#join-code', share.code + '-' + share.pin);
+        assert.deepStrictEqual([await CG.inputValue('#join-code'), await CG.inputValue('#join-pin')], [share.code, share.pin]);
+        await CG.click('#join-jobs [data-job="Triage at the scene"]');
+        await CG.click('#join-go');
         await CG.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
-        assert.strictEqual(await CG.evaluate(() => posShareOn()), false);
-        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_share_pos_asked')), '1');
-        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('cmd-join-modal')).display), 'none');
-        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link-later')), null, 'home bar gone once linked');
-        await page_visible(CG, '#cmd-link-modal');
-        assert.match(await CG.textContent('#cmd-link-title'), /Where are you working\?/);
-        await CG.click('#cmd-link-skip');
-        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_sector_asked')), '1');
+        await page_visible(CG, '#joined-modal');
+        assert.match(await CG.textContent('#joined-detail'), new RegExp('Medic Golf has joined incident ' + share.code));
+        assert.match(await CG.textContent('#joined-job'), /Triage at the scene/);
+        assert.strictEqual(await CG.evaluate(() => posShareOn()), false, 'position sharing stays off unless the switch is turned on');
+        assert.strictEqual(await CG.evaluate(() => localStorage.getItem('mit_share_pos_asked')), '1', 'not asked again later');
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none');
+        await CG.click('#joined-ok');
+        assert.strictEqual(await CG.evaluate(() => document.getElementById('home-cmd-link-later')), null, 'home bar gone once joined');
+        assert.ok(await CG.isVisible('#home-add-people'));
+        assert.match(await CG.textContent('#header-sector'), /Triage at the scene/);
+        // The job in the top bar is a button: one tap changes it, and the commander is told
+        await CG.click('#header-sector');
+        await page_visible(CG, '#job-modal');
+        await CG.click('#job-chips [data-job="Loading point"]');
+        assert.strictEqual(await CG.evaluate(() => currentSector), 'Loading point');
+        assert.strictEqual(await CG.evaluate(() => getComputedStyle(document.getElementById('job-modal')).display), 'none');
         await CG._ctx.close();
     });
     await test('v0.23.1: the join code is a web link: a new phone opened from it joins after saying who they are; the app scanner reads it too; the PIN leaves the address', async () => {
@@ -1570,17 +1584,24 @@ async function test(name, fn) {
         await JL.goto(link);
         await JL.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
         assert.strictEqual(await JL.evaluate(() => location.hash), '', 'code and PIN removed from the address');
-        assert.ok(await JL.isVisible('#intro-join-note'));
-        assert.strictEqual(await JL.textContent('#intro-join-code'), share.code);
-        await JL.evaluate(() => { localStorage.setItem('mit_share_pos_asked', '1'); localStorage.setItem('mit_sector_asked', '1'); });
-        await JL.click('#btn-path-nonmed');
-        await JL.click('#btn-role-responder');
-        await page_visible(JL, '#confirm-modal');
-        assert.match(await JL.textContent('#confirm-title'), new RegExp('Join incident ' + share.code));
-        await JL.click('#confirm-ok');
+        // v0.25.0: one Join screen, straight away, asks everything
+        await page_visible(JL, '#join-modal');
+        assert.match(await JL.textContent('#join-title'), new RegExp('Join incident ' + share.code));
+        assert.strictEqual(await JL.isVisible('#join-code-part'), false, 'the code is already known');
+        await JL.click('#join-go');
+        assert.match(await JL.textContent('#join-error'), /medical or not/);
+        await JL.fill('#join-name', 'PC Lima');
+        await JL.click('#join-who [data-role="NON_HCP"]');
+        await JL.click('#join-jobs [data-job="Casualty clearing station"]');
+        await JL.check('#join-pos');
+        await JL.click('#join-go');
         await JL.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
         assert.strictEqual(await JL.evaluate(() => CMD.cfg.code), share.code);
-        assert.strictEqual(await JL.isVisible('#intro-join-note'), false);
+        assert.deepStrictEqual(await JL.evaluate(() => [triagerName, userRole, currentSector, posShareOn()]), ['PC Lima', 'NON_HCP', 'Casualty clearing station', true]);
+        await page_visible(JL, '#joined-modal');
+        await JL.click('#joined-ok');
+        assert.ok(await JL.evaluate(() => document.getElementById('home-screen').classList.contains('active')));
+        assert.strictEqual(await JL.evaluate(() => [...document.querySelectorAll('.modal-overlay')].filter(m => getComputedStyle(m).display !== 'none').length), 0, 'no further questions');
         // The same link opened again while the app is open (only the part after "#" changes).
         await JL.evaluate(l => { location.hash = l.split('#')[1]; }, link);
         await JL.waitForFunction(() => location.hash === '');
@@ -1590,9 +1611,9 @@ async function test(name, fn) {
         const JS = await device('Join scan');
         await setup(JS, 'Medic Juliet');
         await JS.evaluate(l => onScanSuccess(l), link);
-        await page_visible(JS, '#confirm-modal');
-        assert.match(await JS.textContent('#confirm-title'), new RegExp('Join incident ' + share.code));
-        await JS.click('#confirm-cancel');
+        await page_visible(JS, '#join-modal');
+        assert.match(await JS.textContent('#join-title'), new RegExp('Join incident ' + share.code));
+        await JS.click('#join-cancel');
         assert.strictEqual(await JS.evaluate(() => cmdActive()), false);
         await JS._ctx.close();
     });
@@ -1604,14 +1625,13 @@ async function test(name, fn) {
         // v0.23.0: the bar under the home buttons is the way to link; "Not now" closes the sheet and the bar stays
         assert.ok(await CH.isVisible('#home-cmd-link-later'), 'link bar on the home screen');
         await CH.click('#home-cmd-link-later');
-        await page_visible(CH, '#cmd-link-modal');
-        assert.match(await CH.textContent('#cmd-link-skip'), /Not now/);
-        await CH.click('#cmd-link-skip');
-        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
-        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'bar stays after "Not now"');
+        await page_visible(CH, '#join-modal');
+        await CH.click('#join-cancel');
+        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none');
+        assert.ok(await CH.isVisible('#home-cmd-link-later'), 'bar stays after Cancel');
         await CH.evaluate(() => { showScreen('intro-screen'); setUserRole('NON_HCP'); });
         await CH.waitForTimeout(400);
-        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'setting up again does not ask either');
+        assert.strictEqual(await CH.evaluate(() => getComputedStyle(document.getElementById('join-modal')).display), 'none', 'setting up again does not ask either');
         await CH._ctx.close();
     });
     await test('v0.19.2 walk-through: plain role buttons, one-tap "where are you" on the link sheet, then a one-time how-to card', async () => {
@@ -1626,12 +1646,11 @@ async function test(name, fn) {
         await W.click('#btn-path-nonmed');
         await W.fill('#intro-triager', 'PC Whiskey');
         await W.click('#btn-role-responder');
-        await W.click('#home-cmd-link-later');   // v0.23.0: the sheet opens from the home bar, not by itself
-        await page_visible(W, '#cmd-link-modal');
-        await W.click('#setup-sector-chips [data-sector="Casualty clearing station"]');
+        // v0.25.0: the job is picked on the Join screen, or from the job button
+        await W.evaluate(() => openJobPicker());
+        await page_visible(W, '#job-modal');
+        await W.click('#job-chips [data-job="Casualty clearing station"]');
         assert.strictEqual(await W.evaluate(() => currentSector), 'Casualty clearing station');
-        assert.ok(await W.evaluate(() => document.querySelector('#setup-sector-chips [data-sector="Casualty clearing station"]').classList.contains('on')));
-        await W.click('#cmd-link-skip');
         assert.strictEqual(await W.evaluate(() => userRole), 'NON_HCP');
         assert.ok(await W.isVisible('#home-coach'), 'how-to card on first use');
         assert.match(await W.textContent('#home-coach'), /does not replace the paper tag/);
@@ -1664,11 +1683,11 @@ async function test(name, fn) {
         await V.evaluate(() => openModesMenu());
         await V.evaluate(() => { document.querySelector('#modes-modal details:has([onclick="cmdOpenJoin()"])').open = true; });
         await V.click('#modes-modal [onclick="cmdOpenJoin()"]');
-        await page_visible(V, '#cmd-join-modal');
-        const top = await V.evaluate(() => { const b = document.getElementById('cmd-join-code').getBoundingClientRect(); const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { onTop: !!(t && t.closest('#cmd-join-modal')), settings: getComputedStyle(document.getElementById('modes-modal')).display }; });
+        await page_visible(V, '#join-modal');
+        const top = await V.evaluate(() => { const b = document.getElementById('join-code').getBoundingClientRect(); const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { onTop: !!(t && t.closest('#join-modal')), settings: getComputedStyle(document.getElementById('modes-modal')).display }; });
         assert.strictEqual(top.onTop, true, 'the Join box is the top layer');
         assert.strictEqual(top.settings, 'none', 'Settings closed');
-        await V.evaluate(() => closeCmdJoin());
+        await V.evaluate(() => closeJoin());
         // Settings: training mode is its own line at the top
         await V.evaluate(() => openModesMenu());
         assert.ok(await V.isVisible('#mode-training'), 'training mode visible without opening a section');
@@ -1878,7 +1897,7 @@ async function test(name, fn) {
         assert.strictEqual(d.pin, '');
         assert.strictEqual(d.tp, '');
         assert.strictEqual(d.qr, 0);
-        assert.match(d.label, /Ask the incident commander for the triagers' PIN/);
+        assert.match(d.label, /ask the commander/);
         await J._ctx.close();
         await K._ctx.close();
     });
@@ -1889,10 +1908,10 @@ async function test(name, fn) {
         await CI.evaluate(() => startAsCommander());
         await CI.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
         await page_visible(CI, '#cmd-modal');
-        const d = await CI.evaluate(() => ({ title: document.getElementById('cmd-title').textContent, open: document.getElementById('cmd-open-btn').href, commander: CMD.cfg.commander, role: userRole, link: getComputedStyle(document.getElementById('cmd-link-modal')).display }));
-        assert.strictEqual(d.title, 'Incident commander');
+        const d = await CI.evaluate(() => ({ title: document.getElementById('cmd-title').textContent, open: document.getElementById('cmd-open-btn').href, commander: CMD.cfg.commander, role: userRole, link: getComputedStyle(document.getElementById('join-modal')).display }));
+        assert.strictEqual(d.title, 'Add people');
         assert.ok(d.commander && d.role === 'HCP');
-        assert.strictEqual(d.link, 'none', 'the commander is not asked to link');
+        assert.strictEqual(d.link, 'none', 'the commander is not asked to join');
         assert.ok(d.open.endsWith('/commander.html#' + (await CI.evaluate(() => CMD.cfg.code))), d.open);
         assert.ok(await CI.evaluate(() => auditLog.some(a => a.action === 'USER_SESSION_START' && /incident commander/.test(a.detail || a.details || JSON.stringify(a)))));
         const CJ = await CI._ctx.newPage();
@@ -2045,6 +2064,8 @@ async function test(name, fn) {
         await D.evaluate(() => { demoChoose('all'); });
         await D.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
         await D.waitForFunction(() => incidentLog.length === 24, null, { timeout: 8000 });
+        await page_visible(D, '#demo-bar');
+        await D.evaluate(() => showDemoGuide());
         await page_visible(D, '#demo-modal');
         assert.ok(await D.evaluate(() => document.body.classList.contains('training') && incidentLog.every(r => MITTLib.isDemoRecord(r))));
         assert.match(await D.textContent('#demo-summary'), /24 casualties/);
@@ -2078,23 +2099,31 @@ async function test(name, fn) {
         await setup(E, 'Dr Real');
         // One ▶ Demo button at the top of the start screen, then pick a role: commander, one of the four phones, or everything
         await E.evaluate(() => showScreen('intro-screen'));
+        // v0.26.0: one tap. Straight in as a clinician with all 24 casualties and the tour bar; no chooser.
+        assert.ok(await E.isHidden('#btn-exercise'), 'live exercise is under Extra settings, not in the demo');
         await E.click('#btn-demo');
-        await page_visible(E, '#demo-role-modal');
-        assert.strictEqual(await E.$$eval('#demo-phone-choices button', b => b.length), 4);
-        assert.strictEqual(await E.getAttribute('#demo-choose-cmd', 'href'), 'commander.html#DEMO');
-        // v0.23.1: two steps. Three choices first (the on-a-computer demo is not offered on a phone-sized screen); the phones are on the second step.
-        assert.strictEqual(await E.isVisible('#demo-phone-choices'), false);
-        assert.ok(await E.isVisible('#demo-choose-triager')); assert.ok(await E.isVisible('#btn-exercise'));
+        await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 24, null, { timeout: 10000 });
+        await page_visible(E, '#demo-bar');
+        assert.deepStrictEqual(await E.evaluate(() => [userRole, demoMode(), document.getElementById('demo-role-modal').style.display === 'flex', document.getElementById('demo-modal').style.display === 'flex']), ['HCP', 'all', false, false]);
+        // The four responders are under "More demo options" in the demo guide
+        await E.click('#btn-demo-guide');
+        await page_visible(E, '#demo-modal');
+        assert.strictEqual(await E.isVisible('#demo-choose-triager'), false);
+        await E.click('#demo-more summary');
         assert.strictEqual(await E.isVisible('#demo-linked'), (await E.evaluate(() => window.innerWidth)) >= 900);
         await E.click('#demo-choose-triager');
+        await page_visible(E, '#demo-role-modal');
         assert.match(await E.textContent('#demo-role-title'), /pick a phone/);
+        assert.strictEqual(await E.$$eval('#demo-phone-choices button', b => b.length), 4);
         await E.click('#demo-step-back');
-        assert.ok(await E.isVisible('#demo-choose-triager'));
-        await E.click('#demo-choose-triager');
+        assert.ok(await E.isHidden('#demo-role-modal'));
+        await E.evaluate(() => openDemoPhones());
         await E.click('#demo-phone-choices button:nth-child(4)');
         await E.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady && incidentLog.length === 8, null, { timeout: 10000 });
         assert.deepStrictEqual(await E.evaluate(() => [triagerName, userRole, demoMode()]), ['Fire crew 3', 'NON_HCP', 'p3']);
         assert.ok(await E.evaluate(() => incidentLog.every(r => r.deviceId === 'DEMOFR')));
+        await page_visible(E, '#demo-bar');
+        await E.evaluate(() => showDemoGuide());
         await page_visible(E, '#demo-modal');
         assert.match(await E.textContent('#demo-title'), /Fire crew 3/);
         // Practise receiving: a casualty from another phone arrives through the normal review screen
@@ -2142,8 +2171,7 @@ async function test(name, fn) {
         await F.waitForFunction(() => CMD.dirty.size === 0 && CMD.lastSentAt > 0, null, { timeout: 10000 });
         // A live-exercise CCZ phone: blank, asks for a name, then offers to scan the control room's code
         const C = await device('ExerciseCCZ');
-        await C.evaluate(() => startDemo());
-        await C.click('#btn-exercise');
+        await C.evaluate(() => openExercise());
         await page_visible(C, '#exercise-modal');
         await C.evaluate(() => showExerciseGuide());
         await page_visible(C, '#exercise-guide-modal');
@@ -2151,7 +2179,8 @@ async function test(name, fn) {
         await C.evaluate(() => { exerciseChoose('xc'); });
         await C.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING && typeof dbReady !== 'undefined' && dbReady, null, { timeout: 10000 });
         await answerDialog(C, true, 'Nurse CCZ');
-        await page_visible(C, '#cmd-link-modal');
+        await page_visible(C, '#join-modal');
+        await C.evaluate(() => closeJoin());
         assert.deepStrictEqual(await C.evaluate(() => [triagerName, userRole, currentSector, incidentLog.length, demoMode()]), ['Nurse CCZ', 'HCP', 'Casualty clearing station', 0, 'xc']);
         assert.match(await C.textContent('#training-banner-text'), /EXERCISE — Casualty clearing station/);
         assert.ok(await C.$('#home-exercise'));
@@ -2493,7 +2522,7 @@ async function test(name, fn) {
         await N.waitForFunction(() => triagerName === 'PC Jones');
         assert.strictEqual(await N.evaluate(() => document.getElementById('home-add-name')), null);
         assert.ok(await N.evaluate(() => auditLog.some(a => a.action === 'USER_NAME_SET')));
-        assert.match(await N.textContent('#home-cmd-link-later'), /Not linked to a commander/);
+        assert.match(await N.textContent('#home-cmd-link-later'), /Join an incident/);
         await N.reload();
         await N.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true);
         assert.strictEqual(await N.evaluate(() => triagerName), 'PC Jones');
@@ -2516,18 +2545,13 @@ async function test(name, fn) {
         await M2.evaluate(() => resetToHome());
         // The link sheet opens from the home bar; the sector question comes once, on its own.
         await M2.click('#home-cmd-link-later');
-        await page_visible(M2, '#cmd-link-modal');
-        assert.match(await M2.textContent('#cmd-link-title'), /Link to the commander/);
-        await M2.click('#cmd-link-skip');
-        await M2.evaluate(() => cmdOfferSector());
-        await page_visible(M2, '#cmd-link-modal');
-        assert.match(await M2.textContent('#cmd-link-title'), /Where are you working\?/);
-        assert.strictEqual(await M2.isVisible('#cmd-link-part'), false);
-        await M2.click('#setup-sector-chips .setup-chip[data-sector="Loading Point"]');
-        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none');
-        assert.strictEqual(await M2.evaluate(() => currentSector), 'Loading Point');
-        await M2.evaluate(() => { currentSector = ''; cmdOfferSector(); });
-        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('cmd-link-modal')).display), 'none', 'asked once only');
+        await page_visible(M2, '#join-modal');
+        assert.match(await M2.textContent('#join-title'), /Join an incident/);
+        await M2.click('#join-cancel');
+        await M2.evaluate(() => openJobPicker());
+        await M2.click('#job-chips [data-job="Loading point"]');
+        assert.strictEqual(await M2.evaluate(() => getComputedStyle(document.getElementById('job-modal')).display), 'none');
+        assert.strictEqual(await M2.evaluate(() => currentSector), 'Loading point');
         await M2._ctx.close();
         const C2 = await device('First run commander', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
         await C2.click('#btn-path-cmd');
@@ -2592,6 +2616,8 @@ async function test(name, fn) {
         await setup(G, 'Dr Guide');
         await G.evaluate(() => { demoChoose('all'); });
         await G.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        await page_visible(G, '#demo-bar');
+        await G.evaluate(() => showDemoGuide());
         await page_visible(G, '#demo-modal');
         assert.strictEqual(await G.$$eval('#demo-list button', b => b.length), 18);
         assert.match(await G.textContent('#demo-next'), /Start: .*TST triage/);
@@ -2607,7 +2633,7 @@ async function test(name, fn) {
         assert.match(await G.textContent('#demo-next'), /Next: .*MITT triage/);
         await G.evaluate(() => { closeDemoGuide(); resetToHome(); });
         // Each item opens what it says
-        const shows = { body: 'body-map-modal', reassess: 'reassess-modal', timeline: 'timeline-modal', evac: 'hospital-modal', receive: 'preview-modal', handover: 'qr-modal', handall: 'all-preflight-modal', link: 'cmd-link-modal', settings: 'modes-modal' };
+        const shows = { body: 'body-map-modal', reassess: 'reassess-modal', timeline: 'timeline-modal', evac: 'hospital-modal', receive: 'preview-modal', handover: 'qr-modal', handall: 'all-preflight-modal', link: 'join-modal', settings: 'modes-modal' };
         for (const id of Object.keys(shows)) {
             await G.evaluate((x) => { demoGo(x); }, id);
             await page_visible(G, '#' + shows[id]);
@@ -2628,9 +2654,171 @@ async function test(name, fn) {
         // A non-clinical demo phone is not offered MITT
         await G.evaluate(() => { closeDemoGuide(); demoChoose('p3'); });
         await G.waitForFunction(() => triagerName === 'Fire crew 3', null, { timeout: 8000 });
+        await page_visible(G, '#demo-bar');
+        await G.evaluate(() => showDemoGuide());
         await page_visible(G, '#demo-modal');
         assert.strictEqual(await G.$('#demo-item-mitt'), null);
         assert.strictEqual(await G.$$eval('#demo-list button', b => b.length), 17);
+    });
+    await test('v0.26.0: the five-step tour bar leads the demo; Next shows each step, the commander comes back to the demo, Again restarts it', async () => {
+        const T = await device('Tour1');
+        await T.click('#btn-demo');
+        await T.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        await page_visible(T, '#demo-bar');
+        assert.match(await T.textContent('#demo-bar-next'), /Start/);
+        assert.ok(await T.evaluate(() => document.getElementById('home-screen').classList.contains('active') && document.body.classList.contains('demo-story')));
+        await T.click('#demo-bar-next');
+        assert.match(await T.textContent('#demo-bar-step'), /Step 1 of 5 · Triage/);
+        assert.ok(await T.evaluate(() => document.getElementById('question-screen').classList.contains('active')));
+        await T.click('#demo-bar-next');
+        assert.match(await T.textContent('#demo-bar-step'), /Step 2 of 5/);
+        assert.ok(await T.evaluate(() => document.getElementById('result-screen').classList.contains('active') && currentEntry().category === 'P1'));
+        await T.click('#demo-bar-next');
+        await page_visible(T, '#qr-modal');
+        // The practice button is on screen without scrolling, above the tour bar
+        const ack = await T.evaluate(() => { const r = document.getElementById('btn-demo-ack').getBoundingClientRect(), b = document.getElementById('demo-bar').getBoundingClientRect(); return { bottom: r.bottom, bar: b.top }; });
+        assert.ok(ack.bottom <= ack.bar, JSON.stringify(ack));
+        // Next closes whatever the last step left open
+        await T.click('#demo-bar-next');
+        assert.ok(await T.isHidden('#qr-modal'));
+        await T.waitForTimeout(200);
+        assert.ok(await T.isHidden('#handover-flow-modal'));
+        assert.ok(await T.evaluate(() => document.getElementById('map-screen').classList.contains('active')));
+        assert.match(await T.textContent('#demo-bar-next'), /Last/);
+        await T.click('#demo-bar-next');
+        await T.waitForURL(/commander\.html#DEMO\/BACK/);
+        await T.waitForFunction(() => document.querySelectorAll('#rows tr').length > 0, null, { timeout: 8000 });
+        assert.match(await T.textContent('#btn-start-page'), /Back to the phone demo/);
+        await T.click('#btn-start-page');
+        await T.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && typeof demoMode === 'function' && demoMode() === 'all', null, { timeout: 15000 });
+        await page_visible(T, '#demo-bar');
+        assert.match(await T.textContent('#demo-bar-step'), /That is the tour/);
+        assert.ok(await T.evaluate(() => incidentLog.length >= 24), 'the demo carried on, it was not ended');
+        // Practice join with the made-up commander: nothing is sent, the phone is not joined
+        await T.evaluate(() => demoGo('link'));
+        await page_visible(T, '#join-modal');
+        assert.match(await T.textContent('#join-title'), /DEMO24/);
+        await T.click('#join-jobs [data-job="Loading point"]');
+        await T.click('#join-go');
+        await page_visible(T, '#joined-modal');
+        assert.match(await T.textContent('#joined-detail'), /Practice only/);
+        assert.deepStrictEqual(await T.evaluate(() => [cmdActive(), currentSector]), [false, 'Loading point']);
+        await T.click('#joined-ok');
+        // Again: fresh casualties, no ticks, back to the start
+        await T.click('#demo-bar-next');
+        await T.waitForFunction(() => document.getElementById('demo-bar-next').textContent.indexOf('Start') > -1 && incidentLog.length === 24, null, { timeout: 8000 });
+        assert.deepStrictEqual(await T.evaluate(() => demoSeen()), []);
+        // The bar can be hidden and brought back from the guide; the demo link has a QR
+        await T.click('#btn-demo-guide');
+        await T.click('#demo-more summary');
+        await T.click('#demo-tour-toggle');
+        assert.ok(await T.isHidden('#demo-bar'));
+        await T.click('#demo-tour-toggle');
+        assert.ok(await T.isVisible('#demo-bar'));
+        await T.click('#demo-share');
+        await page_visible(T, '#demo-link-modal');
+        assert.match(await T.textContent('#demo-link-url'), /#demo$/);
+        assert.ok(await T.$('#demo-link-qr canvas, #demo-link-qr svg, #demo-link-qr img'));
+        await T.click('#demo-link-close');
+        await T._ctx.close();
+        // The demo link opens straight in the demo; live exercise is under Extra settings on the start screen
+        const L = await device('Tour2');
+        await L.goto(url + '#demo');
+        await L.reload();
+        await L.waitForFunction(() => typeof TRAINING !== 'undefined' && TRAINING === true && typeof dbReady !== 'undefined' && dbReady === true && incidentLog.length === 24, null, { timeout: 15000 });
+        await page_visible(L, '#demo-bar');
+        assert.ok(!/#demo/.test(L.url()));
+        await L._ctx.close();
+        const X = await device('Tour3');
+        await X.click('#intro-options summary');
+        await X.click('#btn-exercise');
+        await page_visible(X, '#exercise-modal');
+        await X._ctx.close();
+    });
+    await test('v0.27.0: the commander screen opens on Add people with the join QR; a phone joins from it; the commander gives it a job, the phone is told, and a later change on the phone stands', async () => {
+        const S = await device('Job Cdr');
+        await S.click('#btn-path-cmd');
+        await S.fill('#intro-triager', 'Silver Jobs');
+        await S.evaluate(() => startAsCommander());
+        await S.waitForFunction(() => cmdActive(), null, { timeout: 8000 });
+        const inc = await S.evaluate(() => ({ code: CMD.cfg.code, pin: CMD.cfg.pin, cmdPin: CMD.cfg.cmdPin }));
+        const W = await S._ctx.newPage();
+        W.on('pageerror', e => errors.push('Job screen: ' + e.message));
+        await W.goto(url.replace('index.html', 'commander.html#' + inc.code));
+        // A new incident opens on the join code, with the joining PIN (never the commander PIN)
+        await W.waitForSelector('#people-modal.open', { timeout: 8000 });
+        assert.deepStrictEqual(await W.evaluate(() => [document.getElementById('people-code').textContent, document.getElementById('people-pin').textContent, joinUrl().split('#')[1]]), [inc.code, inc.pin, 'join=' + inc.code + '-' + inc.pin]);
+        assert.notStrictEqual(inc.pin, inc.cmdPin);
+        assert.ok(await W.$('#people-qr canvas, #people-qr img'));
+        assert.match(await W.textContent('#people-count'), /No phones have joined yet/);
+        // A phone joins from that link, skipping the name
+        const T = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' })).newPage();
+        T.on('pageerror', e => errors.push('Job phone: ' + e.message));
+        await T.goto(await W.evaluate(() => joinUrl()));
+        await T.waitForFunction(() => typeof dbReady !== 'undefined' && dbReady === true, null, { timeout: 10000 });
+        await page_visible(T, '#join-modal');
+        await T.click('#join-who [data-role="NON_HCP"]');
+        await T.click('#join-go');
+        await page_visible(T, '#joined-modal');
+        await T.click('#joined-ok');
+        await T.waitForFunction(() => CMD.lastSentAt > 0, null, { timeout: 10000 });
+        await W.evaluate(() => refreshNow());
+        await W.waitForFunction(() => /1 phone has joined/.test(document.getElementById('people-count').textContent), null, { timeout: 8000 });
+        await W.click('#people-close');
+        const dev = await T.evaluate(() => deviceId);
+        // No name: the card reads as "Phone" until there is a job, never "Unnamed"
+        const sel = `.ph-job[data-dev="${dev}"]`;
+        await W.waitForSelector(sel, { timeout: 8000 });
+        assert.strictEqual(await W.$('.phone .ph-job[data-dev="' + (await S.evaluate(() => deviceId)) + '"]'), null, 'the commander\'s own phone has no job menu');
+        await W.evaluate(() => { cfg.by = 'Silver Jobs'; });
+        await W.selectOption(sel, 'Loading point');
+        await W.waitForFunction(() => /waiting for the phone/.test(document.getElementById('phones').textContent), null, { timeout: 8000 });
+        await W.waitForFunction(() => (data.decisions || []).some(d => d.what === 'job' && d.job === 'Loading point'), null, { timeout: 8000 });
+        // The phone takes it with its next report and tells its user
+        await T.evaluate(() => cmdPush());
+        await T.waitForFunction(() => currentSector === 'Loading point', null, { timeout: 8000 });
+        assert.match(await T.textContent('#header-sector'), /Loading point/);
+        assert.ok(await T.evaluate(() => auditLog.some(a => a.action === 'COMMANDER_JOB')));
+        await T.click('#header-sector');
+        assert.match(await T.textContent('#job-by'), /Set by the commander \(Silver Jobs\)/);
+        await T.evaluate(() => closeJobPicker());
+        await T.waitForFunction(() => CMD.cfg.jobBy === 'commander' && !CMD.timer, null, { timeout: 8000 });
+        await T.evaluate(() => cmdPush());
+        await W.evaluate(() => refreshNow());
+        await W.waitForFunction(() => /Loading point<\/b> \(set by the commander\)/.test(document.getElementById('phones').innerHTML) && !/waiting for the phone/.test(document.getElementById('phones').textContent), null, { timeout: 8000 });
+        assert.match(await W.evaluate((d) => document.querySelector(`.ph-job[data-dev="${d}"]`).closest('.phone').querySelector('b').textContent, dev), /^Loading /);
+        // The person changes it on the phone: that stands, and the screen says who chose it
+        await T.click('#header-sector');
+        await T.click('#job-chips [data-job="Triage at the scene"]');
+        await T.evaluate(() => cmdPush());
+        await T.waitForFunction(() => CMD.cfg.jobBy === 'phone', null, { timeout: 8000 });
+        await T.evaluate(() => cmdPush());
+        await W.evaluate(() => refreshNow());
+        await W.waitForFunction(() => /Triage at the scene<\/b> \(chosen on the phone\)/.test(document.getElementById('phones').innerHTML), null, { timeout: 8000 });
+        assert.strictEqual(await T.evaluate(() => currentSector), 'Triage at the scene');
+        // A screen opened with only the commander PIN asks for the joining PIN once, and refuses a wrong one
+        const V = await (await browser.newContext({ serviceWorkers: 'block' })).newPage();
+        V.on('pageerror', e => errors.push('Job screen 2: ' + e.message));
+        await V.goto(url.replace('index.html', 'commander.html#' + inc.code));
+        await V.fill('#in-pin', inc.cmdPin);
+        await V.evaluate(() => signIn());
+        await V.waitForFunction(() => !document.getElementById('dash').classList.contains('hidden') && !!data, null, { timeout: 8000 });
+        assert.strictEqual(await V.evaluate(() => document.getElementById('people-modal').classList.contains('open')), false);
+        await V.click('#btn-people');
+        await V.waitForSelector('#ask-modal.open');
+        await V.fill('#ask-input', '000000');
+        await V.click('#ask-ok');
+        await V.waitForFunction(() => /not the PIN to join/.test(document.getElementById('ask-msg').textContent), null, { timeout: 8000 });
+        await V.click('#ask-ok');
+        await V.click('#btn-people');
+        await V.waitForSelector('#ask-modal.open');
+        await V.fill('#ask-input', inc.pin);
+        await V.click('#ask-ok');
+        await V.waitForSelector('#people-modal.open', { timeout: 8000 });
+        assert.strictEqual(await V.textContent('#people-pin'), inc.pin);
+        await V.context().close();
+        await T.context().close();
+        await S._ctx.close();
     });
     await test('no uncaught page errors', async () => { assert.deepStrictEqual(errors, []); });
     await browser.close();

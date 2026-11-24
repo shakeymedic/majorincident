@@ -164,6 +164,49 @@ The end-to-end suite covers the two-phone handover, the map and location feature
 
 ## Contributing / change log
 
+### v0.27.0 build 2026-11-24-jobs — the commander gives jobs, and "Add people" on the commander screen (24 November 2026)
+
+Release 3 of the joining, jobs and demo plan.
+
+- **The commander gives jobs.** Each phone's card on the commander screen has a job menu (Triage at the scene, Casualty clearing station, Loading point, Not assigned yet, or typed). Commander PIN only; recorded in the decision log with who gave it.
+- **The phone is told.** The job arrives with the phone's next report (within about a minute): an alert reads "The commander has given you a job", the job button at the top changes, and it is logged on the phone. Until the phone has taken it the card says "waiting for the phone".
+- **Latest change wins.** The person can still change their job on the phone; that stands until the commander gives another. Both sides see who set it ("set by the commander" or "chosen on the phone").
+- **"Add people" on the commander screen.** A yellow button shows the join QR, the incident code and the PIN to join, with a live count of phones that have joined. A new incident opens on it instead of a screen of zeros.
+- **The PIN to join stays off the server.** The server still holds only scrambled copies of the PINs. The commander screen gets the PIN to join from the phone that started the incident (same browser), or it is typed once and checked; it is kept in that tab only.
+- **Names.** A phone whose user skipped the name shows on the commander screen as its job and code (for example "Triage 1CEG") instead of "Phone 1CEG".
+- Server: new `POST /api/incident/<code>/job` (commander PIN), stored as `i/<CODE>/ja/<deviceId>` and deleted with the incident; phones report `sectorBy` and `jobAt`.
+- Not in the commander demo: the made-up demo phones have no job menu.
+- Tests: one new server test and one new end-to-end test.
+
+### v0.26.0 build 2026-11-24-demo — the demo in one tap, with a five-step tour (24 November 2026)
+
+Release 2 of the joining, jobs and demo plan.
+
+- **One tap in.** *Try a demo* goes straight into the demo as a clinician with all 24 made-up casualties. The chooser has gone.
+- **Five-step tour.** An orange bar at the bottom says the step and one line of what to say; *Next* shows it: triage, a P1 patient, hand over by QR, the map, the commander. *Next* also closes whatever the last step left open. The bar stays above every sheet. It can be hidden from the demo guide.
+- **Commander and back.** The commander step opens the commander demo in the same tab with *Back to the phone demo*; coming back no longer ends the demo.
+- **Restart.** *Again* at the end of the tour, or *Restart* in the demo guide: fresh casualties, no ticks, step one.
+- **Demo link and QR.** `…/#demo` opens the app straight in the demo; the demo guide shows it as a QR for another phone. A phone holding real records is never pulled into the demo by the link.
+- **Practice join.** *Join (practice)* in the demo guide opens the Join screen with a made-up commander. Nothing is sent.
+- **Show everything** is still there: the 18-function list behind *Demo guide*. The four demo responders, the on-a-computer linked demo and the QR are under *More demo options*.
+- **Live exercise** has moved out of the demo to *Extra settings* on the start screen.
+- In the demo the handover QR sheet shows *Demo: the receiver scanned it* straight under the steps.
+- Tests: demo tests updated; one new end-to-end test for the tour.
+
+### v0.25.0 build 2026-11-24-join — one Join screen, a job for every phone, "Add people" (24 November 2026)
+
+Release 1 of the joining, jobs and demo plan (agreed 24 November 2026).
+
+- **One Join screen.** Scanning the commander's code, opening the join link, or tapping *Join an incident* now opens a single screen: name (optional), medical or not (only if the phone is not set up yet), your job, a position-sharing switch and one **Join** button. It replaces five screens (who are you, name, "Join incident?", "Share your position?", "Where are you working?"). A join link opens it at once, whether or not the phone has been set up.
+- **"You're in".** A full confirmation with a tick, the name and the job, instead of a toast hidden under the next question.
+- **A job for every phone.** *Triage at the scene*, *Casualty clearing station*, *Loading point* or *Not assigned yet*, picked on the Join screen. The job is a button in the top bar: one tap changes it, and *Something else…* takes a typed job. The job is the "sector" the commander screen already groups phones and casualties by, so the commander sees it with the next report.
+- **Start screen.** *Join an incident* and *Start an incident* are two clear buttons under "Who are you?" (the commander's route was a small dashed link, and there was no Join button at all).
+- **Add people.** The commander's sheet leads with the join QR, then the incident code and the PIN to join. The commander and view-only PINs are folded under *Other PINs*. A joined phone has *➕ Add people* on its home screen.
+- **One word.** "Join" for phones, "Start an incident" for the commander, "Leave the incident" to stop. "Link to commander", "Live sharing", "Share live" and "Stop sharing" have gone from the screens (audit trail action names are unchanged).
+- **Typing the code.** Code and PIN side by side in large boxes; six characters moves on to the PIN; a pasted join link or `CODE-PIN` fills both.
+- Not in this release: the commander setting a phone's job, and the join QR on the big commander screen (release 3, needs a server change).
+- Tests: join tests rewritten for the one-screen flow (typed code, join link, scanner, cancel, job button).
+
 ### v0.24.0 build 2026-11-17-reset-demo — an easy reset, and a demo that shows every function (17 November 2026)
 
 - **Reset this phone.** One visible button at the top of ⚙ Settings, and in the home screen's More list. It opens one sheet with every way of clearing: *Clear the patients* (name, role and settings stay), *Delete all training data* (in training only) and *Reset everything* (as if newly installed). The closed "Clear data" section at the bottom of Settings has gone. Each choice still asks once before anything is removed.
